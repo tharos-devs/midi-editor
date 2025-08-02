@@ -1,0 +1,97 @@
+/* ===========================
+   Thème sombre personnalisé
+   =========================== */
+
+/* Variables globales */
+:root.dark {
+  --app-bg: #181c20;
+  --app-fg: #e6e6e6;
+  --border-color: #23272b;
+  --lane-bg: #181c20;
+  --lane-border: #23272b;
+  --left-column-bg: #23272b;
+  --menu-active-bg: #223344;
+  --menu-active-fg: #4fc3f7;
+  --menu-bg: #23272b;
+  --menu-fg: #e6e6e6;
+  --midi-lane-infos-bg: #23272b;
+  --midi-lanes-bg: #181c20;
+  --midi-lanes-empty-fg: #666;
+  --midi-lanes-spacer-bg: #23272b;
+  --note-bg: #23272b;
+  --note-border: rgba(255,255,255,0.15);
+  --note-hover-shadow: rgba(0,0,0,0.4);
+  --note-label: #b0b0b0;
+  --note-selected-border: #4fc3f7;
+  --note-selected-shadow: rgba(79, 195, 247, 0.6);
+  --panel-bg: #23272b;
+  --panel-fg: #e6e6e6;
+  --piano-bg: #23272b;
+  --piano-black-key-bg: rgba(30, 30, 30, 0.9);
+  --piano-c-note-bg: #e6f7ff;
+  --piano-key-border: #444;
+  --piano-label: #b0b0b0;
+  --piano-keys-bg: #23272b;
+  --piano-white-key-bg: rgba(60, 60, 60, 0.9);
+  --signature-beat: #888;
+  --signature-indicator-bg: rgba(40, 44, 52, 0.95);
+  --signature-indicator-border: #4fc3f7;
+  --signature-indicator-shadow: rgba(79,195,247,0.15);
+  --signature-measure-bar: #4fc3f7;
+  --signature-ruler-bg: #23272b;
+  --signature-ruler-bg-gradient: #181c20;
+  --signature-ruler-border: #23272b;
+  --signature-text: #e6e6e6;
+  --signature-text-hover: #4fc3f7;
+  --splitter-bg: #333a40;
+  --splitter-hover-bg: #4fc3f7;
+  --statusbar-bg: #23272b;
+  --statusbar-fg: #b0b0b0;
+  --timeline-bg: #23272b;
+  --timeline-bg-gradient: #181c20;
+  --timeline-beat: #888;
+  --timeline-border: #23272b;
+  --timeline-measure: #4fc3f7;
+  --timeline-shadow: rgba(0,0,0,0.4);
+  --timeline-spacer-bg: #23272b;
+  --timesignature-bg: #181c20;
+  --timesignature-spacer-bg: #23272b;
+  --track-active-bg: #223344;
+  --track-border: #23272b;
+  --track-details: #888;
+  --track-instrument: #b0b0b0;
+  --track-name: #e6e6e6;
+  --track-bg: #23272b;
+  --velocity-bar: #4fc3f7;
+  --velocity-bar-brushed: #ffb74d;
+  --velocity-bar-brushed-outline: rgba(255, 183, 77, 0.8);
+  --velocity-bar-brushed-shadow: rgba(255, 183, 77, 0.4);
+  --velocity-bar-selected: #ffffff;
+  --velocity-bar-selected-outline: #fff;
+  --velocity-bar-zero: #ff4444;
+  --velocity-beat-line: #23272b;
+  --velocity-beat-line-visible: #333a40;
+  --velocity-display-bg: rgba(40, 44, 52, 0.95);
+  --velocity-display-fg: #e6e6e6;
+  --velocity-display-shadow: rgba(0, 0, 0, 0.6);
+  --velocity-lane-bg: #181c20;
+  --velocity-measure-line: #23272b;
+  --velocity-scale-line: #333a40;
+  --velocity-scale-line-strong: #888;
+  --velocity-selection-rect: #4fc3f7;
+  --velocity-selection-rect-bg: rgba(79, 195, 247, 0.1);
+  --velocity-signature-change: #4fc3f7;
+  --velocity-signature-change-visible: #1976D2;
+  --velocity-signature-indicator-bg: #4fc3f7;
+  --velocity-signature-indicator-fg: #23272b;
+  --velocity-tooltip-bg: rgba(30, 30, 30, 0.95);
+  --velocity-tooltip-fg: #fff;
+  --velocity-tooltip-note: #81c784;
+  --velocity-tooltip-shadow: rgba(0, 0, 0, 0.6);
+  --velocity-tooltip-velocity: #ffd54f;
+}
+
+/* ===========================
+   Composant MenuBar
+   =========================== */
+/* Voir theme-light.css pour correspondance */

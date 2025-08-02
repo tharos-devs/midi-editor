@@ -1,0 +1,402 @@
+<template>
+  <div 
+    class="piano-grid" 
+    :style="gridStyle"
+    ref="containerRef"
+    @mousedown="onContainerMouseDown"
+    @mousemove="onContainerMouseMove"
+    @mouseup="onContainerMouseUp"
+    @mouseleave="onContainerMouseLeave"
+  >
+    <!-- Couche de fond avec les lignes horizontales uniquement -->
+    <div class="grid-background-fixed" :style="gridBackgroundStyle">
+      <!-- Lignes horizontales pour TOUTES les notes MIDI -->
+      <div
+        v-for="note in allMidiNotes"
+        :key="note.midi"
+        class="note-line"
+        :class="{
+          'white-note-line': !note.isBlack,
+          'black-note-line': note.isBlack
+        }"
+        :style="{
+          top: getNoteLinePosition(note.midi) + 'px',
+          height: noteLineHeight + 'px',
+          width: totalWidth + 'px',
+          left: '0px'
+        }"
+        :title="note.name"
+      />
+    </div>
+
+    <!-- GridRenderer pour les lignes verticales -->
+    <GridRenderer
+      :showMeasureLines="true"
+      :showBeatLines="true"
+      :showSignatureIndicators="false"
+      :showMeasureNumbers="false"
+    />
+
+    <!-- Notes MIDI -->
+    <div class="notes-layer">
+      <MidiNote
+        v-for="note in selectedTrackNotes"
+        :key="note.id"
+        :note="note"
+        @register-element="registerNoteElement"
+      />
+    </div>
+
+    <!-- Rectangle de sélection lasso -->
+    <div 
+      v-if="multiSelection.isLassoActive.value"
+      class="lasso-rectangle"
+      :style="multiSelection.lassoStyle.value"
+    />
+
+    <!-- Informations de sélection -->
+    <div 
+      v-if="multiSelection.hasMultipleSelection.value" 
+      class="selection-info"
+    >
+      {{ multiSelection.selectedNotes.value.size }} notes sélectionnées
+      <button @click="clearSelection" class="clear-selection-btn">×</button>
+    </div>
+
+    <!-- Raccourcis clavier (info) -->
+    <div v-if="multiSelection.selectedNotes.value.size > 0" class="keyboard-shortcuts">
+      <small>
+        Ctrl+clic: sélection multiple • Shift+clic: étendre sélection • Clic+glisser: lasso
+      </small>
+    </div>
+
+    <!-- Debug info (conservé) -->
+    <div v-if="showDebug" class="debug-info" style="position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.8); color: white; padding: 10px; z-index: 1000;">
+      <div>GridRenderer utilisé pour les lignes verticales</div>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { computed, ref, provide, onMounted, onUnmounted } from 'vue'
+import { useUIStore } from '@/stores/ui'
+import { useMidiStore } from '@/stores/midi'
+import { useTimeSignature } from '@/composables/useTimeSignature'
+import { usePianoPositioning } from '@/composables/usePianoPositioning'
+import { useMultiSelection } from '@/composables/useMultiSelection'
+import MidiNote from '@/components/MidiNote.vue'
+import GridRenderer from '@/components/GridRenderer.vue'
+
+const midiStore = useMidiStore()
+const uiStore = useUIStore()
+const multiSelection = useMultiSelection()
+
+provide('multiSelection', multiSelection)
+
+const showDebug = ref(false)
+const timeSignatureComposable = useTimeSignature()
+
+const {
+  allMidiNotes,
+  noteLineHeight,
+  calculatedPianoHeight,
+  getNoteLinePosition
+} = usePianoPositioning()
+
+const containerRef = ref(null)
+const noteElements = ref(new Map())
+
+let isLassoInProgress = false
+let isDraggingNote = false
+
+const totalWidth = computed(() => {
+  return timeSignatureComposable?.totalWidth?.value || 800
+})
+
+const selectedTrackNotes = computed(() => {
+  if (midiStore.selectedTrack === null) {
+    return []
+  }
+  return midiStore.getTrackNotes(midiStore.selectedTrack)
+})
+
+const gridStyle = computed(() => ({
+  width: totalWidth.value + 'px',
+  height: calculatedPianoHeight.value + 'px'
+}))
+
+const gridBackgroundStyle = computed(() => ({
+  width: totalWidth.value + 'px',
+  height: calculatedPianoHeight.value + 'px'
+}))
+
+// ... Le reste du script reste identique (pas de changement pour les gestionnaires d'événements)
+const registerNoteElement = (noteId, element) => {
+  if (element) {
+    noteElements.value.set(noteId, element)
+  } else {
+    noteElements.value.delete(noteId)
+  }
+}
+
+const onContainerMouseDown = (event) => {
+  const clickedElement = event.target.closest('.midi-note')
+  if (clickedElement) {
+    isDraggingNote = true
+    return
+  }
+
+  isDraggingNote = false
+  const isMultiSelect = event.ctrlKey || event.metaKey
+  const isShiftSelect = event.shiftKey
+
+  if (!isMultiSelect && !isShiftSelect) {
+    multiSelection.clearSelection()
+  }
+
+  if (!isMultiSelect) {
+    isLassoInProgress = true
+    multiSelection.startLasso(event)
+    event.preventDefault()
+    document.body.style.userSelect = 'none'
+  }
+}
+
+const onContainerMouseMove = (event) => {
+  if (isLassoInProgress && !isDraggingNote) {
+    multiSelection.updateLasso(event)
+    updateLassoSelection(event, false)
+  }
+}
+
+const onContainerMouseUp = (event) => {
+  if (isLassoInProgress && !isDraggingNote) {
+    const keepExisting = event.shiftKey
+    updateLassoSelection(event, true, keepExisting)
+    multiSelection.endLasso(event, noteElements.value, keepExisting)
+    isLassoInProgress = false
+    document.body.style.userSelect = ''
+  }
+  isDraggingNote = false
+}
+
+const onContainerMouseLeave = (event) => {
+  if (isLassoInProgress) {
+    multiSelection.cancelLasso()
+    isLassoInProgress = false
+    document.body.style.userSelect = ''
+  }
+}
+
+const updateLassoSelection = (event, finalize = false, keepExisting = false) => {
+  if (!multiSelection.isLassoActive.value) return
+
+  const containerRect = containerRef.value.getBoundingClientRect()
+  
+  const lassoRect = {
+    left: Math.min(multiSelection.lassoStart.value.x, event.clientX),
+    top: Math.min(multiSelection.lassoStart.value.y, event.clientY),
+    right: Math.max(multiSelection.lassoStart.value.x, event.clientX),
+    bottom: Math.max(multiSelection.lassoStart.value.y, event.clientY)
+  }
+
+  const notesInLasso = []
+  
+  noteElements.value.forEach((element, noteId) => {
+    if (!element) return
+
+    const noteRect = element.getBoundingClientRect()
+    
+    const intersects = !(
+      noteRect.right < lassoRect.left ||
+      noteRect.left > lassoRect.right ||
+      noteRect.bottom < lassoRect.top ||
+      noteRect.top > lassoRect.bottom
+    )
+
+    if (intersects) {
+      notesInLasso.push(noteId)
+    }
+  })
+
+  if (finalize) {
+    if (!keepExisting) {
+      multiSelection.clearSelection()
+    }
+    
+    notesInLasso.forEach(noteId => {
+      if (!multiSelection.isNoteSelected(noteId)) {
+        multiSelection.toggleNoteSelection(noteId, true)
+      }
+    })
+  }
+}
+
+const clearSelection = () => {
+  multiSelection.clearSelection()
+}
+
+const handleKeyDown = (event) => {
+  if (event.key === 'Escape') {
+    multiSelection.clearSelection()
+    if (isLassoInProgress) {
+      multiSelection.cancelLasso()
+      isLassoInProgress = false
+      document.body.style.userSelect = ''
+    }
+  }
+  
+  if ((event.ctrlKey || event.metaKey) && event.key === 'a') {
+    event.preventDefault()
+    const allNoteIds = selectedTrackNotes.value.map(note => note.id)
+    multiSelection.clearSelection()
+    multiSelection.addNotesToSelection(allNoteIds)
+  }
+  
+  if (event.key === 'Delete' || event.key === 'Backspace') {
+    const selectedNoteIds = multiSelection.getSelectedNotes()
+    if (selectedNoteIds.length > 0) {
+      event.preventDefault()
+      multiSelection.clearSelection()
+    }
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('keydown', handleKeyDown)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('keydown', handleKeyDown)
+  document.body.style.userSelect = ''
+})
+</script>
+
+<style scoped>
+.piano-grid {
+  position: relative;
+  background: var(--panel-bg);
+  cursor: crosshair;
+}
+
+.grid-background-fixed {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.note-line {
+  position: absolute;
+  pointer-events: none;
+  box-sizing: border-box;
+  border-top: 1px solid var(--piano-beat-line);
+  border-bottom: 1px solid var(--piano-beat-line);
+}
+
+.white-note-line {
+  background: var(--piano-white-key-bg, rgba(255, 255, 255, 0.9));
+}
+
+.black-note-line {
+  background: var(--piano-black-key-bg, rgba(240, 240, 240, 0.9));
+}
+
+/* Styles spécifiques pour les lignes de GridRenderer dans le piano */
+:deep(.piano-measure-line) {
+  border-left: 2px solid var(--timeline-measure, #666);
+}
+
+:deep(.piano-measure-line.signature-change) {
+  border-left: 3px solid var(--timeline-signature, #d63384);
+  box-shadow: 2px 0 4px var(--timeline-signature-shadow, rgba(214, 51, 132, 0.3));
+}
+
+:deep(.piano-beat-line) {
+  border-left: 1px solid var(--piano-beat-line, #ccc);
+}
+
+.notes-layer {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.notes-layer > * {
+  pointer-events: auto;
+}
+
+.debug-info {
+  font-family: monospace;
+  font-size: 12px;
+  max-width: 400px;
+  border-radius: 4px;
+}
+
+.lasso-rectangle {
+  position: fixed;
+  border: 2px dashed #2196F3;
+  background: rgba(33, 150, 243, 0.1);
+  pointer-events: none;
+  z-index: 1000;
+  border-radius: 2px;
+}
+
+.selection-info {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: rgba(33, 150, 243, 0.9);
+  color: white;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: bold;
+  z-index: 1001;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+
+.clear-selection-btn {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  padding: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: background-color 0.2s;
+}
+
+.clear-selection-btn:hover {
+  background: rgba(255,255,255,0.2);
+}
+
+.keyboard-shortcuts {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  background: rgba(0,0,0,0.7);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  z-index: 1001;
+  max-width: 300px;
+}
+
+.piano-grid.lasso-active {
+  cursor: crosshair;
+}
+</style>
