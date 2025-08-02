@@ -4,7 +4,20 @@ import { ref, computed } from 'vue'
 
 export const useUIStore = defineStore('ui', () => {
   // Dimensions des panneaux
-  const trackListWidth = ref(300)
+  const trackInfoPanelWidth = ref(200) // Largeur fixe de TrackInfo
+  const trackListTotalWidth = ref(300) // Largeur totale de TrackList (contrôlée par le splitter)
+  
+  // Largeur calculée de la colonne TrackInstrument
+  const trackInstrumentWidth = computed(() => {
+    if (showTrackInfo.value) {
+      // Si TrackInfo est visible, TrackInstrument = total - TrackInfo
+      return Math.max(200, trackListTotalWidth.value - trackInfoPanelWidth.value)
+    } else {
+      // Si TrackInfo est masqué, TrackInstrument prend toute la largeur
+      return trackListTotalWidth.value
+    }
+  })
+
   const pianoKeysWidth = ref(80)
   const midiLanesHeight = ref(150)
 
@@ -21,6 +34,9 @@ export const useUIStore = defineStore('ui', () => {
   const beatNote = ref(4) // 4 = quarter note
   const pixelsPerBeat = computed(() => 96 * horizontalZoom.value)
   const pixelsPerMeasure = computed(() => pixelsPerBeat.value * beatsPerMeasure.value)
+
+  // TRACK INFO
+  const showTrackInfo = ref(false) // Afficher ou masquer les informations de la piste
 
   // SNAP SETTINGS - AJOUT DES PROPRIÉTÉS MANQUANTES
   const snapToGrid = ref(false) // Snap activé/désactivé
@@ -47,8 +63,44 @@ export const useUIStore = defineStore('ui', () => {
   })
 
   // Actions
+
+  // Méthode pour définir la largeur totale de TrackList (utilisée par le splitter)
   const setTrackListWidth = (width) => {
-    trackListWidth.value = width
+    trackListTotalWidth.value = Math.max(300, Math.min(800, width))
+  }
+
+  // Méthode pour définir la largeur du panel d'informations (largeur fixe)
+  const setTrackInfoPanelWidth = (width) => {
+    trackInfoPanelWidth.value = Math.max(250, Math.min(400, width))
+  }
+
+  // Méthode pour basculer l'affichage des informations de piste
+  const toggleTrackInfo = () => {
+    const wasVisible = showTrackInfo.value
+    showTrackInfo.value = !showTrackInfo.value
+    
+    // Si on affiche TrackInfo, on agrandit la largeur totale pour garder TrackInstrument de la même taille
+    if (!wasVisible && showTrackInfo.value) {
+      trackListTotalWidth.value += trackInfoPanelWidth.value
+    }
+    // Si on masque TrackInfo, on réduit la largeur totale
+    else if (wasVisible && !showTrackInfo.value) {
+      trackListTotalWidth.value = Math.max(200, trackListTotalWidth.value - trackInfoPanelWidth.value)
+    }
+    
+    return showTrackInfo.value
+  }
+
+  const setShowTrackInfo = (enabled) => {
+    const wasVisible = showTrackInfo.value
+    showTrackInfo.value = enabled
+    
+    // Même logique que toggleTrackInfo
+    if (!wasVisible && enabled) {
+      trackListTotalWidth.value += trackInfoPanelWidth.value
+    } else if (wasVisible && !enabled) {
+      trackListTotalWidth.value = Math.max(200, trackListTotalWidth.value - trackInfoPanelWidth.value)
+    }
   }
 
   const setPianoKeysWidth = (width) => {
@@ -166,7 +218,9 @@ export const useUIStore = defineStore('ui', () => {
 
   return {
     // État
-    trackListWidth,
+    trackListTotalWidth,
+    trackInfoPanelWidth,
+    trackInstrumentWidth,
     pianoKeysWidth,
     midiLanesHeight,
     horizontalZoom,
@@ -177,6 +231,9 @@ export const useUIStore = defineStore('ui', () => {
     beatNote,
     totalKeys,
     velocityDisplay,
+
+    // TRACK INFO
+    showTrackInfo,
 
     // SNAP STATE
     snapToGrid,
@@ -199,6 +256,11 @@ export const useUIStore = defineStore('ui', () => {
     zoomOut,
     resetZoom,
     setTimeSignature,
+
+    // TRACK INFOS
+    setTrackInfoPanelWidth,
+    toggleTrackInfo,
+    setShowTrackInfo,
 
     // SNAP ACTIONS
     toggleSnapToGrid,

@@ -9,7 +9,7 @@
     <!-- Main Content Area -->
     <div class="main-content">
       <!-- Left Column: Track List -->
-      <div class="left-column" :style="{ width: uiStore.trackListWidth + 'px' }">
+      <div class="left-column" :style="{ width: uiStore.trackListTotalWidth + 'px' }">
         <TrackList />
       </div>
 
@@ -147,7 +147,7 @@ const startResizeTrackList = (e) => {
   e.preventDefault()
   isResizingTrackList = true
   startX = e.clientX
-  startWidth = uiStore.trackListWidth
+  startWidth = uiStore.trackListTotalWidth
   document.body.style.cursor = 'col-resize'
   document.body.style.userSelect = 'none'
   document.addEventListener('mousemove', resizeTrackList)
@@ -158,7 +158,7 @@ const resizeTrackList = (e) => {
   if (!isResizingTrackList) return
   e.preventDefault()
   const deltaX = e.clientX - startX
-  const newWidth = Math.max(200, Math.min(600, startWidth + deltaX))
+  const newWidth = Math.max(300, Math.min(800, startWidth + deltaX))
   uiStore.setTrackListWidth(newWidth)
 }
 
@@ -246,8 +246,9 @@ onUnmounted(() => {
 .left-column {
   background: var(--left-column-bg, #f5f5f5);
   border-right: 1px solid var(--border-color, #ddd);
-  min-width: 200px;
-  max-width: 600px;
+  min-width: 300px;
+  max-width: 800px;
+  flex-shrink: 0;
 }
 
 .vertical-splitter {

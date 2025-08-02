@@ -33,12 +33,6 @@
           </el-sub-menu>
         </el-sub-menu>
       </el-sub-menu>
-      <el-menu-item index="2">Édition</el-menu-item>
-      <el-menu-item index="3">Affichage</el-menu-item>
-      <el-menu-item index="4">Piste</el-menu-item>
-      <el-menu-item index="5">MIDI</el-menu-item>
-      <el-menu-item index="6">Fenêtre</el-menu-item>
-      <el-menu-item index="7">Aide</el-menu-item>
     </el-menu>
 
     <!-- Input file caché pour sélectionner le fichier MIDI -->
