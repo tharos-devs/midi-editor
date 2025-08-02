@@ -1,5 +1,9 @@
 <template>
-  <div class="track-instrument" :class="{ active: isSelected, expanded: showExtendedControls }">
+  <div 
+    class="track-instrument" 
+    :class="{ active: isSelected, expanded: showExtendedControls }"
+    :style="{ minHeight: `${trackHeight}px` }"
+  >
     <!-- Bande de couleur cliquable -->
     <div 
       class="color-band" 
@@ -171,6 +175,10 @@ const props = defineProps({
   track: {
     type: Object,
     required: true
+  },
+  height: {
+    type: Number,
+    default: 48 // Hauteur par défaut
   }
 })
 
@@ -206,6 +214,10 @@ const colorPresets = [
 
 // Computed
 const isSelected = computed(() => midiStore.selectedTrack === props.track.id)
+const trackHeight = computed(() => {
+  // Hauteur de base + espace supplémentaire si les contrôles étendus sont ouverts
+  return showExtendedControls.value ? props.height + 32 : props.height
+})
 
 // Initialisation
 onMounted(async () => {
@@ -349,7 +361,7 @@ function toggleSolo() {
   overflow: hidden;
   transition: all 0.2s ease;
   cursor: pointer;
-  min-height: 48px;
+  /* Supprimé min-height fixe, maintenant géré par :style */
 }
 
 .track-instrument:hover {
@@ -365,7 +377,6 @@ function toggleSolo() {
 
 .track-instrument.expanded {
   cursor: default;
-  min-height: 80px;
 }
 
 .color-band {
@@ -384,6 +395,7 @@ function toggleSolo() {
   display: flex;
   flex-direction: column;
   padding: 8px 12px;
+  justify-content: center; /* Centre le contenu verticalement */
 }
 
 .track-header {

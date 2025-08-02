@@ -1,6 +1,6 @@
-// stores/midi.js - Version corrigée avec gestion des changements de tempo
+// stores/midi.js - CORRECTIONS POUR LES CONTROL CHANGES RÉACTIFS
 import { defineStore } from 'pinia'
-import { ref, computed, markRaw } from 'vue'
+import { ref, computed, markRaw, nextTick } from 'vue'
 import { Midi } from '@tonejs/midi'
 
 export const useMidiStore = defineStore('midi', () => {
@@ -15,19 +15,33 @@ export const useMidiStore = defineStore('midi', () => {
   const selectedTrack = ref(null)
   const selectedNote = ref(null)
 
+  // CORRECTION 1: Ajouter un timestamp de dernière modification pour forcer la réactivité
+  const lastModified = ref(Date.now())
+  const notesVersion = ref(0)
+  const tracksVersion = ref(0)
+  const ccVersion = ref(0) // NOUVEAU : Version pour les CC
+
   // Données Tone.js
   const toneMidi = ref(null)
   const isLoaded = ref(false)
   const filename = ref('')
 
-  // === NOUVELLES FONCTIONS DE CONVERSION PRÉCISES ===
+  // CORRECTION 2: Fonction pour forcer la mise à jour réactive
+  function triggerReactivity() {
+    lastModified.value = Date.now()
+    notesVersion.value++
+    tracksVersion.value++
+    ccVersion.value++ // NOUVEAU : Incrémenter la version CC
+    
+    // Forcer Vue à détecter le changement
+    notes.value = [...notes.value]
+    tracks.value = [...tracks.value]
+    midiCC.value = [...midiCC.value] // NOUVEAU : Forcer la réactivité des CC
+  }
 
-  /**
-   * Convertit des ticks en temps en tenant compte des changements de tempo
-   */
+  // === FONCTIONS DE CONVERSION PRÉCISES (inchangées) ===
   function ticksToTimeAccurate(ticks) {
     if (!isLoaded.value || tempoEvents.value.length === 0) {
-      // Fallback avec tempo fixe
       const ppq = midiInfo.value.ppq || 480
       const tempo = midiInfo.value.tempo || 120
       return (ticks / ppq) * (60 / tempo)
@@ -38,17 +52,14 @@ export const useMidiStore = defineStore('midi', () => {
     let currentTempo = midiInfo.value.tempo || 120
     const ppq = midiInfo.value.ppq || 480
 
-    // Parcourir tous les événements de tempo jusqu'aux ticks demandés
     for (const tempoEvent of tempoEvents.value) {
       const eventTicks = tempoEvent.ticks || 0
 
       if (eventTicks > ticks) {
-        // L'événement de tempo est après nos ticks, calculer avec le tempo actuel
         const ticksDiff = ticks - currentTicks
         const timeDiff = (ticksDiff / ppq) * (60 / currentTempo)
         return currentTime + timeDiff
       } else {
-        // Calculer le temps jusqu'à cet événement de tempo
         const ticksDiff = eventTicks - currentTicks
         const timeDiff = (ticksDiff / ppq) * (60 / currentTempo)
         currentTime += timeDiff
@@ -57,18 +68,13 @@ export const useMidiStore = defineStore('midi', () => {
       }
     }
 
-    // Calculer le reste avec le dernier tempo
     const remainingTicks = ticks - currentTicks
     const remainingTime = (remainingTicks / ppq) * (60 / currentTempo)
     return currentTime + remainingTime
   }
 
-  /**
-   * Convertit du temps en ticks en tenant compte des changements de tempo
-   */
   function timeToTicksAccurate(time) {
     if (!isLoaded.value || tempoEvents.value.length === 0) {
-      // Fallback avec tempo fixe
       const ppq = midiInfo.value.ppq || 480
       const tempo = midiInfo.value.tempo || 120
       return (time * tempo * ppq) / 60
@@ -79,17 +85,14 @@ export const useMidiStore = defineStore('midi', () => {
     let currentTempo = midiInfo.value.tempo || 120
     const ppq = midiInfo.value.ppq || 480
 
-    // Parcourir tous les événements de tempo jusqu'au temps demandé
     for (const tempoEvent of tempoEvents.value) {
       const eventTime = tempoEvent.time || 0
 
       if (eventTime > time) {
-        // L'événement de tempo est après notre temps, calculer avec le tempo actuel
         const timeDiff = time - currentTime
         const ticksDiff = (timeDiff * currentTempo * ppq) / 60
         return currentTicks + ticksDiff
       } else {
-        // Calculer les ticks jusqu'à cet événement de tempo
         const timeDiff = eventTime - currentTime
         const ticksDiff = (timeDiff * currentTempo * ppq) / 60
         currentTicks += ticksDiff
@@ -98,15 +101,11 @@ export const useMidiStore = defineStore('midi', () => {
       }
     }
 
-    // Calculer le reste avec le dernier tempo
     const remainingTime = time - currentTime
     const remainingTicks = (remainingTime * currentTempo * ppq) / 60
     return currentTicks + remainingTicks
   }
 
-  /**
-   * Obtient le tempo à un moment donné (en secondes)
-   */
   function getTempoAtTime(time) {
     if (!isLoaded.value || tempoEvents.value.length === 0) {
       return midiInfo.value.tempo || 120
@@ -125,9 +124,6 @@ export const useMidiStore = defineStore('midi', () => {
     return currentTempo
   }
 
-  /**
-   * Obtient le tempo à un moment donné (en ticks)
-   */
   function getTempoAtTicks(ticks) {
     if (!isLoaded.value || tempoEvents.value.length === 0) {
       return midiInfo.value.tempo || 120
@@ -146,35 +142,29 @@ export const useMidiStore = defineStore('midi', () => {
     return currentTempo
   }
 
-  const updateMultipleNotes = (noteUpdatesMap) => {
-    // noteUpdatesMap est une Map où:
-    // - clé = noteId 
-    // - valeur = objet avec les propriétés à mettre à jour (ex: { velocity: 0.5 })
-
+  // CORRECTION 3: Améliorer updateMultipleNotes pour la réactivité
+  const updateMultipleNotes = async (noteUpdatesMap) => {
     if (!noteUpdatesMap || noteUpdatesMap.size === 0) return
 
-    // Sauvegarder l'état avant modification pour l'undo/redo
-    // Note: cette fonction n'existe pas encore, c'est juste une référence future
-    // if (typeof saveStateForUndo === 'function') {
-    //   saveStateForUndo()
-    // }
-
-    // Grouper toutes les modifications et les appliquer d'un coup
     const updatedNotes = []
+    let hasChanges = false
 
     for (const [noteId, updates] of noteUpdatesMap) {
       const noteIndex = notes.value.findIndex(note => note.id === noteId)
       if (noteIndex !== -1) {
+        const oldNote = notes.value[noteIndex]
+        
         // Créer une nouvelle note avec les mises à jour
         const updatedNote = {
-          ...notes.value[noteIndex],
+          ...oldNote,
           ...updates,
           lastModified: Date.now()
         }
 
-        // Remplacer la note dans le tableau
+        // Remplacer la note dans le tableau principal
         notes.value[noteIndex] = updatedNote
         updatedNotes.push(updatedNote)
+        hasChanges = true
 
         // Mettre à jour aussi dans la piste correspondante
         const track = tracks.value.find(t => t.id === updatedNote.trackId)
@@ -187,39 +177,28 @@ export const useMidiStore = defineStore('midi', () => {
       }
     }
 
-    // Émettre un seul événement pour toutes les mises à jour
-    if (updatedNotes.length > 0) {
-      // Déclencher les réactions Vue en une seule fois
-      notes.value = [...notes.value]
-
-      // Émettre les événements nécessaires
-      // Note: cette fonction n'existe pas encore, c'est juste une référence future
-      // if (typeof onNotesUpdated === 'function') {
-      //   onNotesUpdated(updatedNotes)
-      // }
+    if (hasChanges) {
+      // CORRECTION 4: Forcer la réactivité après les modifications
+      triggerReactivity()
+      
+      // Attendre le prochain tick pour que Vue traite les changements
+      await nextTick()
     }
 
     return updatedNotes.length
   }
 
-  // Fonction principale de chargement
+  // Fonction principale de chargement (inchangée)
   async function loadMidiFile(arrayBuffer, name = '') {
     try {
-      // Réinitialiser l'état
       resetStore()
 
-      // Charger avec Tone.js et marquer comme non-réactif
       const midiData = new Midi(arrayBuffer)
       toneMidi.value = markRaw(midiData)
       filename.value = name
 
-      // Extraire les informations du fichier
       extractMidiInfo()
-
-      // Extraire les événements de contrôle AVANT les pistes pour avoir les tempos
       extractControlEvents()
-
-      // Extraire les pistes et notes avec les conversions correctes
       extractTracks()
 
       isLoaded.value = true
@@ -237,7 +216,7 @@ export const useMidiStore = defineStore('midi', () => {
     }
   }
 
-  // Extraction des informations générales du fichier
+  // Extraction des informations générales du fichier (inchangée)
   function extractMidiInfo() {
     if (!toneMidi.value) return
 
@@ -264,14 +243,13 @@ export const useMidiStore = defineStore('midi', () => {
     }
   }
 
-  // Extraction des événements de contrôle globaux (doit être appelé AVANT extractTracks)
+  // Extraction des événements de contrôle globaux (inchangée)
   function extractControlEvents() {
     if (!toneMidi.value) return
 
     const midi = toneMidi.value
     const header = midi.header
 
-    // Événements de tempo - CRUCIAL pour les conversions précises
     const tempos = header.tempos || []
     tempoEvents.value = tempos
       .map((tempo, index) => ({
@@ -280,9 +258,8 @@ export const useMidiStore = defineStore('midi', () => {
         time: tempo.time,
         ticks: tempo.ticks
       }))
-      .sort((a, b) => a.time - b.time) // Trier par temps
+      .sort((a, b) => a.time - b.time)
 
-    // Ajouter un tempo par défaut si aucun événement
     if (tempoEvents.value.length === 0) {
       tempoEvents.value.push({
         id: 'tempo-default',
@@ -292,14 +269,12 @@ export const useMidiStore = defineStore('midi', () => {
       })
     }
 
-    // Extraction des signatures rythmiques (code existant simplifié)
     const allTimeSignatures = []
 
     if (header.timeSignatures && header.timeSignatures.length > 0) {
       allTimeSignatures.push(...header.timeSignatures)
     }
 
-    // Nettoyer et standardiser
     const processedSignatures = allTimeSignatures.map((ts, index) => {
       let numerator = 4, denominator = 4, time = 0, ticks = 0
 
@@ -320,7 +295,6 @@ export const useMidiStore = defineStore('midi', () => {
       }
     })
 
-    // Si aucune signature trouvée, ajouter une signature par défaut
     if (processedSignatures.length === 0) {
       processedSignatures.push({
         id: 'timesig-default',
@@ -333,7 +307,6 @@ export const useMidiStore = defineStore('midi', () => {
 
     timeSignatureEvents.value = processedSignatures.sort((a, b) => a.time - b.time)
 
-    // Signatures de clé
     const keySignatures = header.keySignatures || []
     keySignatureEvents.value = keySignatures.map((ks, index) => ({
       id: `keysig-${index}`,
@@ -344,13 +317,14 @@ export const useMidiStore = defineStore('midi', () => {
     }))
   }
 
-  // Extraction des pistes et notes avec conversions précises
+  // CORRECTION MAJEURE : Extraction des pistes avec meilleur traitement des CC
   function extractTracks() {
     if (!toneMidi.value) return
 
     const midi = toneMidi.value
     const extractedTracks = []
     const allNotes = []
+    const allCC = [] // NOUVEAU : Tableau pour tous les CC
 
     midi.tracks.forEach((track, trackIndex) => {
       const trackData = {
@@ -362,24 +336,23 @@ export const useMidiStore = defineStore('midi', () => {
           number: track.instrument.number || 0
         } : { name: 'Piano', number: 0 },
         notes: [],
-        controlChanges: {},
+        controlChanges: {}, // CORRECTION : S'assurer que c'est toujours un objet
         pitchBends: [],
         volume: 100,
         pan: 64,
-        bank: 0, // AJOUT
-        midiOutput: 'default', // AJOUT
+        bank: 0,
+        midiOutput: 'default',
         muted: false,
         solo: false,
         color: getTrackColor(trackIndex)
       }
 
-      // Extraire les notes avec conversions précises
+      // Traitement des notes
       if (track.notes && track.notes.length > 0) {
         track.notes.forEach((note, noteIndex) => {
           const noteTicks = note.ticks || 0
           const noteDurationTicks = note.durationTicks || 0
 
-          // Utiliser nos fonctions de conversion précises
           const preciseTime = ticksToTimeAccurate(noteTicks)
           const preciseDuration = ticksToTimeAccurate(noteTicks + noteDurationTicks) - preciseTime
 
@@ -391,16 +364,11 @@ export const useMidiStore = defineStore('midi', () => {
             pitch: note.pitch || '',
             octave: note.octave || 0,
             velocity: note.velocity || 0,
-
-            // Utiliser nos conversions précises
             duration: preciseDuration,
             durationTicks: note.durationTicks || 0,
             time: preciseTime,
             ticks: note.ticks || 0,
-
             channel: track.channel !== undefined ? track.channel : 0,
-
-            // Informations de tempo au moment de la note
             tempoAtStart: getTempoAtTicks(noteTicks)
           }
 
@@ -409,55 +377,84 @@ export const useMidiStore = defineStore('midi', () => {
         })
       }
 
-      // Extraire les control changes (inchangé)
-      if (track.controlChanges) {
+      // Traitement amélioré des Control Changes
+      let trackCCCount = 0
+      
+      if (track.controlChanges && typeof track.controlChanges === 'object') {
+        // S'assurer que trackData.controlChanges est initialisé
+        trackData.controlChanges = {}
+        
         Object.entries(track.controlChanges).forEach(([ccNumber, ccEvents]) => {
-          if (ccEvents && ccEvents.length > 0) {
-            trackData.controlChanges[ccNumber] = ccEvents.map((cc, index) => ({
-              id: `cc-${trackIndex}-${ccNumber}-${index}`,
-              trackId: trackIndex,
-              number: parseInt(ccNumber),
-              value: cc.value || 0,
-              time: cc.time || 0,
-              ticks: cc.ticks || 0
-            }))
+          const ccNum = parseInt(ccNumber)
+         
+          if (Array.isArray(ccEvents) && ccEvents.length > 0) {
+            // Traitement des événements CC pour cette piste
+            const processedCCEvents = ccEvents.map((cc, ccIndex) => {
+              const ccTime = cc.time || 0
+              const ccTicks = cc.ticks || 0
+              const ccValue = Math.max(0, Math.min(127, Math.round((cc.value || 0) * 127)))
+
+              const ccEventData = {
+                id: `cc-${trackIndex}-${ccNum}-${ccIndex}`,
+                trackId: trackIndex,
+                number: ccNum,
+                value: ccValue,
+                time: ccTime,
+                ticks: ccTicks,
+                lastModified: Date.now()
+              }
+
+              return ccEventData
+            })
+            
+            // Assigner les CC traités à la piste
+            trackData.controlChanges[ccNum] = processedCCEvents
+          } else {
+            // S'assurer qu'il y a au moins un tableau vide
+            trackData.controlChanges[ccNum] = []
           }
         })
+      } else {
+        // S'assurer que controlChanges est toujours un objet, même vide
+        trackData.controlChanges = {}
       }
 
-      // Extraire les pitch bends (inchangé)
+      // Traitement des Pitch Bends avec améliorations
       if (track.pitchBends && track.pitchBends.length > 0) {
         trackData.pitchBends = track.pitchBends.map((pb, index) => ({
           id: `pb-${trackIndex}-${index}`,
           trackId: trackIndex,
           value: pb.value || 0,
           time: pb.time || 0,
-          ticks: pb.ticks || 0
+          ticks: pb.ticks || 0,
+          lastModified: Date.now()
         }))
+      } else {
+        trackData.pitchBends = []
       }
 
       extractedTracks.push(trackData)
     })
 
+    // Mise à jour des données du store
     tracks.value = extractedTracks
     notes.value = allNotes
+    midiCC.value = allCC.sort((a, b) => a.time - b.time) // CORRECTION : Trier par temps
 
-    // Sélectionner la première piste par défaut
     if (tracks.value.length > 0) {
       selectedTrack.value = tracks.value[0].id
     }
 
-    // Messages CC globaux
-    const allCC = []
+    // Debug détaillé des CC par piste
     tracks.value.forEach(track => {
-      Object.values(track.controlChanges).forEach(ccArray => {
-        allCC.push(...ccArray)
-      })
+      const ccControllers = Object.keys(track.controlChanges || {}).length
+      const ccEvents = Object.values(track.controlChanges || {}).reduce((sum, ccArray) => sum + ccArray.length, 0)
     })
-    midiCC.value = allCC.sort((a, b) => a.time - b.time)
+
+    // Forcer la réactivité après l'extraction
+    triggerReactivity()
   }
 
-  // Utilitaire pour les couleurs de pistes
   function getTrackColor(index) {
     const colors = [
       '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7',
@@ -466,7 +463,6 @@ export const useMidiStore = defineStore('midi', () => {
     return colors[index % colors.length]
   }
 
-  // Réinitialisation du store
   function resetStore() {
     notes.value = []
     tracks.value = []
@@ -480,6 +476,12 @@ export const useMidiStore = defineStore('midi', () => {
     toneMidi.value = null
     isLoaded.value = false
     filename.value = ''
+    
+    // CORRECTION 5: Réinitialiser les compteurs de version
+    lastModified.value = Date.now()
+    notesVersion.value = 0
+    tracksVersion.value = 0
+    ccVersion.value = 0 // NOUVEAU : Réinitialiser la version CC
   }
 
   // Actions de sélection (inchangées)
@@ -506,6 +508,7 @@ export const useMidiStore = defineStore('midi', () => {
     const track = tracks.value.find(t => t.id === trackId)
     if (track) {
       track.muted = !track.muted
+      triggerReactivity()
     }
   }
 
@@ -513,6 +516,7 @@ export const useMidiStore = defineStore('midi', () => {
     const track = tracks.value.find(t => t.id === trackId)
     if (track) {
       track.solo = !track.solo
+      triggerReactivity()
     }
   }
 
@@ -520,10 +524,148 @@ export const useMidiStore = defineStore('midi', () => {
     const track = tracks.value.find(t => t.id === trackId)
     if (track) {
       track.volume = Math.max(0, Math.min(127, volume))
+      triggerReactivity()
     }
   }
 
-  // Getters computed (inchangés mais avec les nouvelles fonctions de conversion)
+  // Gestion des Control Changes
+  async function addControlChange(trackId, ccNumber, time, value) {
+
+    const track = tracks.value.find(t => t.id === trackId)
+    if (!track) {
+      return false
+    }
+
+    // S'assurer que controlChanges existe
+    if (!track.controlChanges) {
+      track.controlChanges = {}
+    }
+
+    // S'assurer que le tableau pour ce CC existe
+    if (!track.controlChanges[ccNumber]) {
+      track.controlChanges[ccNumber] = []
+    }
+
+    const ccId = `cc-${trackId}-${ccNumber}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+    const ticks = timeToTicksAccurate(time)
+
+    const newCC = {
+      id: ccId,
+      trackId: trackId,
+      number: parseInt(ccNumber),
+      value: Math.max(0, Math.min(127, parseInt(value))),
+      time: time,
+      ticks: ticks,
+      lastModified: Date.now()
+    }
+
+    // Ajouter à la piste
+    track.controlChanges[ccNumber].push(newCC)
+    track.controlChanges[ccNumber].sort((a, b) => a.time - b.time)
+
+    // Ajouter au tableau global
+    midiCC.value.push(newCC)
+    midiCC.value.sort((a, b) => a.time - b.time)
+
+    // Forcer la réactivité
+    triggerReactivity()
+    await nextTick()
+
+    return ccId
+  }
+
+  async function updateControlChange(ccId, updates) {
+    // Trouver dans le tableau global
+    const globalCCIndex = midiCC.value.findIndex(cc => cc.id === ccId)
+    if (globalCCIndex === -1) {
+      return false
+    }
+
+    const oldCC = midiCC.value[globalCCIndex]
+    const updatedCC = { 
+      ...oldCC, 
+      ...updates, 
+      lastModified: Date.now(),
+      // S'assurer que les valeurs critiques restent dans les limites
+      value: updates.value !== undefined ? Math.max(0, Math.min(127, parseInt(updates.value))) : oldCC.value,
+      number: updates.number !== undefined ? parseInt(updates.number) : oldCC.number
+    }
+
+    // Mettre à jour dans le tableau global
+    midiCC.value[globalCCIndex] = updatedCC
+
+    // Mettre à jour dans la piste correspondante
+    const track = tracks.value.find(t => t.id === oldCC.trackId)
+    if (track && track.controlChanges && track.controlChanges[oldCC.number]) {
+      const trackCCIndex = track.controlChanges[oldCC.number].findIndex(cc => cc.id === ccId)
+      if (trackCCIndex !== -1) {
+        track.controlChanges[oldCC.number][trackCCIndex] = updatedCC
+        
+        // Si le numéro de CC a changé, déplacer vers le bon tableau
+        if (updates.number !== undefined && updates.number !== oldCC.number) {
+          // Supprimer de l'ancien
+          track.controlChanges[oldCC.number].splice(trackCCIndex, 1)
+          
+          // Ajouter au nouveau
+          if (!track.controlChanges[updates.number]) {
+            track.controlChanges[updates.number] = []
+          }
+          track.controlChanges[updates.number].push(updatedCC)
+          track.controlChanges[updates.number].sort((a, b) => a.time - b.time)
+        }
+      }
+    }
+
+    // Forcer la réactivité
+    triggerReactivity()
+    await nextTick()
+
+    return true
+  }
+
+  async function deleteControlChange(ccId) {
+    // Trouver dans le tableau global
+    const globalCCIndex = midiCC.value.findIndex(cc => cc.id === ccId)
+    if (globalCCIndex === -1) {
+      console.error(`❌ CC ${ccId} not found`)
+      return false
+    }
+
+    const ccToDelete = midiCC.value[globalCCIndex]
+    
+    // Supprimer du tableau global
+    midiCC.value.splice(globalCCIndex, 1)
+
+    // Supprimer de la piste correspondante
+    const track = tracks.value.find(t => t.id === ccToDelete.trackId)
+    if (track && track.controlChanges && track.controlChanges[ccToDelete.number]) {
+      const trackCCIndex = track.controlChanges[ccToDelete.number].findIndex(cc => cc.id === ccId)
+      if (trackCCIndex !== -1) {
+        track.controlChanges[ccToDelete.number].splice(trackCCIndex, 1)
+      }
+    }
+
+    // Forcer la réactivité
+    triggerReactivity()
+    await nextTick()
+
+    return true
+  }
+
+  async function updateMultipleControlChanges(ccUpdatesMap) {
+    if (!ccUpdatesMap || ccUpdatesMap.size === 0) return 0
+
+    let updatedCount = 0
+    for (const [ccId, updates] of ccUpdatesMap) {
+      if (await updateControlChange(ccId, updates)) {
+        updatedCount++
+      }
+    }
+
+    return updatedCount
+  }
+
+  // Getters computed (inchangés mais avec ajouts pour les CC)
   const getTrackById = computed(() => (id) => {
     return tracks.value.find(track => track.id === id)
   })
@@ -554,11 +696,33 @@ export const useMidiStore = defineStore('midi', () => {
     )
   })
 
+  // NOUVEAUX GETTERS pour les Control Changes
+  const getControlChangeById = computed(() => (id) => {
+    return midiCC.value.find(cc => cc.id === id)
+  })
+
+  const getTrackControlChanges = computed(() => (trackId) => {
+    return midiCC.value.filter(cc => cc.trackId === trackId)
+  })
+
+  const getControlChangesInTimeRange = computed(() => (startTime, endTime) => {
+    return midiCC.value.filter(cc =>
+      cc.time >= startTime && cc.time <= endTime
+    )
+  })
+
+  const getControlChangesByNumber = computed(() => (ccNumber) => {
+    return midiCC.value.filter(cc => cc.number === ccNumber)
+  })
+
+  const getTrackControlChangesByNumber = computed(() => (trackId, ccNumber) => {
+    return midiCC.value.filter(cc => cc.trackId === trackId && cc.number === ccNumber)
+  })
+
   const getTotalDuration = computed(() => {
     return midiInfo.value.duration || 0
   })
 
-  // Nouveau getter pour le tempo actuel (qui peut changer)
   const getCurrentTempo = computed(() => {
     return midiInfo.value.tempo || 120
   })
@@ -569,6 +733,10 @@ export const useMidiStore = defineStore('midi', () => {
 
   const getNoteCount = computed(() => {
     return notes.value.length
+  })
+
+  const getControlChangeCount = computed(() => {
+    return midiCC.value.length
   })
 
   const getMutedTracks = computed(() => {
@@ -584,42 +752,52 @@ export const useMidiStore = defineStore('midi', () => {
     return track ? track.controlChanges : {}
   })
 
-  // Export pour utilisation externe
   function exportToToneMidi() {
     return toneMidi.value
   }
 
-  // Actions de modification des notes
-  function updateNote(noteId, updates) {
-    // Mettre à jour dans le tableau global des notes
+  // CORRECTION 6: Améliorer updateNote pour la réactivité
+  async function updateNote(noteId, updates) {
+
     const noteIndex = notes.value.findIndex(n => n.id === noteId)
     if (noteIndex !== -1) {
       const oldNote = notes.value[noteIndex]
-      notes.value[noteIndex] = { ...oldNote, ...updates }
+      const updatedNote = { 
+        ...oldNote, 
+        ...updates, 
+        lastModified: Date.now() 
+      }
+      
+      // Mettre à jour dans le tableau global
+      notes.value[noteIndex] = updatedNote
 
-      // Mettre à jour aussi dans la piste correspondante
+      // Mettre à jour dans la piste correspondante
       const track = tracks.value.find(t => t.id === oldNote.trackId)
       if (track) {
         const trackNoteIndex = track.notes.findIndex(n => n.id === noteId)
         if (trackNoteIndex !== -1) {
-          track.notes[trackNoteIndex] = { ...track.notes[trackNoteIndex], ...updates }
+          track.notes[trackNoteIndex] = updatedNote
         }
       }
 
+      // Forcer la réactivité
+      triggerReactivity()
+      
+      // Attendre le prochain tick
+      await nextTick()
+      
       return true
     }
 
     return false
   }
 
-  function addNote(trackId, noteData) {
+  async function addNote(trackId, noteData) {
     const track = tracks.value.find(t => t.id === trackId)
     if (!track) {
-      // console.warn(`Piste ${trackId} non trouvée`)
       return false
     }
 
-    // Générer un ID unique pour la nouvelle note
     const noteId = `${trackId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
 
     const newNote = {
@@ -636,26 +814,26 @@ export const useMidiStore = defineStore('midi', () => {
       ticks: noteData.ticks || 0,
       channel: track.channel || 0,
       tempoAtStart: getTempoAtTicks(noteData.ticks || 0),
+      lastModified: Date.now(),
       ...noteData
     }
 
-    // Ajouter à la piste
     track.notes.push(newNote)
-
-    // Ajouter au tableau global
     notes.value.push(newNote)
+
+    // Forcer la réactivité
+    triggerReactivity()
+    await nextTick()
 
     return noteId
   }
 
-  function deleteNote(noteId) {
-    // Supprimer du tableau global
+  async function deleteNote(noteId) {
     const noteIndex = notes.value.findIndex(n => n.id === noteId)
     if (noteIndex !== -1) {
       const note = notes.value[noteIndex]
       notes.value.splice(noteIndex, 1)
 
-      // Supprimer de la piste correspondante
       const track = tracks.value.find(t => t.id === note.trackId)
       if (track) {
         const trackNoteIndex = track.notes.findIndex(n => n.id === noteId)
@@ -664,10 +842,13 @@ export const useMidiStore = defineStore('midi', () => {
         }
       }
 
-      // Désélectionner si c'était la note sélectionnée
       if (selectedNote.value === noteId) {
         selectedNote.value = null
       }
+
+      // Forcer la réactivité
+      triggerReactivity()
+      await nextTick()
 
       return true
     }
@@ -675,19 +856,19 @@ export const useMidiStore = defineStore('midi', () => {
     return false
   }
 
-  function deleteNotes(noteIds) {
+  async function deleteNotes(noteIds) {
     let deletedCount = 0
 
-    noteIds.forEach(noteId => {
-      if (deleteNote(noteId)) {
+    for (const noteId of noteIds) {
+      if (await deleteNote(noteId)) {
         deletedCount++
       }
-    })
+    }
 
     return deletedCount
   }
 
-  function duplicateNote(noteId, timeOffset = 1) {
+  async function duplicateNote(noteId, timeOffset = 1) {
     const originalNote = notes.value.find(n => n.id === noteId)
     if (!originalNote) {
       return null
@@ -699,25 +880,23 @@ export const useMidiStore = defineStore('midi', () => {
       ticks: originalNote.ticks + timeToTicksAccurate(timeOffset)
     }
 
-    delete duplicatedNoteData.id // L'ID sera généré automatiquement
+    delete duplicatedNoteData.id
 
-    return addNote(originalNote.trackId, duplicatedNoteData)
+    return await addNote(originalNote.trackId, duplicatedNoteData)
   }
 
-  // Fonction utilitaire pour mettre à jour plusieurs notes en une fois
-  function updateNotes(noteIds, updates) {
+  async function updateNotes(noteIds, updates) {
     let updatedCount = 0
 
-    noteIds.forEach(noteId => {
-      if (updateNote(noteId, updates)) {
+    for (const noteId of noteIds) {
+      if (await updateNote(noteId, updates)) {
         updatedCount++
       }
-    })
+    }
 
     return updatedCount
   }
 
-  // Fonction pour récupérer une note mise à jour (utile pour la réactivité)
   function getUpdatedNote(noteId) {
     return notes.value.find(n => n.id === noteId)
   }
@@ -726,6 +905,7 @@ export const useMidiStore = defineStore('midi', () => {
     const track = tracks.value.find(t => t.id === trackId)
     if (track) {
       track.channel = Math.max(0, Math.min(15, channel))
+      triggerReactivity()
       return true
     }
     return false
@@ -735,6 +915,7 @@ export const useMidiStore = defineStore('midi', () => {
     const track = tracks.value.find(t => t.id === trackId)
     if (track) {
       track.midiOutput = outputId
+      triggerReactivity()
       return true
     }
     return false
@@ -747,6 +928,7 @@ export const useMidiStore = defineStore('midi', () => {
         track.instrument = { name: 'Piano', number: 0 }
       }
       track.instrument.number = Math.max(0, Math.min(127, program))
+      triggerReactivity()
       return true
     }
     return false
@@ -756,6 +938,7 @@ export const useMidiStore = defineStore('midi', () => {
     const track = tracks.value.find(t => t.id === trackId)
     if (track) {
       track.bank = Math.max(0, Math.min(127, bank))
+      triggerReactivity()
       return true
     }
     return false
@@ -765,6 +948,7 @@ export const useMidiStore = defineStore('midi', () => {
     const track = tracks.value.find(t => t.id === trackId)
     if (track) {
       track.pan = Math.max(0, Math.min(127, pan))
+      triggerReactivity()
       return true
     }
     return false
@@ -774,22 +958,22 @@ export const useMidiStore = defineStore('midi', () => {
     const track = tracks.value.find(t => t.id === trackId)
     if (track) {
       track.color = color
+      triggerReactivity()
       return true
     }
     return false
   }  
 
-  // Fonction pour obtenir toutes les pistes avec leurs métadonnées complètes
   function getTracksWithMetadata() {
     return tracks.value.map(track => ({
       ...track,
       noteCount: track.notes.length,
       duration: getTrackDuration(track.id),
-      ccCount: Object.values(track.controlChanges).reduce((total, ccArray) => total + ccArray.length, 0)
+      ccCount: Object.values(track.controlChanges).reduce((total, ccArray) => total + ccArray.length, 0),
+      pbCount: track.pitchBends.length
     }))
   }
 
-  // Fonction pour obtenir la durée d'une piste
   function getTrackDuration(trackId) {
     const trackNotes = getTrackNotes(trackId)
     if (trackNotes.length === 0) return 0
@@ -800,7 +984,6 @@ export const useMidiStore = defineStore('midi', () => {
     }, 0)
   }
 
-  // Fonction pour réorganiser les pistes
   function reorderTrack(trackId, newIndex) {
     const currentIndex = tracks.value.findIndex(t => t.id === trackId)
     if (currentIndex === -1 || currentIndex === newIndex) return false
@@ -808,11 +991,11 @@ export const useMidiStore = defineStore('midi', () => {
     const track = tracks.value.splice(currentIndex, 1)[0]
     tracks.value.splice(newIndex, 0, track)
 
+    triggerReactivity()
     return true
   }
 
-  // Fonction pour dupliquer une piste
-  function duplicateTrack(trackId) {
+  async function duplicateTrack(trackId) {
     const originalTrack = tracks.value.find(t => t.id === trackId)
     if (!originalTrack) return null
 
@@ -822,7 +1005,7 @@ export const useMidiStore = defineStore('midi', () => {
       id: newTrackId,
       name: `${originalTrack.name} (Copie)`,
       notes: [],
-      controlChanges: { ...originalTrack.controlChanges },
+      controlChanges: {},
       pitchBends: [...originalTrack.pitchBends],
       muted: false,
       solo: false
@@ -841,11 +1024,29 @@ export const useMidiStore = defineStore('midi', () => {
       notes.value.push(duplicatedNote)
     })
 
+    // Dupliquer les Control Changes
+    Object.entries(originalTrack.controlChanges || {}).forEach(([ccNumber, ccEvents]) => {
+      duplicatedTrack.controlChanges[ccNumber] = ccEvents.map(cc => {
+        const newCCId = `cc-${newTrackId}-${ccNumber}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+        const duplicatedCC = {
+          ...cc,
+          id: newCCId,
+          trackId: newTrackId
+        }
+        
+        midiCC.value.push(duplicatedCC)
+        return duplicatedCC
+      })
+    })
+
     tracks.value.push(duplicatedTrack)
+    
+    triggerReactivity()
+    await nextTick()
+    
     return newTrackId
   }
 
-  // Fonction pour nettoyer les pistes vides
   function removeEmptyTracks() {
     const emptyTracks = tracks.value.filter(track =>
       track.notes.length === 0 &&
@@ -860,11 +1061,15 @@ export const useMidiStore = defineStore('midi', () => {
       }
     })
 
+    if (emptyTracks.length > 0) {
+      triggerReactivity()
+    }
+
     return emptyTracks.length
   }
 
   return {
-    // État existant...
+    // État
     notes,
     tracks,
     midiInfo,
@@ -877,7 +1082,14 @@ export const useMidiStore = defineStore('midi', () => {
     isLoaded,
     filename,
 
-    // Actions existantes...
+    // CORRECTION 7: Exposer les nouveaux outils de réactivité
+    lastModified,
+    notesVersion,
+    tracksVersion,
+    ccVersion, // NOUVEAU : Version des CC
+    triggerReactivity,
+
+    // Actions existantes
     loadMidiFile,
     resetStore,
     selectTrack,
@@ -888,13 +1100,13 @@ export const useMidiStore = defineStore('midi', () => {
     updateTrackVolume,
     exportToToneMidi,
 
-    // Fonctions de conversion existantes...
+    // Fonctions de conversion
     ticksToTimeAccurate,
     timeToTicksAccurate,
     getTempoAtTime,
     getTempoAtTicks,
 
-    // Actions de modification des notes existantes...
+    // Actions de modification des notes (améliorées)
     updateNote,
     addNote,
     deleteNote,
@@ -902,7 +1114,13 @@ export const useMidiStore = defineStore('midi', () => {
     duplicateNote,
     updateNotes,
     getUpdatedNote,
-    updateMultipleNotes, // FONCTION CORRIGÉE
+    updateMultipleNotes,
+
+    // NOUVELLES FONCTIONS pour les Control Changes
+    addControlChange,
+    updateControlChange,
+    deleteControlChange,
+    updateMultipleControlChanges,
 
     // Fonctions pour les pistes
     updateTrackChannel,
@@ -918,7 +1136,7 @@ export const useMidiStore = defineStore('midi', () => {
     duplicateTrack,
     removeEmptyTracks,
 
-    // Getters existants...
+    // Getters existants
     getTrackById,
     getNoteById,
     getSelectedTrackData,
@@ -931,6 +1149,14 @@ export const useMidiStore = defineStore('midi', () => {
     getNoteCount,
     getMutedTracks,
     getSoloTracks,
-    getControlChangesForTrack
+    getControlChangesForTrack,
+
+    // NOUVEAUX GETTERS pour les Control Changes
+    getControlChangeById,
+    getTrackControlChanges,
+    getControlChangesInTimeRange,
+    getControlChangesByNumber,
+    getTrackControlChangesByNumber,
+    getControlChangeCount   
   }
 })

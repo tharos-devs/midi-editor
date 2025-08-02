@@ -34,10 +34,10 @@
           v-for="track in tracks"
           :key="track.id"
           class="track-instrument-wrapper"
-          :style="{ minHeight: `${trackHeight}px` }"
         >
           <TrackInstrument
             :track="track"
+            :height="trackHeightPx" 
             @channel-changed="onTrackChannelChanged"
             @output-changed="onTrackOutputChanged"
             @track-selected="onTrackSelected"
@@ -64,7 +64,7 @@
 
       <!-- Barre de statut -->
       <TrackStatusBar 
-        v-model="trackSizeValue"
+        v-model="trackSize"
         @track-size-changed="onTrackSizeChanged"
       />
     </div>
@@ -88,39 +88,28 @@ const showTrackInfo = computed(() => {
   return uiStore.showTrackInfo
 })
 
-// État local
-const trackSizeValue = ref(50) // Valeur par défaut pour la taille des pistes
-
 // Computed pour récupérer les données du store
 const tracks = computed(() => midiStore.tracks)
 
-// Computed pour calculer la hauteur des pistes en pixels
-const trackHeight = computed(() => {
-  // Convertir la valeur du slider (0-100) en hauteur (40-120px)
-  const minHeight = 40
-  const maxHeight = 120
-  return Math.round(minHeight + (trackSizeValue.value / 100) * (maxHeight - minHeight))
-})
+const trackSize = ref(50) // Valeur 0-100
+const trackHeightPx = ref(48) // Hauteur en pixels
 
 // Gestionnaires d'événements pour TrackInstrument
 const onTrackChannelChanged = ({ trackId, channel }) => {
-  console.log(`Canal MIDI changé pour la piste ${trackId}: ${channel + 1}`)
   // Logique additionnelle si nécessaire
 }
 
 const onTrackOutputChanged = ({ trackId, outputId }) => {
-  console.log(`Sortie MIDI changée pour la piste ${trackId}: ${outputId}`)
   // Logique additionnelle si nécessaire
 }
 
 const onTrackSelected = (trackId) => {
-  console.log(`Piste sélectionnée: ${trackId}`)
   // Logique additionnelle si nécessaire
 }
 
 const onTrackSizeChanged = (sizeInfo) => {
-  console.log(`Taille des pistes changée: ${sizeInfo.size} (${sizeInfo.heightPx}px)`)
-  // La hauteur est automatiquement mise à jour via le computed trackHeight
+  trackSize.value = sizeInfo.value
+  trackHeightPx.value = sizeInfo.heightPx
 }
 
 // Ajouter une nouvelle piste

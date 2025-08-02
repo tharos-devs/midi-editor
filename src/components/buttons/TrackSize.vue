@@ -13,7 +13,7 @@
           <div
             v-if="showTooltip"
             class="size-tooltip"
-            :style="{ marginBottom: `${tooltipOffset}px` }"
+            :style="{ bottom: `${tooltipOffset}px` }"
           >
             {{ getSizeLabel(sliderValue) }}
           </div>
@@ -28,8 +28,8 @@
             :show-tooltip="false"
             style="height: 120px"
             @input="onSliderInput"
-            @change="onSliderRelease"
-          />
+            
+          /><!--@change="onSliderRelease"-->
         </div>
       </div>
     </transition>
@@ -73,16 +73,22 @@ const sliderRef = ref(null)
 const popupStyle = reactive({
   position: 'fixed',
   left: '0px',
-  bottom: '0px'
+  top: '0px' // Changé de bottom à top
 })
+
+const minHeightValue = ref(50) // Hauteur minimale en pixels
+const maxHeightValue = ref(800) // Hauteur maximale en pixels 
 
 // Computed pour obtenir le label de taille
 const getSizeLabel = (value) => {
+  /*
   if (value <= 20) return 'Très petit'
   if (value <= 40) return 'Petit'
   if (value <= 60) return 'Moyen'
   if (value <= 80) return 'Grand'
   return 'Très grand'
+  */
+ return ''
 }
 
 const toggleSlider = () => {
@@ -101,12 +107,13 @@ const updatePopupPosition = () => {
   const rect = buttonWrapper.value?.getBoundingClientRect()
   if (rect) {
     popupStyle.left = `${rect.left + rect.width / 2 - 20}px`
-    popupStyle.bottom = `${window.innerHeight - rect.top + 8}px`
+    // Positionner le popup au-dessus du bouton avec assez d'espace pour le slider
+    popupStyle.top = `${rect.top - 140 - 8}px` // 140px = hauteur du popup + marge
   }
 }
 
 const onSliderInput = (val) => {
-  showTooltip.value = true
+  // showTooltip.value = true
   updateTooltipOffset(val)
   
   // Émettre les changements
@@ -119,23 +126,20 @@ const onSliderInput = (val) => {
   
   previousValue.value = val
 }
-
+/*
 const onSliderRelease = () => {
   showTooltip.value = false
 }
-
+*/
 const updateTooltipOffset = (val) => {
-  // Calcul de la position verticale du curseur
+  // Calcul de la position verticale du curseur (inversé car on compte depuis le bas)
   const percent = (val - 0) / (100 - 0)
-  tooltipOffset.value = percent * 120 - 10
+  tooltipOffset.value = percent * 120 + 10 // +10 pour décaler un peu
 }
 
 // Convertir la valeur du slider en hauteur en pixels
 const getHeightFromValue = (value) => {
-  // Plage de 40px à 120px
-  const minHeight = 10
-  const maxHeight = 120
-  return Math.round(minHeight + (value / 100) * (maxHeight - minHeight))
+  return Math.round(minHeightValue.value + (value / 100) * (maxHeightValue.value - minHeightValue.value))
 }
 
 const onClickOutside = (event) => {
@@ -189,19 +193,21 @@ watchEffect(() => {
 .slider-popup {
   background: var(--panel-bg);
   opacity: 1;
-  padding: 8px;
   border-radius: 6px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   border: 1px solid var(--border-color);
-  width: 35px
+  width: 35px;
+  height: 140px; /* Hauteur fixe pour contenir le slider */
+  z-index: 99; /* Z-index très élevé */
 }
 
 .slider-wrapper {
   position: relative;
   display: flex;
   align-items: flex-start;
+  height: 100%;
 }
-
+/*
 .size-tooltip {
   position: absolute;
   left: -50px;
@@ -213,6 +219,7 @@ watchEffect(() => {
   border-radius: 4px;
   white-space: nowrap;
   font-weight: 500;
+  z-index: 10000;
 }
 
 .size-tooltip::after {
@@ -224,7 +231,7 @@ watchEffect(() => {
   border: 5px solid transparent;
   border-left-color: var(--menu-active-fg);
 }
-
+*/
 .fade-enter-active,
 .fade-leave-active {
   transition: opacity 0.2s ease;

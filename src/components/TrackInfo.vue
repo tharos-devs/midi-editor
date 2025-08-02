@@ -1,5 +1,5 @@
 <template>
-  <div class="track-info" v-if="selectedTrackInfo">>
+  <div class="track-info" v-if="selectedTrackInfo">
     <div class="track-info-header">
       <h3>Informations de la piste</h3>
     </div>

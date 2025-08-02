@@ -65,7 +65,6 @@ const totalNotes = computed(() => {
 // Gestionnaires d'événements
 const onTrackSizeChanged = (sizeInfo) => {
   trackSize.value = sizeInfo.value
-  emit('update:modelValue', sizeInfo.value)
   emit('track-size-changed', sizeInfo)
 }
 

@@ -76,6 +76,9 @@
 
     <!-- Status Bar -->
     <StatusBar />
+
+    <!-- Transport Controls -->
+    <TransportControls />
   </div>
 </template>
 
@@ -93,6 +96,7 @@ import MidiLanes from './components/MidiLanes.vue'
 import MidiLaneInfos from './components/MidiLaneInfos.vue'
 import StatusBar from './components/StatusBar.vue'
 import TimeSignatureRuler from './components/rulers/TimeSignatureRuler.vue'
+import TransportControls from './components/TransportControls.vue'
 
 const uiStore = useUIStore()
 
