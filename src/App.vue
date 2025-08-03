@@ -237,39 +237,12 @@ onUnmounted(() => {
 
 <style scoped>
 /* Container parent qui limite strictement la zone visible */
-.viewport-container {
-  width: 100vw;
-  height: 100vh;
-  overflow: hidden; /* COUPE tout ce qui dépasse */
-  position: fixed;
-  top: 0;
-  left: 0;
-}
 
 .midi-editor {
-  /* Simuler zoom 70% avec transform */
-  transform: scale(0.70);
-  transform-origin: 0 0; /* Ancrer en haut à gauche */
-  
-  /* Ajuster les dimensions pour compenser le scale */
-  width: 142%; /* 100% / 0.70 ≈ 142% */
-  height: 142vh; /* 100vh / 0.70 ≈ 142vh */
-  
-  /* Layout de base */
+  height: calc(100vh);
   display: flex;
   flex-direction: column;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  
-  /* Éviter les débordements */
-  box-sizing: border-box;
-  overflow: hidden;
-}
-
-/* Body simple */
-html, body {
-  margin: 0;
-  padding: 0;
-  overflow: hidden;
 }
 
 /* ========================================== */
