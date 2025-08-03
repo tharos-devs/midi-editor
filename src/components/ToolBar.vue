@@ -23,7 +23,7 @@
     <div class="tool-group">
       <el-button
         size="small"
-        :type="'default'"
+        :type="'danger'"
         @click="reconnectMidi"
         title="Panic MIDI - Reconnecter les périphériques"
       >
@@ -77,6 +77,10 @@ async function reconnectMidi() {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.tool-group:last-child {
+  margin-left: auto;
 }
 
 .tool-separator {

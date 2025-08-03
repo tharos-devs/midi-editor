@@ -296,6 +296,7 @@ onUnmounted(() => {
 .transport-controls {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 12px;
   padding: 8px 12px;
   background: var(--el-bg-color);

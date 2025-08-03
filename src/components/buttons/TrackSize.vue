@@ -34,7 +34,7 @@ const emit = defineEmits(['update:modelValue', 'size-changed'])
 const sizes = [
   { value: 30, label: 'Compact' },
   { value: 70, label: 'Moyen' },
-  { value: 115, label: 'Étendu' }
+  { value: 100, label: 'Étendu' }
 ]
 
 const currentSizeIndex = ref(0)

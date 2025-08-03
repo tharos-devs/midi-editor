@@ -1,84 +1,86 @@
 <template>
-  <div id="app" class="midi-editor">
-    <!-- Menu Bar -->
-    <MenuBar />
+  <div class="viewport-container">
+    <div class="midi-editor">
+      <!-- Menu Bar -->
+      <MenuBar />
 
-    <!-- Tool Bar -->
-    <ToolBar />
+      <!-- Tool Bar -->
+      <ToolBar />
 
-    <!-- Main Content Area -->
-    <div class="main-content">
-      <!-- Left Column: Track List -->
-      <div class="left-column" :style="{ width: uiStore.trackListTotalWidth + 'px' }">
-        <TrackList />
-      </div>
-
-      <!-- Vertical Splitter -->
-      <div
-        class="vertical-splitter"
-        @mousedown="startResizeTrackList"
-      ></div>
-
-      <!-- Right Column: Editor Area -->
-      <div class="right-column">
-        <!-- Timeline -->
-        <div class="timeline-container">
-          <div class="timeline-spacer" :style="{ width: uiStore.pianoKeysWidth + 'px' }"></div>
-          <div class="timeline-scroll sync-scroll-x">
-            <TimeLine />
-          </div>
-        </div>
-        <!-- TimeSignatureRuler -->
-        <div class="timesignature-container">
-          <div class="timesignature-spacer" :style="{ width: uiStore.pianoKeysWidth + 'px' }"></div>
-          <div class="timesignature-scroll sync-scroll-x">
-            <TimeSignatureRuler />
-          </div>
-        </div>        
-
-        <!-- Piano + Grid Area -->
-        <div class="piano-grid-container">
-          <div class="piano-keys-container sync-scroll-y" ref="pianoKeysContainerRef">
-            <PianoKeys />
-          </div>
-          <div class="piano-grid-scroll sync-scroll-x sync-scroll-y" ref="pianoGridContainerRef">
-            <PianoGrid />
-          </div>
+      <!-- Main Content Area -->
+      <div class="main-content">
+        <!-- Left Column: Track List -->
+        <div class="left-column" :style="{ width: uiStore.trackListTotalWidth + 'px' }">
+          <TrackList />
         </div>
 
-        <!-- Horizontal Splitter -->
+        <!-- Vertical Splitter -->
         <div
-          class="horizontal-splitter"
-          @mousedown="startResizeMidiLanes"
+          class="vertical-splitter"
+          @mousedown="startResizeTrackList"
         ></div>
 
-        <!-- MIDI Lanes -->
-        <div class="midi-lanes-container" :style="{ height: uiStore.midiLanesHeight + 'px' }">
-          <div class="midi-lanes-content">
-            <!-- Spacer gauche -->
-            <div class="midi-lanes-spacer" :style="{ width: uiStore.pianoKeysWidth + 'px' }">
-              <MidiLaneInfos :selected-lane="selectedLane" />
-            </div>
-            
-            <!-- Partie droite avec tabs et contenu -->
-            <div class="midi-lanes-right">
-              <div class="midi-lanes-tabs">
-                <MidiLaneTabs @tab-selected="handleLaneSelection" />
-              </div>
-              <div class="midi-lanes-scroll sync-scroll-x">
-                <MidiLanes :selected-lane="selectedLane" />
-              </div>
+        <!-- Right Column: Editor Area -->
+        <div class="right-column">
+          <!-- Timeline -->
+          <div class="timeline-container">
+            <div class="timeline-spacer" :style="{ width: uiStore.pianoKeysWidth + 'px' }"></div>
+            <div class="timeline-scroll sync-scroll-x">
+              <TimeLine />
             </div>
           </div>
-        </div>       
+          <!-- TimeSignatureRuler -->
+          <div class="timesignature-container">
+            <div class="timesignature-spacer" :style="{ width: uiStore.pianoKeysWidth + 'px' }"></div>
+            <div class="timesignature-scroll sync-scroll-x">
+              <TimeSignatureRuler />
+            </div>
+          </div>        
+
+          <!-- Piano + Grid Area -->
+          <div class="piano-grid-container">
+            <div class="piano-keys-container sync-scroll-y" ref="pianoKeysContainerRef">
+              <PianoKeys />
+            </div>
+            <div class="piano-grid-scroll sync-scroll-x sync-scroll-y" ref="pianoGridContainerRef">
+              <PianoGrid />
+            </div>
+          </div>
+
+          <!-- Horizontal Splitter -->
+          <div
+            class="horizontal-splitter"
+            @mousedown="startResizeMidiLanes"
+          ></div>
+
+          <!-- MIDI Lanes -->
+          <div class="midi-lanes-container" :style="{ height: uiStore.midiLanesHeight + 'px' }">
+            <div class="midi-lanes-content">
+              <!-- Spacer gauche -->
+              <div class="midi-lanes-spacer" :style="{ width: uiStore.pianoKeysWidth + 'px' }">
+                <MidiLaneInfos :selected-lane="selectedLane" />
+              </div>
+              
+              <!-- Partie droite avec tabs et contenu -->
+              <div class="midi-lanes-right">
+                <div class="midi-lanes-tabs">
+                  <MidiLaneTabs @tab-selected="handleLaneSelection" />
+                </div>
+                <div class="midi-lanes-scroll sync-scroll-x">
+                  <MidiLanes :selected-lane="selectedLane" />
+                </div>
+              </div>
+            </div>
+          </div>       
+        </div>
       </div>
+
+      <!-- Status Bar -->
+      <StatusBar />
+
+      <!-- Transport Controls -->
+      <TransportControls />
     </div>
-
-    <!-- Status Bar -->
-    <StatusBar />
-
-    <!-- Transport Controls -->
-    <TransportControls />
   </div>
 </template>
 
@@ -234,12 +236,43 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+/* Container parent qui limite strictement la zone visible */
+.viewport-container {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden; /* COUPE tout ce qui dépasse */
+  position: fixed;
+  top: 0;
+  left: 0;
+}
+
 .midi-editor {
-  height: calc(100vh);
+  /* Simuler zoom 70% avec transform */
+  transform: scale(0.70);
+  transform-origin: 0 0; /* Ancrer en haut à gauche */
+  
+  /* Ajuster les dimensions pour compenser le scale */
+  width: 142%; /* 100% / 0.70 ≈ 142% */
+  height: 142vh; /* 100vh / 0.70 ≈ 142vh */
+  
+  /* Layout de base */
   display: flex;
   flex-direction: column;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  
+  /* Éviter les débordements */
+  box-sizing: border-box;
+  overflow: hidden;
 }
+
+/* Body simple */
+html, body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* ========================================== */
 
 .main-content {
   flex: 1;
@@ -385,4 +418,5 @@ onUnmounted(() => {
   overflow-x: auto;
   overflow-y: hidden;
 }
+
 </style>

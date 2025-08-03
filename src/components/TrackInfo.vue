@@ -70,12 +70,13 @@
           <div class="pan-control">
             <span class="pan-label">G</span>
             <el-slider
-              v-model="selectedTrackInfo.pan"
+              :model-value="selectedTrackInfo.pan"
               :min="0"
               :max="127"
               :show-tooltip="true"
               size="small"
               @input="updateTrackPan"
+              @change="updateTrackPan"
               :format-tooltip="formatPanTooltip"
             />
             <span class="pan-label">D</span>
@@ -131,13 +132,14 @@
             <!-- Slider vertical à droite avec labels alignés -->
             <div class="slider-container">
               <el-slider
-                v-model="selectedTrackInfo.volume"
+                :model-value="selectedTrackInfo.volume"
                 :min="0"
                 :max="127"
                 :show-tooltip="true"
                 vertical
                 height="120px"
                 @input="updateTrackVolume"
+                @change="updateTrackVolume"
               />
               <div class="volume-labels">
                 <span class="label-top">127</span>
@@ -180,7 +182,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { Mute, VideoPlay, Headset } from '@element-plus/icons-vue'
 import { useMidiStore } from '@/stores/midi'
 import { useMidiManager } from '@/composables/useMidiManager'
@@ -189,6 +191,12 @@ import VuMeter from './VuMeter.vue'
 // Store
 const midiStore = useMidiStore()
 const midiManager = useMidiManager()
+
+// Variables réactives locales pour éviter les conflits
+const localVolume = ref(0)
+const localPan = ref(64)
+const localMuted = ref(false)
+const localSolo = ref(false)
 
 // Computed
 const selectedTrackInfo = computed(() => midiStore.getSelectedTrackData)
@@ -207,6 +215,41 @@ const selectedTrackCCCount = computed(() => {
     return Object.values(controlChanges).reduce((total, ccArray) => total + ccArray.length, 0)
   }
   return 0
+})
+
+// Watcher pour synchroniser les valeurs locales avec le store
+watch(selectedTrackInfo, (newTrack) => {
+  if (newTrack) {
+    localVolume.value = newTrack.volume || 127
+    localPan.value = newTrack.pan || 64
+    localMuted.value = newTrack.muted || false
+    localSolo.value = newTrack.solo || false
+  }
+}, { immediate: true })
+
+// Watcher pour détecter les changements externes
+watch(() => selectedTrackInfo.value?.volume, (newVolume) => {
+  if (newVolume !== undefined && newVolume !== localVolume.value) {
+    localVolume.value = newVolume
+  }
+})
+
+watch(() => selectedTrackInfo.value?.pan, (newPan) => {
+  if (newPan !== undefined && newPan !== localPan.value) {
+    localPan.value = newPan
+  }
+})
+
+watch(() => selectedTrackInfo.value?.muted, (newMuted) => {
+  if (newMuted !== undefined && newMuted !== localMuted.value) {
+    localMuted.value = newMuted
+  }
+})
+
+watch(() => selectedTrackInfo.value?.solo, (newSolo) => {
+  if (newSolo !== undefined && newSolo !== localSolo.value) {
+    localSolo.value = newSolo
+  }
 })
 
 onMounted(async () => {
@@ -258,7 +301,10 @@ function formatPanTooltip(value) {
   }
 }
 
-// Gestionnaires d'événements
+// Gestionnaires d'événements avec débounce pour éviter les conflits
+let volumeTimeout = null
+let panTimeout = null
+
 async function updateTrackName(newName) {
   if (!selectedTrackInfo.value || !newName.trim()) return
   await midiStore.updateTrackName(selectedTrackInfo.value.id, newName.trim())
@@ -294,77 +340,76 @@ async function updateTrackPan(pan) {
   if (!selectedTrackInfo.value) return
   
   const clampedPan = Math.max(0, Math.min(127, Math.round(pan)))
-  console.log(`🎛️ Mise à jour Pan pour piste ${selectedTrackInfo.value.id}: ${clampedPan}`)
+  localPan.value = clampedPan
   
-  const success = await midiStore.updateTrackPan(selectedTrackInfo.value.id, clampedPan)
-  
-  if (success) {
-    if (midiManager.isInitialized?.value && midiManager.midiSupported?.value) {
-      const track = selectedTrackInfo.value
-      let trackMidiOutput = track.midiOutput || 'default'
-      const trackChannel = Math.max(0, Math.min(15, track.channel || 0))
-      
-      const resolvedOutput = midiManager.findMidiOutput(trackMidiOutput)
-      if (resolvedOutput) {
-        trackMidiOutput = resolvedOutput.id
-        console.log(`🎛️ Envoi CC10 Pan: "${resolvedOutput.name}" Canal=${trackChannel + 1} Valeur=${clampedPan}`)
-        
-        const ccSent = midiManager.sendControlChange(trackMidiOutput, trackChannel, 10, clampedPan)
-        
-        if (ccSent) {
-          console.log(`✅ Pan CC10 envoyé avec succès`)
-        } else {
-          console.error(`❌ Échec envoi Pan CC10`)
-        }
-      } else {
-        console.warn(`⚠️ Sortie MIDI "${track.midiOutput}" non trouvée pour envoi Pan`)
-      }
-    } else {
-      console.warn('⚠️ MIDI non disponible pour envoi Pan')
+  // Débouncer pour éviter trop d'appels
+  if (panTimeout) clearTimeout(panTimeout)
+  panTimeout = setTimeout(async () => {
+    console.log(`🎛️ Mise à jour Pan pour piste ${selectedTrackInfo.value.id}: ${clampedPan}`)
+    
+    const success = await midiStore.updateTrackPan(selectedTrackInfo.value.id, clampedPan)
+    
+    if (success) {
+      await sendMidiCC(10, clampedPan) // CC10 pour Pan
     }
-  }
+  }, 50) // 50ms de débounce
 }
 
 async function updateTrackVolume(volume) {
   if (!selectedTrackInfo.value) return
   
   const clampedVolume = Math.max(0, Math.min(127, Math.round(volume)))
-  console.log(`🔊 Mise à jour Volume pour piste ${selectedTrackInfo.value.id}: ${clampedVolume}`)
+  localVolume.value = clampedVolume
   
-  const success = await midiStore.updateTrackVolume(selectedTrackInfo.value.id, clampedVolume)
-  
-  if (success) {
-    if (midiManager.isInitialized?.value && midiManager.midiSupported?.value) {
-      const track = selectedTrackInfo.value
-      let trackMidiOutput = track.midiOutput || 'default'
-      const trackChannel = Math.max(0, Math.min(15, track.channel || 0))
-      
-      const resolvedOutput = midiManager.findMidiOutput(trackMidiOutput)
-      if (resolvedOutput) {
-        trackMidiOutput = resolvedOutput.id
-        console.log(`🔊 Envoi CC7 Volume: "${resolvedOutput.name}" Canal=${trackChannel + 1} Valeur=${clampedVolume}`)
-        
-        const ccSent = midiManager.sendControlChange(trackMidiOutput, trackChannel, 7, clampedVolume)
-        
-        if (ccSent) {
-          console.log(`✅ Volume CC7 envoyé avec succès`)
-        } else {
-          console.error(`❌ Échec envoi Volume CC7`)
-        }
-      } else {
-        console.warn(`⚠️ Sortie MIDI "${track.midiOutput}" non trouvée pour envoi Volume`)
-      }
+  // Débouncer pour éviter trop d'appels
+  if (volumeTimeout) clearTimeout(volumeTimeout)
+  volumeTimeout = setTimeout(async () => {
+    console.log(`🔊 Mise à jour Volume pour piste ${selectedTrackInfo.value.id}: ${clampedVolume}`)
+    
+    const success = await midiStore.updateTrackVolume(selectedTrackInfo.value.id, clampedVolume)
+    
+    if (success) {
+      await sendMidiCC(7, clampedVolume) // CC7 pour Volume
     }
+  }, 50) // 50ms de débounce
+}
+
+async function sendMidiCC(ccNumber, value) {
+  if (midiManager.isInitialized?.value && midiManager.midiSupported?.value && selectedTrackInfo.value) {
+    const track = selectedTrackInfo.value
+    let trackMidiOutput = track.midiOutput || 'default'
+    const trackChannel = Math.max(0, Math.min(15, track.channel || 0))
+    
+    const resolvedOutput = midiManager.findMidiOutput(trackMidiOutput)
+    if (resolvedOutput) {
+      trackMidiOutput = resolvedOutput.id
+      const ccName = ccNumber === 7 ? 'Volume' : 'Pan'
+      console.log(`🎛️ Envoi CC${ccNumber} ${ccName}: "${resolvedOutput.name}" Canal=${trackChannel + 1} Valeur=${value}`)
+      
+      const ccSent = midiManager.sendControlChange(trackMidiOutput, trackChannel, ccNumber, value)
+      
+      if (ccSent) {
+        console.log(`✅ ${ccName} CC${ccNumber} envoyé avec succès`)
+      } else {
+        console.error(`❌ Échec envoi ${ccName} CC${ccNumber}`)
+      }
+    } else {
+      console.warn(`⚠️ Sortie MIDI "${track.midiOutput}" non trouvée pour envoi CC${ccNumber}`)
+    }
+  } else {
+    console.warn(`⚠️ MIDI non disponible pour envoi CC${ccNumber}`)
   }
 }
 
 function toggleMute() {
   if (!selectedTrackInfo.value) return
+  localMuted.value = !localMuted.value
   midiStore.toggleTrackMute(selectedTrackInfo.value.id)
 }
 
 function toggleSolo() {
   if (!selectedTrackInfo.value) return
+  localSolo.value = !localSolo.value
   midiStore.toggleTrackSolo(selectedTrackInfo.value.id)
 }
 </script>

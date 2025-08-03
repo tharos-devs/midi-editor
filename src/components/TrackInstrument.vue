@@ -47,7 +47,7 @@
         <div class="track-controls">
           <!-- Boutons Mute et Solo -->
           <el-button
-            :type="track.muted ? 'danger' : 'default'"
+            :type="localMuted ? 'danger' : 'default'"
             size="small"
             @click.stop="toggleMute"
             class="control-button mute-btn"
@@ -56,7 +56,7 @@
             M
           </el-button>
           <el-button
-            :type="track.solo ? 'warning' : 'default'"
+            :type="localSolo ? 'warning' : 'default'"
             size="small"
             @click.stop="toggleSolo"
             class="control-button solo-btn"
@@ -83,19 +83,20 @@
       <div v-if="props.height >= 70" class="volume-slider-container">
         <div class="volume-slider">
           <el-slider
-            v-model="track.volume"
+            :model-value="localVolume"
             :min="0"
             :max="127"
             :show-tooltip="false"
             size="small"
             @input="onVolumeChange"
+            @change="onVolumeChange"
           />
         </div>
-        <div class="volume-value">{{ track.volume }}</div>
+        <div class="volume-value">{{ localVolume }}</div>
       </div>
 
-      <!-- Contrôles étendus (visible si hauteur >= 115px) -->
-      <div v-if="props.height >= 115" class="extended-controls">
+      <!-- Contrôles étendus (visible si hauteur >= 100px) -->
+      <div v-if="props.height >= 100" class="extended-controls">
         <div class="controls-row">
           <!-- Canal MIDI et Sortie MIDI -->
           <div class="midi-controls">
@@ -170,7 +171,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { Plus } from '@element-plus/icons-vue'
 import { useMidiStore } from '@/stores/midi'
 
@@ -209,8 +210,13 @@ const editingName = ref(false)
 const tempTrackName = ref('')
 const nameInput = ref(null)
 
-// Système de hauteur avec 3 niveaux : 30px, 70px, 115px
-const heightLevels = [30, 70, 115]
+// Variables réactives locales pour éviter les conflits
+const localVolume = ref(127)
+const localMuted = ref(false)
+const localSolo = ref(false)
+
+// Système de hauteur avec 3 niveaux : 30px, 70px, 100px
+const heightLevels = [30, 70, 100]
 const currentHeightLevel = ref(0) // Index dans heightLevels (0, 1, 2)
 
 // État MIDI
@@ -238,6 +244,34 @@ const trackHeight = computed(() => {
     return props.track.height
   }
   return heightLevels[currentHeightLevel.value]
+})
+
+// Watcher pour synchroniser les valeurs locales avec les props
+watch(() => props.track, (newTrack) => {
+  if (newTrack) {
+    localVolume.value = newTrack.volume || 127
+    localMuted.value = newTrack.muted || false
+    localSolo.value = newTrack.solo || false
+  }
+}, { immediate: true, deep: true })
+
+// Watchers pour détecter les changements externes
+watch(() => props.track.volume, (newVolume) => {
+  if (newVolume !== undefined && newVolume !== localVolume.value) {
+    localVolume.value = newVolume
+  }
+})
+
+watch(() => props.track.muted, (newMuted) => {
+  if (newMuted !== undefined && newMuted !== localMuted.value) {
+    localMuted.value = newMuted
+  }
+})
+
+watch(() => props.track.solo, (newSolo) => {
+  if (newSolo !== undefined && newSolo !== localSolo.value) {
+    localSolo.value = newSolo
+  }
 })
 
 // Initialisation
@@ -325,7 +359,7 @@ function toggleTrackHeight() {
 }
 
 function getHeightLevelText() {
-  const levels = ['Compacte (30px)', 'Normale (70px)', 'Étendue (115px)']
+  const levels = ['Compacte (30px)', 'Normale (70px)', 'Étendue (100px)']
   return levels[currentHeightLevel.value]
 }
 
@@ -357,14 +391,52 @@ async function changeTrackColor(color) {
   showColorPicker.value = false
 }
 
+// Gestionnaires avec débounce pour le volume
+let volumeTimeout = null
+
 async function onVolumeChange(volume) {
   const clampedVolume = Math.max(0, Math.min(127, Math.round(volume)))
-  await midiStore.updateTrackVolume(props.track.id, clampedVolume)
+  localVolume.value = clampedVolume
+  
+  // Débouncer pour éviter trop d'appels
+  if (volumeTimeout) clearTimeout(volumeTimeout)
+  volumeTimeout = setTimeout(async () => {
+    console.log(`🔊 TrackInstrument: Mise à jour Volume piste ${props.track.id}: ${clampedVolume}`)
+    await midiStore.updateTrackVolume(props.track.id, clampedVolume)
+    await sendMidiCC(7, clampedVolume) // CC7 pour Volume
+  }, 50) // 50ms de débounce
 }
 
-async function onPanChange(pan) {
-  const clampedPan = Math.max(0, Math.min(127, Math.round(pan)))
-  await midiStore.updateTrackPan(props.track.id, clampedPan)
+async function sendMidiCC(ccNumber, value) {
+  if (midiSupported.value && midiAccess.value) {
+    const trackChannel = Math.max(0, Math.min(15, props.track.channel || 0))
+    let trackMidiOutput = props.track.midiOutput || 'default'
+    
+    // Trouver la sortie MIDI appropriée
+    let targetOutput = null
+    if (trackMidiOutput === 'default' && midiOutputs.value.length > 0) {
+      targetOutput = midiOutputs.value[0].output
+    } else {
+      const outputInfo = midiOutputs.value.find(output => output.id === trackMidiOutput)
+      targetOutput = outputInfo?.output
+    }
+    
+    if (targetOutput) {
+      const ccName = ccNumber === 7 ? 'Volume' : 'Pan'
+      console.log(`🎛️ TrackInstrument: Envoi CC${ccNumber} ${ccName}: Canal=${trackChannel + 1} Valeur=${value}`)
+      
+      try {
+        targetOutput.send([0xB0 + trackChannel, ccNumber, value])
+        console.log(`✅ TrackInstrument: ${ccName} CC${ccNumber} envoyé avec succès`)
+      } catch (error) {
+        console.error(`❌ TrackInstrument: Erreur envoi ${ccName} CC${ccNumber}:`, error)
+      }
+    } else {
+      console.warn(`⚠️ TrackInstrument: Sortie MIDI "${trackMidiOutput}" non trouvée pour envoi CC${ccNumber}`)
+    }
+  } else {
+    console.warn(`⚠️ TrackInstrument: MIDI non disponible pour envoi CC${ccNumber}`)
+  }
 }
 
 function onChannelChange(newChannel) {
@@ -387,10 +459,12 @@ function onOutputChange(outputId) {
 }
 
 function toggleMute() {
+  localMuted.value = !localMuted.value
   midiStore.toggleTrackMute(props.track.id)
 }
 
 function toggleSolo() {
+  localSolo.value = !localSolo.value
   midiStore.toggleTrackSolo(props.track.id)
 }
 
@@ -584,6 +658,7 @@ function onDrop(event) {
   overflow: hidden;
   text-overflow: ellipsis;
   line-height: 1.2;
+  margin-right: 5px;
 }
 
 .track-name:hover {
@@ -683,8 +758,10 @@ function onDrop(event) {
 .extended-controls {
   background: rgba(0, 0, 0, 0.05);
   border-radius: 4px;
+  /*
   padding: 8px;
   margin-top: 2px;
+  */
   flex-shrink: 0;
 }
 
@@ -705,10 +782,14 @@ function onDrop(event) {
   gap: 6px;
 }
 
+.channel-select {
+  max-width: 70px
+}
+
 .channel-select,
 .output-select {
   flex: 1;
-  min-width: 60px;
+ 
 }
 
 .pan-control {

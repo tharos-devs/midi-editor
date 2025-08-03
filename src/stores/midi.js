@@ -1,4 +1,4 @@
-// stores/midi.js - STORE REFACTORISÉ SANS LOGIQUE D'IMPORT
+// stores/midi.js - AMÉLIORATIONS POUR LA RÉACTIVITÉ
 import { defineStore } from 'pinia'
 import { ref, computed, markRaw, nextTick } from 'vue'
 
@@ -28,19 +28,534 @@ export const useMidiStore = defineStore('midi', () => {
   const filename = ref('')
 
   // ==========================================
-  // FONCTIONS UTILITAIRES DE RÉACTIVITÉ
+  // FONCTIONS UTILITAIRES DE RÉACTIVITÉ AMÉLIORÉES
   // ==========================================
 
-  function triggerReactivity() {
-    lastModified.value = Date.now()
+  function triggerReactivity(reason = 'unknown') {
+    const timestamp = Date.now()
+    lastModified.value = timestamp
     notesVersion.value++
     tracksVersion.value++
     ccVersion.value++
 
-    // Forcer Vue à détecter le changement
+    console.log(`🔄 Réactivité déclenchée: ${reason} à ${new Date(timestamp).toLocaleTimeString()}`)
+
+    // Forcer Vue à détecter le changement avec une nouvelle référence
     notes.value = [...notes.value]
-    tracks.value = [...tracks.value]
+    tracks.value = tracks.value.map(track => ({ ...track }))  // Shallow copy des tracks
     midiCC.value = [...midiCC.value]
+  }
+
+  function forceTrackUpdate(trackId, reason = 'unknown') {
+    const trackIndex = tracks.value.findIndex(t => t.id === trackId)
+    if (trackIndex !== -1) {
+      const updatedTrack = { 
+        ...tracks.value[trackIndex], 
+        lastModified: Date.now() 
+      }
+      
+      // Remplacer la référence pour déclencher la réactivité
+      tracks.value.splice(trackIndex, 1, updatedTrack)
+      
+      console.log(`🎯 Mise à jour forcée piste ${trackId}: ${reason}`)
+      triggerReactivity(`force-track-${trackId}-${reason}`)
+    }
+  }
+
+  // ==========================================
+  // ACTIONS DE MODIFICATION DES PISTES AMÉLIORÉES
+  // ==========================================
+
+  function toggleTrackMute(trackId) {
+    const trackIndex = tracks.value.findIndex(t => t.id === trackId)
+    if (trackIndex !== -1) {
+      const track = tracks.value[trackIndex]
+      const newMutedState = !track.muted
+      
+      // Créer une nouvelle référence d'objet
+      const updatedTrack = {
+        ...track,
+        muted: newMutedState,
+        lastModified: Date.now()
+      }
+      
+      tracks.value.splice(trackIndex, 1, updatedTrack)
+      
+      console.log(`🔇 Mute piste ${trackId}: ${newMutedState}`)
+      triggerReactivity(`mute-${trackId}`)
+      
+      return true
+    }
+    return false
+  }
+
+  function toggleTrackSolo(trackId) {
+    const trackIndex = tracks.value.findIndex(t => t.id === trackId)
+    if (trackIndex !== -1) {
+      const track = tracks.value[trackIndex]
+      const newSoloState = !track.solo
+      
+      // Créer une nouvelle référence d'objet
+      const updatedTrack = {
+        ...track,
+        solo: newSoloState,
+        lastModified: Date.now()
+      }
+      
+      tracks.value.splice(trackIndex, 1, updatedTrack)
+      
+      console.log(`🎤 Solo piste ${trackId}: ${newSoloState}`)
+      triggerReactivity(`solo-${trackId}`)
+      
+      return true
+    }
+    return false
+  }
+
+  async function updateTrackVolume(trackId, volume) {
+    const trackIndex = tracks.value.findIndex(t => t.id === trackId)
+    if (trackIndex !== -1) {
+      const newVolume = Math.max(0, Math.min(127, Math.round(volume)))
+      const currentTrack = tracks.value[trackIndex]
+
+      // Éviter les mises à jour inutiles
+      if (currentTrack.volume === newVolume) {
+        return true
+      }
+
+      const updatedTrack = {
+        ...currentTrack,
+        volume: newVolume,
+        lastModified: Date.now()
+      }
+
+      tracks.value.splice(trackIndex, 1, updatedTrack)
+      
+      console.log(`🔊 Volume piste ${trackId}: ${currentTrack.volume} → ${newVolume}`)
+      triggerReactivity(`volume-${trackId}`)
+      
+      await nextTick()
+      return true
+    }
+
+    console.error(`❌ Piste ${trackId} non trouvée pour mise à jour volume`)
+    return false
+  }
+
+  async function updateTrackPan(trackId, pan) {
+    const trackIndex = tracks.value.findIndex(t => t.id === trackId)
+    if (trackIndex !== -1) {
+      const newPan = Math.max(0, Math.min(127, Math.round(pan)))
+      const currentTrack = tracks.value[trackIndex]
+
+      // Éviter les mises à jour inutiles
+      if (currentTrack.pan === newPan) {
+        return true
+      }
+
+      console.log(`📝 Store: Mise à jour Pan piste ${trackId}: ${currentTrack.pan} → ${newPan}`)
+
+      const updatedTrack = {
+        ...currentTrack,
+        pan: newPan,
+        lastModified: Date.now()
+      }
+
+      tracks.value.splice(trackIndex, 1, updatedTrack)
+      
+      console.log(`🎛️ Pan piste ${trackId}: ${currentTrack.pan} → ${newPan}`)
+      triggerReactivity(`pan-${trackId}`)
+      
+      await nextTick()
+      return true
+    }
+
+    console.error(`❌ Store: Piste ${trackId} non trouvée pour mise à jour Pan`)
+    return false
+  }
+
+  async function updateTrackName(trackId, name) {
+    const trackIndex = tracks.value.findIndex(t => t.id === trackId)
+    if (trackIndex !== -1) {
+      const currentTrack = tracks.value[trackIndex]
+      
+      if (currentTrack.name === name) {
+        return true
+      }
+
+      const updatedTrack = {
+        ...currentTrack,
+        name: name,
+        lastModified: Date.now()
+      }
+
+      tracks.value.splice(trackIndex, 1, updatedTrack)
+      triggerReactivity(`name-${trackId}`)
+      await nextTick()
+      return true
+    }
+    return false
+  }
+
+  function updateTrackChannel(trackId, channel) {
+    const trackIndex = tracks.value.findIndex(t => t.id === trackId)
+    if (trackIndex !== -1) {
+      const currentTrack = tracks.value[trackIndex]
+      const newChannel = Math.max(0, Math.min(15, channel))
+      
+      if (currentTrack.channel === newChannel) {
+        return true
+      }
+
+      const updatedTrack = {
+        ...currentTrack,
+        channel: newChannel,
+        lastModified: Date.now()
+      }
+
+      tracks.value.splice(trackIndex, 1, updatedTrack)
+      triggerReactivity(`channel-${trackId}`)
+      return true
+    }
+    return false
+  }
+
+  function updateTrackMidiOutput(trackId, outputId) {
+    const trackIndex = tracks.value.findIndex(t => t.id === trackId)
+    if (trackIndex !== -1) {
+      const currentTrack = tracks.value[trackIndex]
+      
+      if (currentTrack.midiOutput === outputId) {
+        return true
+      }
+
+      const updatedTrack = {
+        ...currentTrack,
+        midiOutput: outputId,
+        lastModified: Date.now()
+      }
+
+      tracks.value.splice(trackIndex, 1, updatedTrack)
+      triggerReactivity(`output-${trackId}`)
+      return true
+    }
+    return false
+  }
+
+  // ✅ FONCTION MANQUANTE AJOUTÉE
+  async function updateTrackProgram(trackId, program) {
+    const trackIndex = tracks.value.findIndex(t => t.id === trackId)
+    if (trackIndex !== -1) {
+      const currentTrack = tracks.value[trackIndex]
+      const newProgram = Math.max(0, Math.min(127, Math.round(program)))
+      
+      if (currentTrack.program === newProgram) {
+        return true
+      }
+
+      const updatedTrack = {
+        ...currentTrack,
+        program: newProgram,
+        lastModified: Date.now()
+      }
+
+      tracks.value.splice(trackIndex, 1, updatedTrack)
+      
+      console.log(`🎹 Program piste ${trackId}: ${currentTrack.program} → ${newProgram}`)
+      triggerReactivity(`program-${trackId}`)
+      
+      await nextTick()
+      return true
+    }
+
+    console.error(`❌ Piste ${trackId} non trouvée pour mise à jour program`)
+    return false
+  }
+
+  // ✅ FONCTION MANQUANTE AJOUTÉE
+  async function updateTrackBank(trackId, bank) {
+    const trackIndex = tracks.value.findIndex(t => t.id === trackId)
+    if (trackIndex !== -1) {
+      const currentTrack = tracks.value[trackIndex]
+      const newBank = Math.max(0, Math.min(16383, Math.round(bank))) // Bank Select peut aller jusqu'à 16383
+      
+      if (currentTrack.bank === newBank) {
+        return true
+      }
+
+      const updatedTrack = {
+        ...currentTrack,
+        bank: newBank,
+        lastModified: Date.now()
+      }
+
+      tracks.value.splice(trackIndex, 1, updatedTrack)
+      
+      console.log(`🏦 Bank piste ${trackId}: ${currentTrack.bank} → ${newBank}`)
+      triggerReactivity(`bank-${trackId}`)
+      
+      await nextTick()
+      return true
+    }
+
+    console.error(`❌ Piste ${trackId} non trouvée pour mise à jour bank`)
+    return false
+  }
+
+  async function updateTrackColor(trackId, color) {
+    const trackIndex = tracks.value.findIndex(t => t.id === trackId)
+    if (trackIndex !== -1) {
+      const currentTrack = tracks.value[trackIndex]
+      
+      if (currentTrack.color === color) {
+        return true
+      }
+
+      const updatedTrack = {
+        ...currentTrack,
+        color: color,
+        lastModified: Date.now()
+      }
+
+      tracks.value.splice(trackIndex, 1, updatedTrack)
+      triggerReactivity(`color-${trackId}`)
+      await nextTick()
+      return true
+    }
+    return false
+  }
+
+  // ✅ FONCTIONS MANQUANTES AJOUTÉES
+
+  function reorderTrack(trackId, newIndex) {
+    const currentIndex = tracks.value.findIndex(t => t.id === trackId)
+    if (currentIndex === -1 || currentIndex === newIndex) {
+      return false
+    }
+
+    const track = tracks.value[currentIndex]
+    const newTracks = [...tracks.value]
+    
+    // Supprimer de l'ancienne position
+    newTracks.splice(currentIndex, 1)
+    
+    // Insérer à la nouvelle position
+    newTracks.splice(newIndex, 0, track)
+    
+    tracks.value = newTracks
+    
+    console.log(`🔄 Piste ${trackId} déplacée de ${currentIndex} vers ${newIndex}`)
+    triggerReactivity(`reorder-${trackId}`)
+    
+    return true
+  }
+
+  function duplicateTrack(trackId) {
+    const trackIndex = tracks.value.findIndex(t => t.id === trackId)
+    if (trackIndex === -1) {
+      return null
+    }
+
+    const originalTrack = tracks.value[trackIndex]
+    const newTrackId = Date.now() + Math.random() // ID unique
+    
+    const duplicatedTrack = {
+      ...originalTrack,
+      id: newTrackId,
+      name: `${originalTrack.name} (Copie)`,
+      lastModified: Date.now()
+    }
+
+    // Insérer après la piste originale
+    const newTracks = [...tracks.value]
+    newTracks.splice(trackIndex + 1, 0, duplicatedTrack)
+    tracks.value = newTracks
+
+    console.log(`📋 Piste ${trackId} dupliquée vers ${newTrackId}`)
+    triggerReactivity(`duplicate-${trackId}`)
+
+    return newTrackId
+  }
+
+  function removeEmptyTracks() {
+    const tracksToRemove = []
+    
+    tracks.value.forEach(track => {
+      const trackNotes = getTrackNotes.value(track.id)
+      const trackCCs = getControlChangesForTrack.value(track.id)
+      const hasContent = trackNotes.length > 0 || Object.keys(trackCCs).length > 0
+      
+      if (!hasContent) {
+        tracksToRemove.push(track.id)
+      }
+    })
+
+    if (tracksToRemove.length > 0) {
+      tracks.value = tracks.value.filter(track => !tracksToRemove.includes(track.id))
+      
+      console.log(`🗑️ ${tracksToRemove.length} piste(s) vide(s) supprimée(s)`)
+      triggerReactivity(`remove-empty-tracks`)
+    }
+
+    return tracksToRemove.length
+  }
+
+  // ✅ ACTIONS DE MODIFICATION DES NOTES AJOUTÉES
+
+  async function updateNote(noteId, updates) {
+    const noteIndex = notes.value.findIndex(n => n.id === noteId)
+    if (noteIndex === -1) {
+      return false
+    }
+
+    const currentNote = notes.value[noteIndex]
+    const updatedNote = {
+      ...currentNote,
+      ...updates,
+      lastModified: Date.now()
+    }
+
+    notes.value.splice(noteIndex, 1, updatedNote)
+    
+    console.log(`🎵 Note ${noteId} mise à jour:`, updates)
+    triggerReactivity(`note-update-${noteId}`)
+    
+    await nextTick()
+    return true
+  }
+
+  async function updateMultipleNotes(noteIds, updates) {
+    let updatedCount = 0
+    
+    for (const noteId of noteIds) {
+      const success = await updateNote(noteId, updates)
+      if (success) updatedCount++
+    }
+
+    console.log(`🎵 ${updatedCount}/${noteIds.length} notes mises à jour`)
+    return updatedCount
+  }
+
+  function addNote(noteData) {
+    const newNote = {
+      id: Date.now() + Math.random(),
+      ...noteData,
+      lastModified: Date.now()
+    }
+
+    notes.value.push(newNote)
+    
+    console.log(`➕ Note ajoutée:`, newNote)
+    triggerReactivity(`add-note-${newNote.id}`)
+    
+    return newNote.id
+  }
+
+  function deleteNote(noteId) {
+    const noteIndex = notes.value.findIndex(n => n.id === noteId)
+    if (noteIndex === -1) {
+      return false
+    }
+
+    notes.value.splice(noteIndex, 1)
+    
+    console.log(`❌ Note ${noteId} supprimée`)
+    triggerReactivity(`delete-note-${noteId}`)
+    
+    return true
+  }
+
+  function deleteNotes(noteIds) {
+    let deletedCount = 0
+    
+    for (const noteId of noteIds) {
+      if (deleteNote(nodeId)) {
+        deletedCount++
+      }
+    }
+
+    console.log(`❌ ${deletedCount}/${noteIds.length} notes supprimées`)
+    return deletedCount
+  }
+
+  function duplicateNote(noteId) {
+    const note = notes.value.find(n => n.id === noteId)
+    if (!note) {
+      return null
+    }
+
+    const newNoteId = addNote({
+      ...note,
+      time: note.time + 0.1 // Décaler légèrement pour éviter la superposition
+    })
+
+    console.log(`📋 Note ${noteId} dupliquée vers ${newNoteId}`)
+    return newNoteId
+  }
+
+  // ✅ ACTIONS DE MODIFICATION DES CONTROL CHANGES AJOUTÉES
+
+  function addControlChange(ccData) {
+    const newCC = {
+      id: Date.now() + Math.random(),
+      ...ccData,
+      lastModified: Date.now()
+    }
+
+    midiCC.value.push(newCC)
+    
+    console.log(`➕ Control Change ajouté:`, newCC)
+    triggerReactivity(`add-cc-${newCC.id}`)
+    
+    return newCC.id
+  }
+
+  async function updateControlChange(ccId, updates) {
+    const ccIndex = midiCC.value.findIndex(cc => cc.id === ccId)
+    if (ccIndex === -1) {
+      return false
+    }
+
+    const currentCC = midiCC.value[ccIndex]
+    const updatedCC = {
+      ...currentCC,
+      ...updates,
+      lastModified: Date.now()
+    }
+
+    midiCC.value.splice(ccIndex, 1, updatedCC)
+    
+    console.log(`🎛️ Control Change ${ccId} mis à jour:`, updates)
+    triggerReactivity(`cc-update-${ccId}`)
+    
+    await nextTick()
+    return true
+  }
+
+  function deleteControlChange(ccId) {
+    const ccIndex = midiCC.value.findIndex(cc => cc.id === ccId)
+    if (ccIndex === -1) {
+      return false
+    }
+
+    midiCC.value.splice(ccIndex, 1)
+    
+    console.log(`❌ Control Change ${ccId} supprimé`)
+    triggerReactivity(`delete-cc-${ccId}`)
+    
+    return true
+  }
+
+  async function updateMultipleControlChanges(ccIds, updates) {
+    let updatedCount = 0
+    
+    for (const ccId of ccIds) {
+      const success = await updateControlChange(ccId, updates)
+      if (success) updatedCount++
+    }
+
+    console.log(`🎛️ ${updatedCount}/${ccIds.length} Control Changes mis à jour`)
+    return updatedCount
   }
 
   // ==========================================
@@ -171,6 +686,8 @@ export const useMidiStore = defineStore('midi', () => {
     notesVersion.value = 0
     tracksVersion.value = 0
     ccVersion.value = 0
+
+    console.log('🔄 Store réinitialisé')
   }
 
   // ==========================================
@@ -178,8 +695,11 @@ export const useMidiStore = defineStore('midi', () => {
   // ==========================================
 
   function selectTrack(trackId) {
-    selectedTrack.value = trackId
-    selectedNote.value = null
+    if (selectedTrack.value !== trackId) {
+      selectedTrack.value = trackId
+      selectedNote.value = null
+      console.log(`🎯 Piste sélectionnée: ${trackId}`)
+    }
   }
 
   function selectNote(noteId) {
@@ -187,541 +707,18 @@ export const useMidiStore = defineStore('midi', () => {
     if (note) {
       selectedNote.value = noteId
       selectedTrack.value = note.trackId
+      console.log(`🎵 Note sélectionnée: ${noteId}`)
     }
   }
 
   function clearSelection() {
     selectedTrack.value = null
     selectedNote.value = null
+    console.log('🚫 Sélection effacée')
   }
 
   // ==========================================
-  // ACTIONS DE MODIFICATION DES PISTES
-  // ==========================================
-
-  function toggleTrackMute(trackId) {
-    const track = tracks.value.find(t => t.id === trackId)
-    if (track) {
-      track.muted = !track.muted
-      triggerReactivity()
-    }
-  }
-
-  function toggleTrackSolo(trackId) {
-    const track = tracks.value.find(t => t.id === trackId)
-    if (track) {
-      track.solo = !track.solo
-      triggerReactivity()
-    }
-  }
-
-  async function updateTrackVolume(trackId, volume) {
-    const trackIndex = tracks.value.findIndex(t => t.id === trackId)
-    if (trackIndex !== -1) {
-      const newVolume = Math.max(0, Math.min(127, Math.round(volume)))
-
-      const updatedTrack = {
-        ...tracks.value[trackIndex],
-        volume: newVolume,
-        lastModified: Date.now()
-      }
-
-      tracks.value.splice(trackIndex, 1, updatedTrack)
-      triggerReactivity()
-      await nextTick()
-
-      console.log(`✅ Volume mis à jour pour la piste ${trackId}: ${newVolume}`)
-      return true
-    }
-
-    console.error(`❌ Piste ${trackId} non trouvée pour mise à jour volume`)
-    return false
-  }
-
-  async function updateTrackName(trackId, name) {
-    const track = tracks.value.find(t => t.id === trackId)
-    if (track) {
-      track.name = name
-      track.lastModified = Date.now()
-      triggerReactivity()
-      await nextTick()
-      return true
-    }
-    return false
-  }
-
-  async function updateTrackPan(trackId, pan) {
-    const trackIndex = tracks.value.findIndex(t => t.id === trackId)
-    if (trackIndex !== -1) {
-      const newPan = Math.max(0, Math.min(127, Math.round(pan)))
-
-      console.log(`📝 Store: Mise à jour Pan piste ${trackId}: ${tracks.value[trackIndex].pan} → ${newPan}`)
-
-      const updatedTrack = {
-        ...tracks.value[trackIndex],
-        pan: newPan,
-        lastModified: Date.now()
-      }
-
-      tracks.value.splice(trackIndex, 1, updatedTrack)
-      triggerReactivity()
-      await nextTick()
-
-      console.log(`✅ Store: Pan mis à jour pour piste ${trackId}: ${newPan}`)
-      return true
-    }
-
-    console.error(`❌ Store: Piste ${trackId} non trouvée pour mise à jour Pan`)
-    return false
-  }
-
-  function updateTrackChannel(trackId, channel) {
-    const track = tracks.value.find(t => t.id === trackId)
-    if (track) {
-      track.channel = Math.max(0, Math.min(15, channel))
-      track.lastModified = Date.now()
-      triggerReactivity()
-      return true
-    }
-    return false
-  }
-
-  function updateTrackMidiOutput(trackId, outputId) {
-    const track = tracks.value.find(t => t.id === trackId)
-    if (track) {
-      track.midiOutput = outputId
-      track.lastModified = Date.now()
-      triggerReactivity()
-      return true
-    }
-    return false
-  }
-
-  function updateTrackProgram(trackId, program) {
-    const track = tracks.value.find(t => t.id === trackId)
-    if (track) {
-      if (!track.instrument) {
-        track.instrument = { name: 'Piano', number: 0 }
-      }
-      track.instrument.number = Math.max(0, Math.min(127, program))
-      track.lastModified = Date.now()
-      triggerReactivity()
-      return true
-    }
-    return false
-  }
-
-  function updateTrackBank(trackId, bank) {
-    const track = tracks.value.find(t => t.id === trackId)
-    if (track) {
-      track.bank = Math.max(0, Math.min(127, bank))
-      track.lastModified = Date.now()
-      triggerReactivity()
-      return true
-    }
-    return false
-  }
-
-  async function updateTrackColor(trackId, color) {
-    const track = tracks.value.find(t => t.id === trackId)
-    if (track) {
-      track.color = color
-      track.lastModified = Date.now()
-      triggerReactivity()
-      await nextTick()
-      return true
-    }
-    return false
-  }
-
-  // ==========================================
-  // GESTION DES NOTES
-  // ==========================================
-
-  async function updateNote(noteId, updates) {
-    const noteIndex = notes.value.findIndex(n => n.id === noteId)
-    if (noteIndex !== -1) {
-      const oldNote = notes.value[noteIndex]
-      const updatedNote = {
-        ...oldNote,
-        ...updates,
-        lastModified: Date.now()
-      }
-
-      // Mettre à jour dans le tableau global
-      notes.value[noteIndex] = updatedNote
-
-      // Mettre à jour dans la piste correspondante
-      const track = tracks.value.find(t => t.id === oldNote.trackId)
-      if (track) {
-        const trackNoteIndex = track.notes.findIndex(n => n.id === noteId)
-        if (trackNoteIndex !== -1) {
-          track.notes[trackNoteIndex] = updatedNote
-        }
-      }
-
-      triggerReactivity()
-      await nextTick()
-      return true
-    }
-    return false
-  }
-
-  async function updateMultipleNotes(noteUpdatesMap) {
-    if (!noteUpdatesMap || noteUpdatesMap.size === 0) return 0
-
-    const updatedNotes = []
-    let hasChanges = false
-
-    for (const [noteId, updates] of noteUpdatesMap) {
-      const noteIndex = notes.value.findIndex(note => note.id === noteId)
-      if (noteIndex !== -1) {
-        const oldNote = notes.value[noteIndex]
-        const updatedNote = {
-          ...oldNote,
-          ...updates,
-          lastModified: Date.now()
-        }
-
-        notes.value[noteIndex] = updatedNote
-        updatedNotes.push(updatedNote)
-        hasChanges = true
-
-        // Mettre à jour aussi dans la piste correspondante
-        const track = tracks.value.find(t => t.id === updatedNote.trackId)
-        if (track) {
-          const trackNoteIndex = track.notes.findIndex(n => n.id === noteId)
-          if (trackNoteIndex !== -1) {
-            track.notes[trackNoteIndex] = updatedNote
-          }
-        }
-      }
-    }
-
-    if (hasChanges) {
-      triggerReactivity()
-      await nextTick()
-    }
-
-    return updatedNotes.length
-  }
-
-  async function addNote(trackId, noteData) {
-    const track = tracks.value.find(t => t.id === trackId)
-    if (!track) {
-      return false
-    }
-
-    const noteId = `${trackId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-
-    const newNote = {
-      id: noteId,
-      trackId: trackId,
-      name: noteData.name || '',
-      midi: noteData.midi || 60,
-      pitch: noteData.pitch || 'C4',
-      octave: noteData.octave || 4,
-      velocity: noteData.velocity || 0.8,
-      duration: noteData.duration || 0.5,
-      durationTicks: noteData.durationTicks || 240,
-      time: noteData.time || 0,
-      ticks: noteData.ticks || 0,
-      channel: track.channel || 0,
-      tempoAtStart: getTempoAtTicks(noteData.ticks || 0),
-      lastModified: Date.now(),
-      ...noteData
-    }
-
-    track.notes.push(newNote)
-    notes.value.push(newNote)
-
-    triggerReactivity()
-    await nextTick()
-
-    return noteId
-  }
-
-  async function deleteNote(noteId) {
-    const noteIndex = notes.value.findIndex(n => n.id === noteId)
-    if (noteIndex !== -1) {
-      const note = notes.value[noteIndex]
-      notes.value.splice(noteIndex, 1)
-
-      const track = tracks.value.find(t => t.id === note.trackId)
-      if (track) {
-        const trackNoteIndex = track.notes.findIndex(n => n.id === noteId)
-        if (trackNoteIndex !== -1) {
-          track.notes.splice(trackNoteIndex, 1)
-        }
-      }
-
-      if (selectedNote.value === noteId) {
-        selectedNote.value = null
-      }
-
-      triggerReactivity()
-      await nextTick()
-      return true
-    }
-    return false
-  }
-
-  async function deleteNotes(noteIds) {
-    let deletedCount = 0
-    for (const noteId of noteIds) {
-      if (await deleteNote(noteId)) {
-        deletedCount++
-      }
-    }
-    return deletedCount
-  }
-
-  async function duplicateNote(noteId, timeOffset = 1) {
-    const originalNote = notes.value.find(n => n.id === noteId)
-    if (!originalNote) {
-      return null
-    }
-
-    const duplicatedNoteData = {
-      ...originalNote,
-      time: originalNote.time + timeOffset,
-      ticks: originalNote.ticks + timeToTicksAccurate(timeOffset)
-    }
-
-    delete duplicatedNoteData.id
-    return await addNote(originalNote.trackId, duplicatedNoteData)
-  }
-
-  // ==========================================
-  // GESTION DES CONTROL CHANGES
-  // ==========================================
-
-  async function addControlChange(trackId, ccNumber, time, value) {
-    const track = tracks.value.find(t => t.id === trackId)
-    if (!track) {
-      return false
-    }
-
-    if (!track.controlChanges) {
-      track.controlChanges = {}
-    }
-
-    if (!track.controlChanges[ccNumber]) {
-      track.controlChanges[ccNumber] = []
-    }
-
-    const ccId = `cc-${trackId}-${ccNumber}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-    const ticks = timeToTicksAccurate(time)
-
-    const newCC = {
-      id: ccId,
-      trackId: trackId,
-      number: parseInt(ccNumber),
-      value: Math.max(0, Math.min(127, parseInt(value))),
-      time: time,
-      ticks: ticks,
-      lastModified: Date.now()
-    }
-
-    track.controlChanges[ccNumber].push(newCC)
-    track.controlChanges[ccNumber].sort((a, b) => a.time - b.time)
-
-    midiCC.value.push(newCC)
-    midiCC.value.sort((a, b) => a.time - b.time)
-
-    triggerReactivity()
-    await nextTick()
-
-    return ccId
-  }
-
-  async function updateControlChange(ccId, updates) {
-    const globalCCIndex = midiCC.value.findIndex(cc => cc.id === ccId)
-    if (globalCCIndex === -1) {
-      return false
-    }
-
-    const oldCC = midiCC.value[globalCCIndex]
-    const updatedCC = {
-      ...oldCC,
-      ...updates,
-      lastModified: Date.now(),
-      value: updates.value !== undefined ? Math.max(0, Math.min(127, parseInt(updates.value))) : oldCC.value,
-      number: updates.number !== undefined ? parseInt(updates.number) : oldCC.number
-    }
-
-    midiCC.value[globalCCIndex] = updatedCC
-
-    const track = tracks.value.find(t => t.id === oldCC.trackId)
-    if (track && track.controlChanges && track.controlChanges[oldCC.number]) {
-      const trackCCIndex = track.controlChanges[oldCC.number].findIndex(cc => cc.id === ccId)
-      if (trackCCIndex !== -1) {
-        track.controlChanges[oldCC.number][trackCCIndex] = updatedCC
-
-        if (updates.number !== undefined && updates.number !== oldCC.number) {
-          track.controlChanges[oldCC.number].splice(trackCCIndex, 1)
-
-          if (!track.controlChanges[updates.number]) {
-            track.controlChanges[updates.number] = []
-          }
-          track.controlChanges[updates.number].push(updatedCC)
-          track.controlChanges[updates.number].sort((a, b) => a.time - b.time)
-        }
-      }
-    }
-
-    triggerReactivity()
-    await nextTick()
-    return true
-  }
-
-  async function deleteControlChange(ccId) {
-    const globalCCIndex = midiCC.value.findIndex(cc => cc.id === ccId)
-    if (globalCCIndex === -1) {
-      return false
-    }
-
-    const ccToDelete = midiCC.value[globalCCIndex]
-    midiCC.value.splice(globalCCIndex, 1)
-
-    const track = tracks.value.find(t => t.id === ccToDelete.trackId)
-    if (track && track.controlChanges && track.controlChanges[ccToDelete.number]) {
-      const trackCCIndex = track.controlChanges[ccToDelete.number].findIndex(cc => cc.id === ccId)
-      if (trackCCIndex !== -1) {
-        track.controlChanges[ccToDelete.number].splice(trackCCIndex, 1)
-      }
-    }
-
-    triggerReactivity()
-    await nextTick()
-    return true
-  }
-
-  async function updateMultipleControlChanges(ccUpdatesMap) {
-    if (!ccUpdatesMap || ccUpdatesMap.size === 0) return 0
-
-    let updatedCount = 0
-    for (const [ccId, updates] of ccUpdatesMap) {
-      if (await updateControlChange(ccId, updates)) {
-        updatedCount++
-      }
-    }
-    return updatedCount
-  }
-
-  // ==========================================
-  // GESTION AVANCÉE DES PISTES
-  // ==========================================
-
-  async function reorderTrack(trackId, newIndex) {
-    const currentIndex = tracks.value.findIndex(t => t.id === trackId)
-
-    if (currentIndex === -1) {
-      console.error(`❌ Piste ${trackId} non trouvée`)
-      return false
-    }
-
-    const maxIndex = tracks.value.length - 1
-    if (newIndex < 0 || newIndex > maxIndex) {
-      console.error(`❌ Index invalide: ${newIndex} (doit être entre 0 et ${maxIndex})`)
-      return false
-    }
-
-    if (currentIndex === newIndex) {
-      return true
-    }
-
-    try {
-      const newTracks = [...tracks.value]
-      const [movedTrack] = newTracks.splice(currentIndex, 1)
-      newTracks.splice(newIndex, 0, movedTrack)
-
-      tracks.value = newTracks
-      triggerReactivity()
-      await nextTick()
-
-      return true
-    } catch (error) {
-      console.error(`❌ Erreur lors de la réorganisation:`, error)
-      return false
-    }
-  }
-
-  async function duplicateTrack(trackId) {
-    const originalTrack = tracks.value.find(t => t.id === trackId)
-    if (!originalTrack) return null
-
-    const newTrackId = Date.now()
-    const duplicatedTrack = {
-      ...originalTrack,
-      id: newTrackId,
-      name: `${originalTrack.name} (Copie)`,
-      notes: [],
-      controlChanges: {},
-      pitchBends: [...originalTrack.pitchBends],
-      muted: false,
-      solo: false,
-      lastModified: Date.now()
-    }
-
-    originalTrack.notes.forEach(note => {
-      const newNoteId = `${newTrackId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-      const duplicatedNote = {
-        ...note,
-        id: newNoteId,
-        trackId: newTrackId,
-        lastModified: Date.now()
-      }
-
-      duplicatedTrack.notes.push(duplicatedNote)
-      notes.value.push(duplicatedNote)
-    })
-
-    Object.entries(originalTrack.controlChanges || {}).forEach(([ccNumber, ccEvents]) => {
-      duplicatedTrack.controlChanges[ccNumber] = ccEvents.map(cc => {
-        const newCCId = `cc-${newTrackId}-${ccNumber}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-        const duplicatedCC = {
-          ...cc,
-          id: newCCId,
-          trackId: newTrackId,
-          lastModified: Date.now()
-        }
-
-        midiCC.value.push(duplicatedCC)
-        return duplicatedCC
-      })
-    })
-
-    tracks.value.push(duplicatedTrack)
-    triggerReactivity()
-    await nextTick()
-
-    return newTrackId
-  }
-
-  function removeEmptyTracks() {
-    const emptyTracks = tracks.value.filter(track =>
-      track.notes.length === 0 &&
-      Object.keys(track.controlChanges).length === 0 &&
-      track.pitchBends.length === 0
-    )
-
-    emptyTracks.forEach(track => {
-      const index = tracks.value.findIndex(t => t.id === track.id)
-      if (index !== -1) {
-        tracks.value.splice(index, 1)
-      }
-    })
-
-    if (emptyTracks.length > 0) {
-      triggerReactivity()
-    }
-
-    return emptyTracks.length
-  }
-
-  // ==========================================
-  // GETTERS COMPUTED
+  // GETTERS COMPUTED AMÉLIORÉS
   // ==========================================
 
   const getTrackById = computed(() => (id) => {
@@ -733,9 +730,11 @@ export const useMidiStore = defineStore('midi', () => {
   })
 
   const getSelectedTrackData = computed(() => {
-    return selectedTrack.value !== null
-      ? tracks.value.find(t => t.id === selectedTrack.value)
-      : null
+    if (selectedTrack.value !== null) {
+      const track = tracks.value.find(t => t.id === selectedTrack.value)
+      return track || null
+    }
+    return null
   })
 
   const getSelectedNoteData = computed(() => {
@@ -748,10 +747,24 @@ export const useMidiStore = defineStore('midi', () => {
     return notes.value.filter(note => note.trackId === trackId)
   })
 
-  const getNotesInTimeRange = computed(() => (startTime, endTime) => {
-    return notes.value.filter(note =>
-      note.time >= startTime && note.time <= endTime
-    )
+  const getControlChangesForTrack = computed(() => (trackId) => {
+    const track = tracks.value.find(t => t.id === trackId)
+    return track ? track.controlChanges || {} : {}
+  })
+
+  // ✅ GETTERS MANQUANTS AJOUTÉS
+
+  const getNotesInTimeRange = computed(() => (startTime, endTime, trackId = null) => {
+    let filteredNotes = notes.value.filter(note => {
+      const noteEnd = note.time + note.duration
+      return note.time < endTime && noteEnd > startTime
+    })
+
+    if (trackId !== null) {
+      filteredNotes = filteredNotes.filter(note => note.trackId === trackId)
+    }
+
+    return filteredNotes
   })
 
   const getControlChangeById = computed(() => (id) => {
@@ -762,10 +775,16 @@ export const useMidiStore = defineStore('midi', () => {
     return midiCC.value.filter(cc => cc.trackId === trackId)
   })
 
-  const getControlChangesInTimeRange = computed(() => (startTime, endTime) => {
-    return midiCC.value.filter(cc =>
-      cc.time >= startTime && cc.time <= endTime
-    )
+  const getControlChangesInTimeRange = computed(() => (startTime, endTime, trackId = null) => {
+    let filteredCCs = midiCC.value.filter(cc => {
+      return cc.time >= startTime && cc.time <= endTime
+    })
+
+    if (trackId !== null) {
+      filteredCCs = filteredCCs.filter(cc => cc.trackId === trackId)
+    }
+
+    return filteredCCs
   })
 
   const getControlChangesByNumber = computed(() => (ccNumber) => {
@@ -776,26 +795,6 @@ export const useMidiStore = defineStore('midi', () => {
     return midiCC.value.filter(cc => cc.trackId === trackId && cc.number === ccNumber)
   })
 
-  const getTotalDuration = computed(() => {
-    return midiInfo.value.duration || 0
-  })
-
-  const getCurrentTempo = computed(() => {
-    return midiInfo.value.tempo || 120
-  })
-
-  const getTrackCount = computed(() => {
-    return tracks.value.length
-  })
-
-  const getNoteCount = computed(() => {
-    return notes.value.length
-  })
-
-  const getControlChangeCount = computed(() => {
-    return midiCC.value.length
-  })
-
   const getMutedTracks = computed(() => {
     return tracks.value.filter(track => track.muted)
   })
@@ -804,72 +803,115 @@ export const useMidiStore = defineStore('midi', () => {
     return tracks.value.filter(track => track.solo)
   })
 
-  const getControlChangesForTrack = computed(() => (trackId) => {
-    const track = tracks.value.find(t => t.id === trackId)
-    return track ? track.controlChanges : {}
-  })
-
   const getTrackNumbers = computed(() => {
     return tracks.value.map((track, index) => ({
-      trackId: track.id,
+      id: track.id,
       number: index + 1,
       name: track.name
     }))
   })
 
-  // ==========================================
-  // FONCTIONS UTILITAIRES
-  // ==========================================
+  // Getters de statistiques
+  const getTrackCount = computed(() => tracks.value.length)
+  const getNoteCount = computed(() => notes.value.length)
+  const getControlChangeCount = computed(() => midiCC.value.length)
+  const getTotalDuration = computed(() => midiInfo.value.duration || 0)
+  const getCurrentTempo = computed(() => midiInfo.value.tempo || 120)
+
+  // ✅ UTILITAIRES MANQUANTS AJOUTÉS
 
   function getTrackIndex(trackId) {
     return tracks.value.findIndex(t => t.id === trackId)
   }
 
-  function getTracksWithMetadata() {
-    return tracks.value.map(track => ({
+  const getTracksWithMetadata = computed(() => {
+    return tracks.value.map((track, index) => ({
       ...track,
-      noteCount: track.notes.length,
-      duration: getTrackDuration(track.id),
-      ccCount: Object.values(track.controlChanges).reduce((total, ccArray) => total + ccArray.length, 0),
-      pbCount: track.pitchBends.length
+      index,
+      noteCount: getTrackNotes.value(track.id).length,
+      ccCount: getTrackControlChanges.value(track.id).length
     }))
-  }
+  })
 
   function getTrackDuration(trackId) {
     const trackNotes = getTrackNotes.value(trackId)
     if (trackNotes.length === 0) return 0
-
-    return trackNotes.reduce((maxEnd, note) => {
+    
+    return trackNotes.reduce((maxDuration, note) => {
       const noteEnd = note.time + note.duration
-      return Math.max(maxEnd, noteEnd)
+      return Math.max(maxDuration, noteEnd)
     }, 0)
   }
 
   function validateTrackOrder() {
-    const trackIds = tracks.value.map(t => t.id)
-    const uniqueIds = new Set(trackIds)
+    const issues = []
+    
+    tracks.value.forEach((track, index) => {
+      if (!track.id) {
+        issues.push(`Piste à l'index ${index} sans ID`)
+      }
+      if (!track.name) {
+        issues.push(`Piste ${track.id} sans nom`)
+      }
+    })
 
-    if (trackIds.length !== uniqueIds.size) {
-      console.error('❌ IDs de pistes dupliqués détectés!')
-      return false
-    }
-
-    console.log('✅ Ordre des pistes validé')
-    return true
+    return issues
   }
 
-  function getUpdatedNote(noteId) {
-    return notes.value.find(n => n.id === noteId)
+  function getUpdatedNote(noteId, updates) {
+    const note = getNoteById.value(noteId)
+    if (!note) return null
+    
+    return {
+      ...note,
+      ...updates,
+      lastModified: Date.now()
+    }
   }
 
   // ==========================================
-  // EXPORT DES DONNÉES (pour compatibilité)
+  // UTILITAIRES DE DEBUG
+  // ==========================================
+
+  function debugTrackState(trackId) {
+    const track = tracks.value.find(t => t.id === trackId)
+    if (track) {
+      console.log(`🐛 État piste ${trackId}:`, {
+        name: track.name,
+        volume: track.volume,
+        pan: track.pan,
+        muted: track.muted,
+        solo: track.solo,
+        channel: track.channel,
+        program: track.program,
+        bank: track.bank,
+        lastModified: new Date(track.lastModified).toLocaleTimeString()
+      })
+    } else {
+      console.log(`🐛 Piste ${trackId} non trouvée`)
+    }
+  }
+
+  function debugStoreState() {
+    console.log('🐛 État du store:', {
+      tracksCount: tracks.value.length,
+      notesCount: notes.value.length,
+      ccCount: midiCC.value.length,
+      selectedTrack: selectedTrack.value,
+      selectedNote: selectedNote.value,
+      lastModified: new Date(lastModified.value).toLocaleTimeString(),
+      versionsTrack: tracksVersion.value,
+      versionsNote: notesVersion.value,
+      versionsCC: ccVersion.value
+    })
+  }
+
+  // ==========================================
+  // FONCTION DEPRECATED (pour compatibilité)
   // ==========================================
 
   function exportToToneMidi() {
-    // Cette fonction pourrait être utilisée pour exporter vers Tone.js
-    // si nécessaire pour la compatibilité avec d'autres parties du code
-    console.warn('exportToToneMidi: Cette fonction est deprecated, utilisez les données du store directement')
+    console.warn('⚠️ exportToToneMidi est deprecated. Utilisez une fonction d\'export dédiée.')
     return null
   }
 
@@ -897,6 +939,7 @@ export const useMidiStore = defineStore('midi', () => {
     tracksVersion,
     ccVersion,
     triggerReactivity,
+    forceTrackUpdate,
 
     // Fonctions de gestion d'état
     resetStore,
@@ -967,6 +1010,8 @@ export const useMidiStore = defineStore('midi', () => {
     getTrackDuration,
     validateTrackOrder,
     getUpdatedNote,
+    debugTrackState,
+    debugStoreState,
     exportToToneMidi // Deprecated
   }
 })
