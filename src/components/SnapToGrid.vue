@@ -18,19 +18,16 @@
       placeholder="1/4"
     >
       <el-option-group label="Notes">
-        <el-option label="1/1" value="1" />
+        <el-option label="1" value="1" />
         <el-option label="1/2" value="2" />
         <el-option label="1/4" value="4" />
         <el-option label="1/8" value="8" />
-        <el-option label="1/16" value="16" />
-        <el-option label="1/32" value="32" />
-        <el-option label="1/64" value="64" />
       </el-option-group>
       <el-option-group label="Triolets">
+        <el-option label="1/2T" value="2T" />
         <el-option label="1/4T" value="4T" />
         <el-option label="1/8T" value="8T" />
         <el-option label="1/16T" value="16T" />
-        <el-option label="1/32T" value="32T" />
       </el-option-group>
     </el-select>
   </div>

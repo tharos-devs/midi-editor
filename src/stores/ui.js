@@ -45,7 +45,7 @@ export const useUIStore = defineStore('ui', () => {
 
   // SNAP SETTINGS - AJOUT DES PROPRIÉTÉS MANQUANTES
   const snapToGrid = ref(true) // Snap activé/désactivé
-  const snapDivision = ref(4) // Division du beat (4 = doubles-croches, 2 = croches, etc.)
+  const snapDivision = ref("4")
 
   // Piano settings
   const totalKeys = ref(128) // MIDI keys 0-127
