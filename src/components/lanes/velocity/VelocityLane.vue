@@ -50,6 +50,7 @@ import { useMidiStore } from '@/stores/midi'
 import { useTimeSignature } from '@/composables/useTimeSignature'
 import { useMouseInteractions } from '@/composables/useMouseInteractions'
 import { useVelocityCalculations } from '@/composables/useVelocityCalculations'
+import { useMidiOutput } from '@/composables/useMidiOutput' // Ajout du composable MIDI
 
 // Composants
 import SelectionRectangle from './SelectionRectangle.vue'
@@ -74,6 +75,7 @@ const velocityLaneRef = ref(null)
 // Composables
 const { toneToMidi, midiToTone, velocityToY, yToVelocity } = useVelocityCalculations()
 const timeSignatureComposable = useTimeSignature()
+const { playNote, stopNote } = useMidiOutput() // Ajout des fonctions MIDI
 
 // ✅ Utiliser les données correctes du composable timeSignature
 const totalWidth = computed(() => {
@@ -84,10 +86,81 @@ const totalWidth = computed(() => {
 const previewSelectedItems = ref([])
 const laneHeightPx = ref(100)
 
+// NOUVEAU: Variables pour le suivi des notes jouées
+const playingNotes = ref(new Map()) // Pour tracker les notes en cours de lecture
+const lastPlayedTime = ref(0) // Pour éviter le spam de notes
+
 // Constantes
 const VELOCITY_MARGIN_TOP = 0
 const VELOCITY_MARGIN_BOTTOM = 0
 const FIXED_BAR_WIDTH = 8
+const NOTE_PLAY_THROTTLE = 50 // Throttle en ms pour éviter le spam
+
+// NOUVEAU: Fonctions utilitaires pour la conversion de vélocité
+const normalizeVelocityToMidi = (velocity) => {
+  if (velocity <= 1) {
+    return Math.max(1, Math.round(velocity * 127)) // Éviter vélocité 0
+  }
+  return Math.max(1, Math.min(127, Math.round(velocity)))
+}
+
+const normalizeVelocityToTone = (velocity) => {
+  if (velocity > 1) {
+    return velocity / 127
+  }
+  return Math.max(0, Math.min(1, velocity))
+}
+
+// NOUVEAU: Fonction pour jouer une note avec la nouvelle vélocité
+const playNoteWithVelocity = (note, midiVelocity, duration = 150) => {
+  const track = midiStore.getTrackById(note.trackId)
+  if (!track) return
+
+  const now = Date.now()
+  
+  // Throttle pour éviter de jouer trop de notes en même temps
+  if (now - lastPlayedTime.value < NOTE_PLAY_THROTTLE) {
+    return
+  }
+  lastPlayedTime.value = now
+
+  // Créer une clé unique pour cette note
+  const noteKey = `${note.id}-${note.midi}`
+  
+  // Arrêter la note précédente si elle joue
+  if (playingNotes.value.has(noteKey)) {
+    const previousNote = playingNotes.value.get(noteKey)
+    stopNote({
+      midi: previousNote.midi,
+      channel: previousNote.channel,
+      outputId: previousNote.outputId
+    })
+    playingNotes.value.delete(noteKey)
+  }
+
+  // Jouer la nouvelle note
+  const noteInfo = {
+    midi: note.midi,
+    channel: track.channel || 0,
+    outputId: track.midiOutput || 'default'
+  }
+
+  playNote({
+    ...noteInfo,
+    velocity: midiVelocity,
+    duration: duration
+  })
+
+  // Tracker la note jouée
+  playingNotes.value.set(noteKey, noteInfo)
+
+  // Programmer le nettoyage
+  setTimeout(() => {
+    playingNotes.value.delete(noteKey)
+  }, duration + 50)
+
+  console.log(`🎵 Note vélocité jouée: ${note.midi} - Vélocité MIDI: ${midiVelocity}`)
+}
 
 // ✅ Utiliser les mesures calculées avec signatures rythmiques
 const measuresWithSignatures = computed(() => {
@@ -218,6 +291,7 @@ const isNoteInSelectionBounds = (note, bounds) => {
 
 const updateCache = new Map()
 
+// MODIFIÉ: Fonction de mise à jour avec lecture de note
 const updateNoteVelocity = (noteId, midiVelocity, isTemporary = false) => {
   const clampedMidi = Math.max(0, Math.min(127, Math.round(midiVelocity)))
   const toneVelocity = midiToTone(clampedMidi)
@@ -235,6 +309,13 @@ const updateNoteVelocity = (noteId, midiVelocity, isTemporary = false) => {
         updateCache.delete(key)
       }
     }
+  }
+  
+  // NOUVEAU: Jouer la note avec la nouvelle vélocité
+  const note = midiStore.notes?.find(n => n.id === noteId)
+  if (note && !isTemporary) {
+    // Jouer la note avec la nouvelle vélocité
+    playNoteWithVelocity(note, clampedMidi, 200)
   }
   
   if (typeof midiStore.updateNote === 'function') {
@@ -258,11 +339,23 @@ const mouseInteractions = useMouseInteractions({
     if (typeof uiStore.showVelocityDisplay === 'function') {
       uiStore.showVelocityDisplay(Math.round(item.velocity || 0), item.name)
     }
+    
+    // NOUVEAU: Jouer la note au début du drag
+    if (item && !selection.length) { // Seulement si pas de sélection multiple
+      const midiVelocity = normalizeVelocityToMidi(item.velocity || 64)
+      playNoteWithVelocity(item, midiVelocity, 150)
+    }
   },
 
   onDragMove: (event, item, mode) => {
     if (typeof uiStore.updateVelocityDisplay === 'function') {
       uiStore.updateVelocityDisplay(Math.round(item.value || 0), item.name)
+    }
+    
+    // NOUVEAU: Jouer la note pendant le drag (avec throttle)
+    if (item && mode !== 'selection') {
+      const midiVelocity = normalizeVelocityToMidi(item.value || 64)
+      playNoteWithVelocity(item, midiVelocity, 100)
     }
   },
 
@@ -270,6 +363,16 @@ const mouseInteractions = useMouseInteractions({
     if (typeof uiStore.hideVelocityDisplay === 'function') {
       uiStore.hideVelocityDisplay()
     }
+    
+    // NOUVEAU: Jouer toutes les notes éditées à la fin
+    editedItems.forEach(item => {
+      if (item && item.value !== undefined) {
+        const midiVelocity = normalizeVelocityToMidi(item.value)
+        setTimeout(() => {
+          playNoteWithVelocity(item, midiVelocity, 300)
+        }, Math.random() * 100) // Petit décalage aléatoire pour éviter le conflit
+      }
+    })
   },
   
   onSelectionStart: (event, position) => {
@@ -283,6 +386,16 @@ const mouseInteractions = useMouseInteractions({
   
   onSelectionEnd: (selection) => {
     previewSelectedItems.value = []
+    
+    // NOUVEAU: Jouer un preview des notes sélectionnées
+    if (selection.length > 0 && selection.length <= 5) { // Limite pour éviter le chaos
+      selection.forEach((note, index) => {
+        setTimeout(() => {
+          const midiVelocity = normalizeVelocityToMidi(note.velocity || 64)
+          playNoteWithVelocity(note, midiVelocity, 200)
+        }, index * 80) // Décalage pour entendre les notes séparément
+      })
+    }
   },
   
   findItemAtPosition,
@@ -344,6 +457,10 @@ const handleVelocityBarMouseDown = (event, note) => {
     const targetVelocity = calculateVelocityFromPosition(event.clientY)
     updateNoteVelocity(note.id, targetVelocity)
     
+    // NOUVEAU: Jouer la note avec la nouvelle vélocité
+    const midiVelocity = normalizeVelocityToMidi(targetVelocity)
+    playNoteWithVelocity(note, midiVelocity, 250)
+    
     if (typeof uiStore.showVelocityDisplay === 'function') {
       uiStore.showVelocityDisplay(Math.round(targetVelocity), note.name)
       setTimeout(() => {
@@ -368,6 +485,18 @@ const handleContainerMouseDown = (event) => {
   }
 }
 
+// NOUVEAU: Fonction de nettoyage pour arrêter toutes les notes
+const stopAllPlayingNotes = () => {
+  for (const [noteKey, noteInfo] of playingNotes.value.entries()) {
+    stopNote({
+      midi: noteInfo.midi,
+      channel: noteInfo.channel,
+      outputId: noteInfo.outputId
+    })
+  }
+  playingNotes.value.clear()
+}
+
 // Lifecycle
 let resizeObserver = null
 
@@ -386,6 +515,9 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  // NOUVEAU: Arrêter toutes les notes en cours
+  stopAllPlayingNotes()
+  
   if (resizeObserver && velocityLaneRef.value) {
     resizeObserver.unobserve(velocityLaneRef.value)
   }

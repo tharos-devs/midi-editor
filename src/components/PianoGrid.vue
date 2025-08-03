@@ -7,6 +7,7 @@
     @mousemove="onContainerMouseMove"
     @mouseup="onContainerMouseUp"
     @mouseleave="onContainerMouseLeave"
+    @dblclick="onContainerDoubleClick"
   >
     <!-- Couche de fond avec les lignes horizontales uniquement -->
     <div class="grid-background-fixed" :style="gridBackgroundStyle">
@@ -66,7 +67,7 @@
     <!-- Raccourcis clavier (info) -->
     <div v-if="multiSelection.selectedNotes.value.size > 0" class="keyboard-shortcuts">
       <small>
-        Ctrl+clic: sélection multiple • Shift+clic: étendre sélection • Clic+glisser: lasso
+        Ctrl+clic: sélection multiple • Shift+clic: étendre sélection • Clic+glisser: lasso • Double-clic: ajouter note
       </small>
     </div>
 
@@ -84,6 +85,7 @@ import { useMidiStore } from '@/stores/midi'
 import { useTimeSignature } from '@/composables/useTimeSignature'
 import { usePianoPositioning } from '@/composables/usePianoPositioning'
 import { useMultiSelection } from '@/composables/useMultiSelection'
+import { useSnapLogic } from '@/composables/useSnapLogic'
 import MidiNote from '@/components/MidiNote.vue'
 import GridRenderer from '@/components/GridRenderer.vue'
 
@@ -100,8 +102,20 @@ const {
   allMidiNotes,
   noteLineHeight,
   calculatedPianoHeight,
-  getNoteLinePosition
+  getNoteLinePosition,
+  yToMidiNote,
+  getNoteName
 } = usePianoPositioning()
+
+const {
+  pixelsToTimeWithSignatures,
+  timeToPixelsWithSignatures
+} = useTimeSignature()
+
+const {
+  snapTimeToGrid,
+  getMinNoteDuration
+} = useSnapLogic()
 
 const containerRef = ref(null)
 const noteElements = ref(new Map())
@@ -130,7 +144,88 @@ const gridBackgroundStyle = computed(() => ({
   height: calculatedPianoHeight.value + 'px'
 }))
 
-// ... Le reste du script reste identique (pas de changement pour les gestionnaires d'événements)
+// Fonction pour créer une nouvelle note au double-clic
+const onContainerDoubleClick = (event) => {
+  // Empêcher la propagation pour éviter les conflits
+  event.preventDefault()
+  event.stopPropagation()
+
+  // Ne pas créer de note si aucune piste n'est sélectionnée
+  if (midiStore.selectedTrack === null) {
+    console.warn('Aucune piste sélectionnée pour ajouter une note')
+    return
+  }
+
+  // Calculer la position de la souris relative au conteneur
+  const containerRect = containerRef.value.getBoundingClientRect()
+  const relativeX = event.clientX - containerRect.left
+  const relativeY = event.clientY - containerRect.top
+
+  // Convertir la position X en temps
+  let noteTime = pixelsToTimeWithSignatures(relativeX)
+  
+  // Appliquer le snap si activé
+  if (uiStore.snapToGrid) {
+    noteTime = snapTimeToGrid(noteTime)
+  }
+
+  // S'assurer que le temps est positif
+  noteTime = Math.max(0, noteTime)
+
+  // Convertir la position Y en note MIDI
+  const midiNumber = yToMidiNote(relativeY)
+  
+  // Valider que la note MIDI est dans la plage valide
+  if (midiNumber < 0 || midiNumber > 127) {
+    console.warn('Note MIDI hors de la plage valide:', midiNumber)
+    return
+  }
+
+  // Obtenir la durée minimale pour cette position temporelle
+  const minDuration = getMinNoteDuration(noteTime)
+  
+  // Durée par défaut : une noire (1 beat)
+  const currentTempo = midiStore.getCurrentTempo
+  const defaultDuration = 60 / currentTempo // Durée d'une noire en secondes
+  
+  // Utiliser la durée la plus grande entre le minimum et la durée par défaut
+  const noteDuration = Math.max(minDuration, defaultDuration)
+
+  // Obtenir les informations de la piste sélectionnée
+  const selectedTrack = midiStore.getTrackById(midiStore.selectedTrack)
+  
+  // Créer les données de la nouvelle note
+  const newNoteData = {
+    trackId: midiStore.selectedTrack,
+    midi: midiNumber,
+    time: noteTime,
+    duration: noteDuration,
+    velocity: 64, // Vélocité par défaut
+    name: getNoteName(midiNumber),
+    channel: selectedTrack?.channel || 0
+  }
+
+  // Ajouter la note au store
+  const newNoteId = midiStore.addNote(newNoteData)
+  
+  if (newNoteId) {
+    console.log(`🎵 Nouvelle note créée:`, {
+      id: newNoteId,
+      midi: midiNumber,
+      name: getNoteName(midiNumber),
+      time: noteTime.toFixed(3),
+      duration: noteDuration.toFixed(3),
+      track: selectedTrack?.name || `Track ${midiStore.selectedTrack}`
+    })
+
+    // Sélectionner la note nouvellement créée
+    multiSelection.selectNote(newNoteId)
+  } else {
+    console.error('Erreur lors de la création de la note')
+  }
+}
+
+// ... Le reste du code reste identique
 const registerNoteElement = (noteId, element) => {
   if (element) {
     noteElements.value.set(noteId, element)
@@ -257,7 +352,14 @@ const handleKeyDown = (event) => {
     const selectedNoteIds = multiSelection.getSelectedNotes()
     if (selectedNoteIds.length > 0) {
       event.preventDefault()
+      
+      // Supprimer toutes les notes sélectionnées
+      selectedNoteIds.forEach(noteId => {
+        midiStore.deleteNote(noteId)
+      })
+      
       multiSelection.clearSelection()
+      console.log(`🗑️ ${selectedNoteIds.length} note(s) supprimée(s)`)
     }
   }
 }
@@ -276,6 +378,10 @@ onUnmounted(() => {
 .piano-grid {
   position: relative;
   background: var(--panel-bg);
+  cursor: crosshair;
+}
+
+.piano-grid:hover {
   cursor: crosshair;
 }
 
@@ -393,7 +499,7 @@ onUnmounted(() => {
   border-radius: 4px;
   font-size: 10px;
   z-index: 1001;
-  max-width: 300px;
+  max-width: 400px;
 }
 
 .piano-grid.lasso-active {
