@@ -1,4 +1,3 @@
-
 <template>
   <div
     class="velocity-bar interactive-item"
@@ -68,16 +67,16 @@ const colorsStore = useColorsStore()
 const uiStore = useUIStore()
 
 // Constantes
-const VELOCITY_MARGIN_TOP = 5
+const VELOCITY_MARGIN_TOP = 0
 
 // Cache pour optimiser les calculs de position
 const cachedPosition = ref(null)
 const lastNoteTime = ref(null)
 const lastZoom = ref(null)
 
-// Utiliser exactement la même logique que MidiNote.vue
+// Fonction de calcul de position alignée avec MidiNote.vue
 const calculateLeftPosition = () => {
-  const noteTime = props.note.time || 0
+  const noteTime = props.note.time || props.note.start || 0
   const currentZoom = uiStore.horizontalZoom
   
   // Si le temps ET le zoom n'ont pas changé, utiliser le cache
@@ -91,13 +90,17 @@ const calculateLeftPosition = () => {
     let position
     
     if (timeToPixelsWithSignatures) {
+      // Utiliser exactement la même méthode que MidiNote.vue
       position = timeToPixelsWithSignatures(noteTime)
     } else {
-      // Fallback cohérent avec la logique MidiNote.vue
+      // Fallback identique à MidiNote.vue
       const basePixelsPerBeat = 60
       const zoomedPixelsPerBeat = basePixelsPerBeat * currentZoom
       position = noteTime * zoomedPixelsPerBeat
     }
+    
+    // Arrondir à l'entier le plus proche pour éviter les décalages de sous-pixel
+    position = Math.round(position) - 1
     
     // Mettre à jour le cache
     cachedPosition.value = position
@@ -106,7 +109,8 @@ const calculateLeftPosition = () => {
     
     return position
   } catch (error) {
-    return cachedPosition.value || 0
+    console.warn('Erreur calculateLeftPosition:', error)
+    return Math.round(cachedPosition.value || 0)
   }
 }
 
@@ -133,6 +137,8 @@ const barStyle = computed(() => {
     height: '100%',
     position: 'absolute',
     bottom: '0',
+    // Assurer un positionnement pixel-perfect
+    transform: 'translateZ(0)',
     zIndex: props.isDragging ? 15 : 
             props.isBrushed ? 12 : 
             props.isSingleSelected ? 10 : 
@@ -213,7 +219,8 @@ const getBackgroundColor = (clampedVelocity) => {
 // Nettoyer le cache quand les props changent significativement
 watchEffect(() => {
   // Invalider le cache de position si le temps ou le zoom change
-  if (props.note.time !== lastNoteTime.value || 
+  const noteTime = props.note.time || props.note.start || 0
+  if (noteTime !== lastNoteTime.value || 
       uiStore.horizontalZoom !== lastZoom.value) {
     cachedPosition.value = null
   }
@@ -235,6 +242,8 @@ watchEffect(() => {
   transition: all 0.1s ease;
   contain: layout style paint;
   will-change: auto;
+  /* Assurer un positionnement précis au pixel près */
+  image-rendering: crisp-edges;
 }
 
 .velocity-bar.dragging {
@@ -270,5 +279,7 @@ watchEffect(() => {
   transform: translateZ(0);
   contain: layout style paint;
   transition: inherit;
+  /* Assurer un rendu précis */
+  image-rendering: crisp-edges;
 }
 </style>

@@ -1,4 +1,5 @@
-// composables/useMidiPlayer.js - VERSION CORRIGÉE POUR LES CONTROL CHANGES
+// composables/useMidiPlayer.js - CORRECTIONS POUR LA RÉACTIVITÉ
+
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useMidiStore } from '@/stores/midi'
 import { useMidiManager } from '@/composables/useMidiManager'
@@ -21,7 +22,7 @@ export function useMidiPlayer() {
     eventsScheduled: 0,
     eventsExecuted: 0,
     midiMessagesSent: 0,
-    ccEventsSent: 0, // NOUVEAU : compteur spécifique pour les CC
+    ccEventsSent: 0,
     errors: 0
   })
 
@@ -36,10 +37,13 @@ export function useMidiPlayer() {
   const lookAheadTime = 25.0 // ms
   const scheduleAheadTime = 100.0 // ms
 
-  // Cache des événements de lecture - CORRECTION : Forcer la réactivité
+  // Cache des événements de lecture
   const playbackEvents = ref([])
   const currentEventIndex = ref(0)
-  const lastEventsPrepareTime = ref(0) // Pour détecter les changements
+  const lastEventsPrepareTime = ref(0)
+
+  // NOUVEAU : Signature des données pour détecter les changements
+  const dataSignature = ref('')
 
   const canSendMidi = computed(() => {
     const managerInitialized = midiManager.isInitialized?.value ?? false
@@ -66,7 +70,36 @@ export function useMidiPlayer() {
     return Math.min(100, (currentTime.value / totalDuration.value) * 100)
   })
 
-  // CORRECTION 1: Surveiller les changements pour regénérer les événements
+  // CORRECTION 1: Fonction pour générer une signature des données
+  function generateDataSignature() {
+    const tracks = midiStore.tracks
+    const signature = tracks.map(track => ({
+      id: track.id,
+      volume: track.volume,
+      pan: track.pan,
+      channel: track.channel,
+      midiOutput: track.midiOutput,
+      muted: track.muted,
+      solo: track.solo,
+      notesCount: track.notes ? track.notes.length : 0,
+      ccCount: track.controlChanges ? Object.keys(track.controlChanges).length : 0,
+      lastModified: track.lastModified || 0
+    }))
+
+    return JSON.stringify(signature)
+  }
+
+  // CORRECTION 2: Fonction pour vérifier si les données ont changé
+  function hasDataChanged() {
+    const newSignature = generateDataSignature()
+    if (newSignature !== dataSignature.value) {
+      dataSignature.value = newSignature
+      return true
+    }
+    return false
+  }
+
+  // CORRECTION 3: Surveiller les changements avec détection fine
   watch(() => midiStore.isLoaded, (newVal) => {
     if (newVal) {
       preparePlaybackEvents()
@@ -76,209 +109,55 @@ export function useMidiPlayer() {
     }
   })
 
-  // CORRECTION 2: Surveiller les modifications des notes en temps réel
-  watch(() => midiStore.notes, (newNotes) => {
-    if (midiStore.isLoaded && newNotes.length > 0) {
-      preparePlaybackEvents()
-    }
-  }, { deep: true })
-
-  // CORRECTION 3: Surveiller les modifications des pistes
-  watch(() => midiStore.tracks, (newTracks) => {
-    if (midiStore.isLoaded && newTracks.length > 0) {
-      preparePlaybackEvents()
-    }
-  }, { deep: true })
-
-  // NOUVEAU : Surveiller spécifiquement les Control Changes
-  watch(() => midiStore.midiCC, (newCC) => {
-    if (midiStore.isLoaded && newCC.length > 0) {
-      preparePlaybackEvents()
-    }
-  }, { deep: true })
-
-  // NOUVEAU : Surveiller les modifications des Control Changes dans les pistes
-  watch(() => midiStore.tracks.map(t => t.controlChanges), (newCCData) => {
+  // CORRECTION 4: Surveiller spécifiquement les propriétés qui affectent la lecture
+  watch(() => midiStore.tracks.map(t => ({
+    id: t.id,
+    volume: t.volume,
+    pan: t.pan,
+    channel: t.channel,
+    midiOutput: t.midiOutput,
+    muted: t.muted,
+    solo: t.solo,
+    lastModified: t.lastModified
+  })), (newTrackData) => {
     if (midiStore.isLoaded) {
+      console.log('🔄 Détection changement pistes, régénération événements')
       preparePlaybackEvents()
     }
   }, { deep: true })
 
-  watch(() => midiManager.isInitialized?.value ?? false, (newVal) => {
-    if (newVal && midiStore.isLoaded) {
+  // CORRECTION 5: Surveiller les versions pour forcer la mise à jour
+  watch(() => midiStore.tracksVersion, () => {
+    if (midiStore.isLoaded) {
+      console.log('🔄 Version pistes changée, régénération événements')
       preparePlaybackEvents()
     }
   })
 
-  // CORRECTION 4: Fonction pour forcer la régénération des événements
-  function forceRefreshEvents() {
-    preparePlaybackEvents()
-  }
-
-  // CORRECTION 5: Préparer les événements avec gestion améliorée des Control Changes
-  function preparePlaybackEvents() {
-    if (!midiStore.isLoaded) {
-      return
+  watch(() => midiStore.notesVersion, () => {
+    if (midiStore.isLoaded) {
+      console.log('🔄 Version notes changée, régénération événements')
+      preparePlaybackEvents()
     }
+  })
 
-    if (!canSendMidi.value) {
-      return
+  watch(() => midiStore.ccVersion, () => {
+    if (midiStore.isLoaded) {
+      console.log('🔄 Version CC changée, régénération événements')
+      preparePlaybackEvents()
     }
+  })
 
-    const events = []
-    const availableOutputs = midiManager.availableOutputs?.value ?? []
-
-    // Ajouter les événements de tempo
-    midiStore.tempoEvents.forEach(tempoEvent => {
-      events.push({
-        time: tempoEvent.time,
-        type: 'tempo',
-        bpm: tempoEvent.bpm,
-        trackId: null
-      })
-    })
-
-    // Traiter TOUTES les pistes avec un focus sur les CC
-    const tracksToProcess = [...midiStore.tracks] // Créer une copie pour éviter les références
-
-    tracksToProcess.forEach((track, trackIndex) => {
-      if (track.muted) {
-        return
-      }
-
-      const trackMidiOutput = track.midiOutput || 'default'
-      const trackChannel = Math.max(0, Math.min(15, parseInt(track.channel) || 0))
-
-      let finalOutputId = trackMidiOutput
-      let finalOutput = null
-
-      // Recherche de sortie avec fallback robuste
-      if (trackMidiOutput && trackMidiOutput !== 'default') {
-        finalOutput = availableOutputs.find(o => o.id === trackMidiOutput)
-        if (!finalOutput) {
-          finalOutput = availableOutputs.find(o => o.name === trackMidiOutput)
-          if (finalOutput) {
-            finalOutputId = finalOutput.id
-          }
-        }
-      }
-
-      if (!finalOutput && availableOutputs.length > 0) {
-        finalOutput = availableOutputs[0]
-        finalOutputId = finalOutput.id
-      }
-
-      if (!finalOutput) {
-        return
-      }
-
-      // Traiter les notes avec données en temps réel
-      const trackNotes = track.notes || []
-
-      trackNotes.forEach((note, noteIndex) => {
-        // CORRECTION 9: Utiliser les données en temps réel, pas les données cachées
-        const midiNote = Math.max(0, Math.min(127, parseInt(note.midi) || 60))
-        const velocity = Math.max(1, Math.min(127, Math.round((parseFloat(note.velocity) || 0.8) * 127)))
-        const noteTime = parseFloat(note.time) || 0
-        const noteDuration = parseFloat(note.duration) || 0.5
-
-        // Note On
-        events.push({
-          time: noteTime,
-          type: 'noteOn',
-          trackId: track.id,
-          trackName: track.name,
-          channel: trackChannel,
-          outputId: finalOutputId,
-          outputName: finalOutput.name,
-          note: midiNote,
-          velocity: velocity,
-          noteData: { ...note } // Copie des données de la note
-        })
-
-        // Note Off
-        events.push({
-          time: noteTime + noteDuration,
-          type: 'noteOff',
-          trackId: track.id,
-          trackName: track.name,
-          channel: trackChannel,
-          outputId: finalOutputId,
-          outputName: finalOutput.name,
-          note: midiNote,
-          velocity: 0,
-          noteData: { ...note }
-        })
-      })
-
-      // Traitement correct des Control Changes
-      const controlChanges = track.controlChanges || {}
-
-      if (controlChanges && typeof controlChanges === 'object') {
-        Object.entries(controlChanges).forEach(([ccNumber, ccEvents]) => {
-          const ccNum = parseInt(ccNumber)
-
-          if (Array.isArray(ccEvents) && ccEvents.length > 0) {
-            ccEvents.forEach((ccEvent, ccIndex) => {
-              const ccTime = parseFloat(ccEvent.time) || 0
-              const ccValue = parseInt(ccEvent.value) || 0
-
-              events.push({
-                time: ccTime,
-                type: 'controlChange',
-                trackId: track.id,
-                trackName: track.name,
-                channel: trackChannel,
-                outputId: finalOutputId,
-                outputName: finalOutput.name,
-                controller: ccNum,
-                value: ccValue,
-                ccData: { ...ccEvent }
-              })
-            })
-          }
-        })
-      }
-
-      // Pitch Bends avec meilleur traitement
-      const pitchBends = track.pitchBends || []
-
-      if (Array.isArray(pitchBends) && pitchBends.length > 0) {
-        pitchBends.forEach((pbEvent, pbIndex) => {
-          const pbTime = parseFloat(pbEvent.time) || 0
-          const pbValue = parseInt(pbEvent.value) || 0
-
-          events.push({
-            time: pbTime,
-            type: 'pitchBend',
-            trackId: track.id,
-            trackName: track.name,
-            channel: trackChannel,
-            outputId: finalOutputId,
-            outputName: finalOutput.name,
-            value: pbValue,
-            pbData: { ...pbEvent }
-          })
-        })
-      }
-    })
-
-    // Trier les événements par temps
-    events.sort((a, b) => a.time - b.time)
-
-    // Forcer la mise à jour réactive
-    playbackEvents.value = events
-    lastEventsPrepareTime.value = Date.now()
-  }
-
-  // Démarrage avec vérification des événements à jour
+  // CORRECTION 6: Fonction play améliorée avec vérification des changements
   function play() {
-    // Vérifier si on a besoin de régénérer les événements
-    if (playbackEvents.value.length === 0) {
+    // Vérifier si les données ont changé depuis la dernière préparation
+    if (hasDataChanged() || playbackEvents.value.length === 0) {
+      console.log('🔄 Données changées détectées, régénération des événements avant lecture')
       preparePlaybackEvents()
     }
 
     if (!canPlay.value) {
+      console.warn('⚠️ Impossible de lire : conditions non remplies')
       return false
     }
 
@@ -292,7 +171,8 @@ export function useMidiPlayer() {
         currentEventIndex.value = 0
       }
 
-      sendInitialMidiSetup()
+      // CORRECTION 7: Toujours envoyer la configuration initiale avec les valeurs actuelles
+      sendInitialMidiSetupFromCurrentData()
     }
 
     isPlaying.value = true
@@ -301,6 +181,271 @@ export function useMidiPlayer() {
     return true
   }
 
+  function sendInitialMidiSetupFromCurrentData() {
+    if (!canSendMidi.value) {
+      console.warn('⚠️ MIDI non disponible pour l\'initialisation')
+      return
+    }
+
+    const availableOutputs = midiManager.availableOutputs?.value ?? []
+    let setupCount = 0
+
+    console.log('🎛️ Initialisation MIDI avec données actuelles...')
+    console.log(`📋 ${availableOutputs.length} sortie(s) MIDI disponible(s):`)
+    availableOutputs.forEach((output, i) => {
+      console.log(`  ${i + 1}. "${output.name}" (ID: ${output.id})`)
+    })
+
+    midiStore.tracks.forEach(track => {
+      if (track.muted) {
+        console.log(`🔇 Piste ${track.name} ignorée (mutée)`)
+        return
+      }
+
+      const trackChannel = Math.max(0, Math.min(15, track.channel || 0))
+      const output = resolveMidiOutput(track.midiOutput, availableOutputs)
+
+      if (!output) {
+        console.warn(`⚠️ Aucune sortie trouvée pour la piste ${track.name}`)
+        return
+      }
+
+      console.log(`🎵 Configuration piste "${track.name}" -> "${output.name}" canal ${trackChannel + 1}`)
+
+      // Program Change
+      if (track.instrument?.number !== undefined) {
+        if (midiManager.sendProgramChange(output.id, trackChannel, track.instrument.number)) {
+          setupCount++
+          console.log(`  📯 Program Change: ${track.instrument.number}`)
+        }
+      }
+
+      // Bank Select
+      if (track.bank !== undefined && track.bank !== 0) {
+        if (midiManager.sendBankSelect(output.id, trackChannel, track.bank)) {
+          setupCount++
+          console.log(`  🏦 Bank Select: ${track.bank}`)
+        }
+      }
+
+      // Volume avec valeur actuelle
+      const currentVolume = Math.max(0, Math.min(127, parseInt(track.volume) || 100))
+      if (midiManager.sendControlChange(output.id, trackChannel, 7, currentVolume)) {
+        setupCount++
+        console.log(`  🔊 Volume (CC7): ${currentVolume}`)
+      }
+
+      // Pan avec valeur actuelle
+      const currentPan = Math.max(0, Math.min(127, parseInt(track.pan) || 64))
+      if (midiManager.sendControlChange(output.id, trackChannel, 10, currentPan)) {
+        setupCount++
+        console.log(`  🎛️ Pan (CC10): ${currentPan}`)
+      }
+
+      // Autres Control Changes initiaux
+      const controlChanges = track.controlChanges || {}
+      if (controlChanges && typeof controlChanges === 'object') {
+        Object.entries(controlChanges).forEach(([ccNumber, ccEvents]) => {
+          if (Array.isArray(ccEvents) && ccEvents.length > 0) {
+            const initialCC = ccEvents[0]
+            const ccNum = parseInt(ccNumber)
+            const ccValue = Math.max(0, Math.min(127, parseInt(initialCC.value) || 0))
+
+            // Éviter de redéfinir Volume (7) et Pan (10) déjà envoyés
+            if (ccNum !== 7 && ccNum !== 10) {
+              if (midiManager.sendControlChange(output.id, trackChannel, ccNum, ccValue)) {
+                setupCount++
+                console.log(`  🎛️ CC${ccNum}: ${ccValue}`)
+              }
+            }
+          }
+        })
+      }
+    })
+
+    console.log(`✅ Configuration MIDI terminée (${setupCount} messages envoyés)`)
+  }
+
+  function preparePlaybackEvents() {
+    if (!midiStore.isLoaded) {
+      console.warn('⚠️ MIDI non chargé, impossible de préparer les événements')
+      return
+    }
+
+    if (!canSendMidi.value) {
+      console.warn('⚠️ MIDI non disponible, impossible de préparer les événements')
+      return
+    }
+
+    console.log('🔄 Génération des événements de lecture...')
+
+    const events = []
+    const availableOutputs = midiManager.availableOutputs?.value ?? []
+    const generationTime = Date.now()
+
+    if (availableOutputs.length === 0) {
+      console.error('❌ Aucune sortie MIDI disponible pour la génération des événements')
+      return
+    }
+
+    // Debug des sorties disponibles
+    console.log(`📋 Sorties MIDI disponibles (${availableOutputs.length}):`)
+    availableOutputs.forEach((output, i) => {
+      console.log(`  ${i + 1}. "${output.name}" (ID: ${output.id})`)
+    })
+
+    // Ajouter les événements de tempo
+    midiStore.tempoEvents.forEach(tempoEvent => {
+      events.push({
+        time: tempoEvent.time,
+        type: 'tempo',
+        bpm: tempoEvent.bpm,
+        trackId: null,
+        generatedAt: generationTime
+      })
+    })
+
+    // Traiter toutes les pistes
+    const currentTracks = [...midiStore.tracks]
+    let totalNotes = 0
+    let totalCC = 0
+
+    currentTracks.forEach((track, trackIndex) => {
+      if (track.muted) {
+        console.log(`🔇 Piste ${track.name} ignorée (mutée)`)
+        return
+      }
+
+      const trackChannel = Math.max(0, Math.min(15, parseInt(track.channel) || 0))
+      const resolvedOutput = resolveMidiOutput(track.midiOutput, availableOutputs)
+
+      if (!resolvedOutput) {
+        console.warn(`⚠️ Aucune sortie trouvée pour la piste ${track.name}, événements ignorés`)
+        return
+      }
+
+      console.log(`🎵 Traitement piste "${track.name}" -> "${resolvedOutput.name}" (Canal ${trackChannel + 1})`)
+
+      // Traiter les notes
+      const trackNotes = track.notes || []
+      totalNotes += trackNotes.length
+
+      trackNotes.forEach((note, noteIndex) => {
+        const midiNote = Math.max(0, Math.min(127, parseInt(note.midi) || 60))
+        const velocity = Math.max(1, Math.min(127, Math.round((parseFloat(note.velocity) || 0.8) * 127)))
+        const noteTime = parseFloat(note.time) || 0
+        const noteDuration = parseFloat(note.duration) || 0.5
+
+        // Note On
+        events.push({
+          time: noteTime,
+          type: 'noteOn',
+          trackId: track.id,
+          trackName: track.name,
+          channel: trackChannel,
+          outputId: resolvedOutput.id, // ✅ Utiliser l'ID résolu
+          outputName: resolvedOutput.name,
+          note: midiNote,
+          velocity: velocity,
+          noteData: { ...note },
+          generatedAt: generationTime
+        })
+
+        // Note Off
+        events.push({
+          time: noteTime + noteDuration,
+          type: 'noteOff',
+          trackId: track.id,
+          trackName: track.name,
+          channel: trackChannel,
+          outputId: resolvedOutput.id,
+          outputName: resolvedOutput.name,
+          note: midiNote,
+          velocity: 0,
+          noteData: { ...note },
+          generatedAt: generationTime
+        })
+      })
+
+      // Traiter les Control Changes
+      const controlChanges = track.controlChanges || {}
+      if (controlChanges && typeof controlChanges === 'object') {
+        Object.entries(controlChanges).forEach(([ccNumber, ccEvents]) => {
+          const ccNum = parseInt(ccNumber)
+
+          if (Array.isArray(ccEvents) && ccEvents.length > 0) {
+            totalCC += ccEvents.length
+            ccEvents.forEach((ccEvent, ccIndex) => {
+              const ccTime = parseFloat(ccEvent.time) || 0
+              const ccValue = parseInt(ccEvent.value) || 0
+
+              events.push({
+                time: ccTime,
+                type: 'controlChange',
+                trackId: track.id,
+                trackName: track.name,
+                channel: trackChannel,
+                outputId: resolvedOutput.id,
+                outputName: resolvedOutput.name,
+                controller: ccNum,
+                value: ccValue,
+                ccData: { ...ccEvent },
+                generatedAt: generationTime
+              })
+            })
+          }
+        })
+      }
+
+      // Pitch Bends
+      const pitchBends = track.pitchBends || []
+      if (Array.isArray(pitchBends) && pitchBends.length > 0) {
+        pitchBends.forEach((pbEvent, pbIndex) => {
+          const pbTime = parseFloat(pbEvent.time) || 0
+          const pbValue = parseInt(pbEvent.value) || 0
+
+          events.push({
+            time: pbTime,
+            type: 'pitchBend',
+            trackId: track.id,
+            trackName: track.name,
+            channel: trackChannel,
+            outputId: resolvedOutput.id,
+            outputName: resolvedOutput.name,
+            value: pbValue,
+            pbData: { ...pbEvent },
+            generatedAt: generationTime
+          })
+        })
+      }
+    })
+
+    // Trier les événements par temps
+    events.sort((a, b) => a.time - b.time)
+
+    playbackEvents.value = events
+    lastEventsPrepareTime.value = generationTime
+    dataSignature.value = generateDataSignature()
+
+    console.log(`✅ ${events.length} événements générés (${totalNotes} notes, ${totalCC} CC)`)
+
+    // Debug des événements générés par sortie
+    const eventsByOutput = events.reduce((acc, event) => {
+      if (event.outputId) {
+        acc[event.outputId] = (acc[event.outputId] || 0) + 1
+      }
+      return acc
+    }, {})
+
+    console.log('📊 Événements par sortie:')
+    Object.entries(eventsByOutput).forEach(([outputId, count]) => {
+      const output = availableOutputs.find(o => o.id === outputId)
+      const outputName = output ? output.name : 'Inconnue'
+      console.log(`  "${outputName}" (${outputId}): ${count} événements`)
+    })
+  }
+
+  // Le reste des fonctions reste identique...
   function pause() {
     if (!isPlaying.value) return
 
@@ -310,7 +455,6 @@ export function useMidiPlayer() {
     stopPlaybackTimer()
 
     stopAllNotes()
-    // Maintenir les CC lors de la pause
     maintainCurrentCCState()
   }
 
@@ -345,12 +489,51 @@ export function useMidiPlayer() {
     }
     currentEventIndex.value = eventIndex
 
-    // Appliquer l'état MIDI incluant les CC
-    applyMidiStateAtTime(currentTime.value)
+    // Appliquer l'état MIDI incluant les CC avec données actuelles
+    applyCurrentMidiStateAtTime(currentTime.value)
 
     if (wasPlaying) {
       play()
     }
+  }
+
+  // CORRECTION 12: Nouvelle fonction pour appliquer l'état avec données actuelles
+  function applyCurrentMidiStateAtTime(time) {
+    stopAllNotes()
+    sendInitialMidiSetupFromCurrentData() // Utiliser les données actuelles
+
+    const ccState = new Map()
+    const pbState = new Map()
+
+    // Analyser tous les événements jusqu'au temps donné
+    playbackEvents.value.forEach(event => {
+      if (event.time > time) return
+
+      if (event.type === 'controlChange') {
+        const key = `${event.outputId}-${event.channel}-${event.controller}`
+        ccState.set(key, event)
+      } else if (event.type === 'pitchBend') {
+        const key = `${event.outputId}-${event.channel}`
+        pbState.set(key, event)
+      }
+    })
+
+    // Appliquer l'état des CC
+    ccState.forEach(event => {
+      if (midiManager.sendControlChange) {
+        midiManager.sendControlChange(event.outputId, event.channel, event.controller, event.value)
+      }
+    })
+
+    // Appliquer l'état des Pitch Bends
+    pbState.forEach(event => {
+      const bendValue = Math.round(event.value + 8192)
+      const lsb = bendValue & 0x7F
+      const msb = (bendValue >> 7) & 0x7F
+      const message = [0xE0 + event.channel, lsb, msb]
+
+      midiManager.sendMidiMessage(event.outputId, message)
+    })
   }
 
   function rewind() {
@@ -391,8 +574,9 @@ export function useMidiPlayer() {
   function scheduleUpcomingEvents() {
     const scheduleTime = currentTime.value + (scheduleAheadTime / 1000)
     let eventsScheduledThisRound = 0
+    const maxEventsPerRound = 50
 
-    while (currentEventIndex.value < playbackEvents.value.length) {
+    while (currentEventIndex.value < playbackEvents.value.length && eventsScheduledThisRound < maxEventsPerRound) {
       const event = playbackEvents.value[currentEventIndex.value]
 
       if (event.time > scheduleTime) {
@@ -406,9 +590,15 @@ export function useMidiPlayer() {
 
       const delay = Math.max(0, (event.time - currentTime.value) * 1000)
 
-      setTimeout(() => {
-        executeEvent(event)
-      }, delay)
+      if (delay < 16) {
+        requestAnimationFrame(() => {
+          executeEvent(event)
+        })
+      } else {
+        setTimeout(() => {
+          executeEvent(event)
+        }, delay)
+      }
 
       debugStats.value.eventsScheduled++
       eventsScheduledThisRound++
@@ -419,7 +609,7 @@ export function useMidiPlayer() {
   function executeEvent(event) {
     if (!isPlaying.value) return
 
-    // Vérifier les pistes mutées/solo
+    // Vérifier les pistes mutées/solo avec données actuelles
     const track = midiStore.getTrackById(event.trackId)
     if (track && track.muted) return
 
@@ -438,8 +628,6 @@ export function useMidiPlayer() {
 
             if (success) {
               debugStats.value.midiMessagesSent++
-            } else {
-              console.error(`❌ Failed Note ON: ${event.outputName}`)
             }
           }
           break
@@ -450,19 +638,20 @@ export function useMidiPlayer() {
 
           if (success) {
             debugStats.value.midiMessagesSent++
-          } else {
-            console.error(`❌ Failed Note OFF: ${event.outputName}`)
           }
           break
 
         case 'controlChange':
-          // CORRECTION : Envoi effectif des Control Changes
           const ccChannel = event.channel
           const ccController = event.controller
           const ccValue = event.value
 
           message = [0xB0 + ccChannel, ccController, ccValue]
           success = midiManager.sendMidiMessage(event.outputId, message)
+
+          if (success) {
+            debugStats.value.ccEventsSent++
+          }
           break
 
         case 'pitchBend':
@@ -478,140 +667,16 @@ export function useMidiPlayer() {
           break
       }
     } catch (error) {
-      console.error('💥 Error executing event:', error, event)
+      console.error('💥 Erreur lors de l\'exécution de l\'événement:', error, event)
       debugStats.value.errors++
     }
   }
 
-  function scheduleUpcomingEvents() {
-    const scheduleTime = currentTime.value + (scheduleAheadTime / 1000)
-    let eventsScheduledThisRound = 0
-    const maxEventsPerRound = 50 // Limiter pour éviter le throttling
-
-    while (currentEventIndex.value < playbackEvents.value.length && eventsScheduledThisRound < maxEventsPerRound) {
-      const event = playbackEvents.value[currentEventIndex.value]
-
-      if (event.time > scheduleTime) {
-        break
-      }
-
-      if (event.time < currentTime.value - 0.1) {
-        currentEventIndex.value++
-        continue
-      }
-
-      const delay = Math.max(0, (event.time - currentTime.value) * 1000)
-
-      // Utiliser requestAnimationFrame pour les événements très proches
-      if (delay < 16) { // < 16ms = environ 1 frame à 60fps
-        requestAnimationFrame(() => {
-          executeEvent(event)
-        })
-      } else {
-        setTimeout(() => {
-          executeEvent(event)
-        }, delay)
-      }
-
-      debugStats.value.eventsScheduled++
-      eventsScheduledThisRound++
-      currentEventIndex.value++
-    }
-  }
-
-  function sendInitialMidiSetup() {
-    if (!canSendMidi.value) {
-      return
-    }
-
-    const availableOutputs = midiManager.availableOutputs?.value ?? []
-    let setupCount = 0
-
-    midiStore.tracks.forEach(track => {
-      if (track.muted) return
-
-      const trackMidiOutput = track.midiOutput || 'default'
-      const trackChannel = Math.max(0, Math.min(15, track.channel || 0))
-
-      let finalOutputId = trackMidiOutput
-      let output = null
-
-      if (trackMidiOutput && trackMidiOutput !== 'default') {
-        output = availableOutputs.find(o => o.id === trackMidiOutput)
-        if (!output) {
-          output = availableOutputs.find(o => o.name === trackMidiOutput)
-          if (output) {
-            finalOutputId = output.id
-          }
-        }
-      }
-
-      if (!output && availableOutputs.length > 0) {
-        output = availableOutputs[0]
-        finalOutputId = output.id
-      }
-
-      if (!output) {
-        return
-      }
-
-      // Program Change
-      if (track.instrument?.number !== undefined) {
-        if (midiManager.sendProgramChange && midiManager.sendProgramChange(finalOutputId, trackChannel, track.instrument.number)) {
-          setupCount++
-        }
-      }
-
-      // Bank Select
-      if (track.bank !== undefined && track.bank !== 0) {
-        if (midiManager.sendBankSelect && midiManager.sendBankSelect(finalOutputId, trackChannel, track.bank)) {
-          setupCount++
-        }
-      }
-
-      // Volume
-      if (track.volume !== undefined) {
-        const volume = Math.max(0, Math.min(127, track.volume))
-        if (midiManager.sendControlChange && midiManager.sendControlChange(finalOutputId, trackChannel, 7, volume)) {
-          setupCount++
-        }
-      }
-
-      // Pan
-      if (track.pan !== undefined) {
-        const pan = Math.max(0, Math.min(127, track.pan))
-        if (midiManager.sendControlChange && midiManager.sendControlChange(finalOutputId, trackChannel, 10, pan)) {
-          setupCount++
-        }
-      }
-
-      // Appliquer les CC initiaux de la piste
-      const controlChanges = track.controlChanges || {}
-      if (controlChanges && typeof controlChanges === 'object') {
-        Object.entries(controlChanges).forEach(([ccNumber, ccEvents]) => {
-          if (Array.isArray(ccEvents) && ccEvents.length > 0) {
-            // Prendre la première valeur de chaque CC pour l'état initial
-            const initialCC = ccEvents[0]
-            const ccNum = parseInt(ccNumber)
-            const ccValue = Math.max(0, Math.min(127, parseInt(initialCC.value) || 0))
-
-            if (midiManager.sendControlChange && midiManager.sendControlChange(finalOutputId, trackChannel, ccNum, ccValue)) {
-              setupCount++
-            }
-          }
-        })
-      }
-    })
-  }
-
-  // NOUVELLE FONCTION : Maintenir l'état des CC lors de la pause
   function maintainCurrentCCState() {
     if (!canSendMidi.value) return
 
-    const availableOutputs = midiManager.availableOutputs?.value ?? []
     const ccStateMap = new Map()
 
-    // Analyser tous les événements CC jusqu'au temps courant
     playbackEvents.value.forEach(event => {
       if (event.type === 'controlChange' && event.time <= currentTime.value) {
         const key = `${event.outputId}-${event.channel}-${event.controller}`
@@ -619,60 +684,9 @@ export function useMidiPlayer() {
       }
     })
 
-    // Appliquer l'état courant des CC
-    let maintainedCount = 0
     ccStateMap.forEach(event => {
       if (midiManager.sendControlChange) {
-        const success = midiManager.sendControlChange(event.outputId, event.channel, event.controller, event.value)
-        if (success) {
-          maintainedCount++
-        }
-      }
-    })
-  }
-
-  // Améliorer applyMidiStateAtTime pour inclure les CC
-  function applyMidiStateAtTime(time) {
-    stopAllNotes()
-    sendInitialMidiSetup()
-
-    const ccState = new Map()
-    const pbState = new Map()
-
-    // Analyser tous les événements jusqu'au temps donné
-    playbackEvents.value.forEach(event => {
-      if (event.time > time) return
-
-      if (event.type === 'controlChange') {
-        const key = `${event.outputId}-${event.channel}-${event.controller}`
-        ccState.set(key, event)
-      } else if (event.type === 'pitchBend') {
-        const key = `${event.outputId}-${event.channel}`
-        pbState.set(key, event)
-      }
-    })
-
-    // Appliquer l'état des CC
-    let ccAppliedCount = 0
-    ccState.forEach(event => {
-      if (midiManager.sendControlChange) {
-        const success = midiManager.sendControlChange(event.outputId, event.channel, event.controller, event.value)
-        if (success) {
-          ccAppliedCount++
-        }
-      }
-    })
-
-    // Appliquer l'état des Pitch Bends
-    let pbAppliedCount = 0
-    pbState.forEach(event => {
-      const bendValue = Math.round(event.value + 8192)
-      const lsb = bendValue & 0x7F
-      const msb = (bendValue >> 7) & 0x7F
-      const message = [0xE0 + event.channel, lsb, msb]
-
-      if (midiManager.sendMidiMessage(event.outputId, message)) {
-        pbAppliedCount++
+        midiManager.sendControlChange(event.outputId, event.channel, event.controller, event.value)
       }
     })
   }
@@ -753,6 +767,11 @@ export function useMidiPlayer() {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(2, '0')}`
   }
 
+  function forceRefreshEvents() {
+    console.log('🔄 Régénération forcée des événements')
+    preparePlaybackEvents()
+  }
+
   onUnmounted(() => {
     stop()
     stopPlaybackTimer()
@@ -763,6 +782,44 @@ export function useMidiPlayer() {
       preparePlaybackEvents()
     }
   })
+
+  function resolveMidiOutput(trackMidiOutput, availableOutputs) {
+  if (!availableOutputs || availableOutputs.length === 0) {
+    console.warn('⚠️ Aucune sortie MIDI disponible')
+    return null
+  }
+
+  // Cas spécial : 'default' ou vide
+  if (!trackMidiOutput || trackMidiOutput === 'default') {
+    return availableOutputs[0] // Première sortie disponible
+  }
+
+  // 1. Recherche exacte par ID
+  let output = availableOutputs.find(o => o.id === trackMidiOutput)
+  if (output) {
+    return output
+  }
+
+  // 2. Recherche par nom (pour compatibilité)
+  output = availableOutputs.find(o => o.name === trackMidiOutput)
+  if (output) {
+    console.log(`🔄 Migration: "${trackMidiOutput}" trouvé par nom, ID=${output.id}`)
+    return output
+  }
+
+  // 3. Recherche partielle
+  output = availableOutputs.find(o => 
+    o.name.toLowerCase().includes(String(trackMidiOutput).toLowerCase())
+  )
+  if (output) {
+    console.log(`🔄 Correspondance partielle: "${trackMidiOutput}" -> "${output.name}"`)
+    return output
+  }
+
+  console.error(`❌ Sortie "${trackMidiOutput}" introuvable, utilisation de la première disponible`)
+  return availableOutputs[0] // Fallback
+}
+
 
   return {
     // État
@@ -793,9 +850,9 @@ export function useMidiPlayer() {
     setLoop,
     toggleLoop,
     preparePlaybackEvents,
-    forceRefreshEvents, // Fonction pour forcer la mise à jour
+    forceRefreshEvents,
 
-    // NOUVELLES FONCTIONS pour la gestion des CC
+    // Nouvelles fonctions
     maintainCurrentCCState,
 
     // Utilitaires

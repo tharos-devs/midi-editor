@@ -1,455 +1,440 @@
-// composables/useMidiManager.js - Version avec logging amélioré
-import { ref, reactive, computed, onMounted, onUnmounted, readonly } from 'vue'
-import { ElMessage } from 'element-plus'
+// composables/useMidiManager.js - VERSION CORRIGÉE COMPLÈTE
 
-// État global pour les périphériques MIDI
-const midiAccess = ref(null)
-const midiInputs = ref([])
-const midiOutputs = ref([])
-const midiSupported = ref(false)
-const isInitialized = ref(false)
-
-// Cache pour les noms de ports détectés
-const portNameCache = reactive(new Map())
-
-// Statistiques de connexion
-const midiStats = reactive({
-  connectedInputs: 0,
-  connectedOutputs: 0,
-  totalMessages: 0,
-  lastActivity: null
-})
-
-// Contexte pour les logs (sera rempli par l'application)
-const logContext = reactive({
-  trackName: 'Inconnue',
-  trackNumber: 1,
-  instrumentName: 'Instrument',
-  channel: 0
-})
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 
 export function useMidiManager() {
-  // Fonction pour détecter le vrai nom d'un port MIDI sur macOS
-  function detectRealPortName(port) {
-    if (portNameCache.has(port.id)) {
-      return portNameCache.get(port.id)
-    }
+  // État réactif
+  const midiAccess = ref(null)
+  const availableInputs = ref([])
+  const availableOutputs = ref([])
+  const isInitialized = ref(false)
+  const midiSupported = ref(false)
+  const lastError = ref(null)
 
-    let detectedName = port.name || `Port ${port.id}`
-
-    try {
-      if (port.displayName && port.displayName !== port.name) {
-        detectedName = port.displayName
-      }
-      else if (port.manufacturer && port.version) {
-        const manufacturerInfo = port.manufacturer.trim()
-        const versionInfo = port.version.trim()
-
-        if (manufacturerInfo && manufacturerInfo !== 'Unknown' && manufacturerInfo !== 'Apple Inc.') {
-          detectedName = `${manufacturerInfo} ${port.name}`
-        } else if (versionInfo && versionInfo !== port.name) {
-          detectedName = versionInfo
-        }
-      }
-      else if (port.connection && port.state) {
-        const portKeys = Object.getOwnPropertyNames(port)
-        for (const key of portKeys) {
-          if (key.includes('name') || key.includes('display') || key.includes('title')) {
-            try {
-              const value = port[key]
-              if (typeof value === 'string' && value !== port.name && value.length > 0) {
-                detectedName = value
-                break
-              }
-            } catch (e) {
-              // Propriété non accessible
-            }
-          }
-        }
-      }
-
-      if (detectedName === port.name && port.id) {
-        const idParts = port.id.split(/[-_\s]+/)
-        for (const part of idParts) {
-          if (part.length > 3 &&
-            !part.match(/^\d+$/) &&
-            !part.toLowerCase().includes('bus') &&
-            !part.toLowerCase().includes('port')) {
-            detectedName = part
-            break
-          }
-        }
-      }
-
-    } catch (error) {
-      console.error('❌ Erreur lors de la détection du nom du port MIDI:', error)
-    }
-
-    detectedName = cleanPortName(detectedName)
-    portNameCache.set(port.id, detectedName)
-
-    return detectedName
-  }
-
-  function cleanPortName(name) {
-    if (!name) return 'Port Inconnu'
-
-    let cleanName = name.trim()
-
-    const replacements = [
-      { pattern: /^Bus\s*(\d+)$/i, replacement: (match, num) => `Bus MIDI ${num}` },
-      { pattern: /^Port\s*(\d+)$/i, replacement: (match, num) => `Port MIDI ${num}` },
-      { pattern: /^IAC\s*Driver\s*/i, replacement: '' },
-      { pattern: /^CoreMIDI\s*/i, replacement: '' },
-      { pattern: /\s*\(.*?\)\s*$/g, replacement: '' },
-    ]
-
-    for (const { pattern, replacement } of replacements) {
-      if (typeof replacement === 'function') {
-        cleanName = cleanName.replace(pattern, replacement)
-      } else {
-        cleanName = cleanName.replace(pattern, replacement)
-      }
-    }
-
-    return cleanName.trim() || 'Port MIDI'
-  }
-
-  async function refreshPortNames() {
-    if (!midiAccess.value) return
-
-    portNameCache.clear()
-    await new Promise(resolve => setTimeout(resolve, 100))
-    updateMidiDevices()
-
-    ElMessage.success('Noms des ports MIDI actualisés')
-  }
-
-  async function initializeMidi() {
-    try {
-      if (!navigator.requestMIDIAccess) {
-        midiSupported.value = false
-        return false
-      }
-
-      midiSupported.value = true
-
-      midiAccess.value = await navigator.requestMIDIAccess({
-        sysex: false
-      })
-
-      await new Promise(resolve => setTimeout(resolve, 200))
-
-      updateMidiDevices()
-      setupMidiListeners()
-
-      isInitialized.value = true
-
-      ElMessage.success(`MIDI initialisé: ${midiOutputs.value.length} sorties, ${midiInputs.value.length} entrées`)
-
-      return true
-    } catch (error) {
-      console.error('❌ Erreur lors de l\'initialisation MIDI:', error)
-      midiSupported.value = false
-      ElMessage.error('Impossible d\'accéder aux périphériques MIDI')
-      return false
-    }
-  }
-
-  function updateMidiDevices() {
-    if (!midiAccess.value) return
-
-    const outputs = []
-    for (const output of midiAccess.value.outputs.values()) {
-      const detectedName = detectRealPortName(output)
-
-      outputs.push({
-        id: output.id,
-        name: detectedName,
-        originalName: output.name,
-        manufacturer: output.manufacturer || 'Inconnu',
-        state: output.state,
-        connection: output.connection,
-        type: 'output',
-        port: output
-      })
-    }
-    midiOutputs.value = outputs
-
-    const inputs = []
-    for (const input of midiAccess.value.inputs.values()) {
-      const detectedName = detectRealPortName(input)
-
-      inputs.push({
-        id: input.id,
-        name: detectedName,
-        originalName: input.name,
-        manufacturer: input.manufacturer || 'Inconnu',
-        state: input.state,
-        connection: input.connection,
-        type: 'input',
-        port: input
-      })
-    }
-    midiInputs.value = inputs
-
-    updateStats()
-  }
-
-  function updateStats() {
-    midiStats.connectedInputs = midiInputs.value.filter(d => d.state === 'connected').length
-    midiStats.connectedOutputs = midiOutputs.value.filter(d => d.state === 'connected').length
-  }
-
-  function setupMidiListeners() {
-    if (!midiAccess.value) return
-
-    midiAccess.value.onstatechange = async (event) => {
-      await new Promise(resolve => setTimeout(resolve, 100))
-
-      if (portNameCache.has(event.port.id)) {
-        portNameCache.delete(event.port.id)
-      }
-
-      updateMidiDevices()
-
-      const detectedName = detectRealPortName(event.port)
-      const isConnected = event.port.state === 'connected'
-      const deviceType = event.port.type === 'input' ? 'entrée' : 'sortie'
-      const message = isConnected
-        ? `Périphérique MIDI connecté: ${detectedName} (${deviceType})`
-        : `Périphérique MIDI déconnecté: ${detectedName} (${deviceType})`
-
-      ElMessage.info(message)
-    }
-
-    // Configurer les écouteurs pour les messages entrants avec le nouveau système de logging
-    midiInputs.value.forEach(input => {
-      if (input.port) {
-        input.port.onmidimessage = (event) => {
-          midiStats.totalMessages++
-          midiStats.lastActivity = new Date()
-        }
-      }
-    })
-  }
-
-  // Fonctions d'envoi avec logging amélioré
-  function getOutputById(id) {
-    if (id === 'default' && midiOutputs.value.length > 0) {
-      return midiOutputs.value[0]
-    }
-    return midiOutputs.value.find(output => output.id === id)
-  }
-
-  function getInputById(id) {
-    return midiInputs.value.find(input => input.id === id)
-  }
-
-  function sendMidiMessage(outputId, message, timestamp = null) {
-    const output = getOutputById(outputId)
-    if (!output || !output.port) {
-      console.warn(`❌ Périphérique de sortie MIDI non trouvé: ${outputId}`)
-      return false
-    }
-
-    try {
-      if (timestamp) {
-        output.port.send(message, timestamp)
-      } else {
-        output.port.send(message)
-      }
-
-      return true
-    } catch (error) {
-      console.error('❌ Erreur lors de l\'envoi du message MIDI:', error)
-      return false
-    }
-  }
-
-  function sendNote(outputId, channel, note, velocity, duration = 500) {
-    const noteOn = [0x90 + channel, note, velocity]
-    const noteOff = [0x80 + channel, note, 0]
-
-    if (sendMidiMessage(outputId, noteOn)) {
-      setTimeout(() => {
-        sendMidiMessage(outputId, noteOff)
-      }, duration)
-      return true
-    }
-    return false
-  }
-
-  function sendProgramChange(outputId, channel, program) {
-    const message = [0xC0 + channel, program]
-    return sendMidiMessage(outputId, message)
-  }
-
-  function sendControlChange(outputId, channel, controller, value) {
-    const message = [0xB0 + channel, controller, value]
-    return sendMidiMessage(outputId, message)
-  }
-
-  function sendBankSelect(outputId, channel, bank) {
-    sendControlChange(outputId, channel, 0, Math.floor(bank / 128))
-    sendControlChange(outputId, channel, 32, bank % 128)
-  }
-
-  function testConnection(outputId, channel = 0) {
-    return sendNote(outputId, channel, 60, 80, 500)
-  }
-
-  async function refreshDevices() {
-    if (!midiSupported.value) {
-      return await initializeMidi()
-    }
-
-    await refreshPortNames()
-    return true
-  }
-
-  function cleanup() {
-    if (midiAccess.value) {
-      midiAccess.value.onstatechange = null
-
-      midiInputs.value.forEach(input => {
-        if (input.port) {
-          input.port.onmidimessage = null
-        }
-      })
-    }
-
-    portNameCache.clear()
-  }
-
-  // Getters calculés
-  const hasConnectedOutputs = computed(() =>
-    midiOutputs.value.some(output => output.state === 'connected')
-  )
-
-  const hasConnectedInputs = computed(() =>
-    midiInputs.value.some(input => input.state === 'connected')
-  )
-
-  const availableOutputs = computed(() =>
-    midiOutputs.value.filter(output => output.state === 'connected')
-  )
-
-  const availableInputs = computed(() =>
-    midiInputs.value.filter(input => input.state === 'connected')
-  )
-
-  const midiStatus = computed(() => {
-    if (!midiSupported.value) return 'unsupported'
-    if (!isInitialized.value) return 'initializing'
-    if (midiOutputs.value.length === 0) return 'no-devices'
-    if (!hasConnectedOutputs.value) return 'disconnected'
-    return 'connected'
-  })
-
-  const midiStatusText = computed(() => {
-    switch (midiStatus.value) {
-      case 'unsupported': return 'MIDI non supporté'
-      case 'initializing': return 'Initialisation...'
-      case 'no-devices': return 'Aucun périphérique'
-      case 'disconnected': return 'Déconnecté'
-      case 'connected': return 'Connecté'
-      default: return 'Inconnu'
-    }
-  })
-
-  onMounted(() => {
-    initializeMidi()
+  // Initialisation
+  onMounted(async () => {
+    await initializeMidi()
   })
 
   onUnmounted(() => {
     cleanup()
   })
 
+  // ✅ CORRECTION: Fonction robuste pour trouver une sortie MIDI
+  function findMidiOutput(outputId, outputs = null) {
+    const outputList = outputs || availableOutputs.value || []
+
+    if (!outputId || outputList.length === 0) {
+      return null
+    }
+
+    // Cas spécial : 'default'
+    if (outputId === 'default') {
+      return outputList.length > 0 ? outputList[0] : null
+    }
+
+    // 1. Recherche exacte par ID
+    let output = outputList.find(o => o.id === outputId)
+    if (output) {
+      console.log(`🎯 Sortie trouvée par ID: ${output.name} (${output.id})`)
+      return output
+    }
+
+    // 2. Recherche par nom (fallback pour anciennes configurations)
+    output = outputList.find(o => o.name === outputId)
+    if (output) {
+      console.log(`🎯 Sortie trouvée par nom: ${output.name} (${output.id})`)
+      return output
+    }
+
+    // 3. Recherche partielle par nom
+    output = outputList.find(o =>
+      o.name.toLowerCase().includes(String(outputId).toLowerCase()) ||
+      String(outputId).toLowerCase().includes(o.name.toLowerCase())
+    )
+    if (output) {
+      console.log(`🎯 Sortie trouvée par correspondance partielle: ${output.name} (${output.id})`)
+      return output
+    }
+
+    console.error(`❌ Sortie MIDI "${outputId}" non trouvée parmi:`,
+      outputList.map(o => `${o.name} (${o.id})`))
+    return null
+  }
+
+  // Initialisation MIDI
+  async function initializeMidi() {
+    if (!navigator.requestMIDIAccess) {
+      console.warn('⚠️ Web MIDI API non supportée par ce navigateur')
+      midiSupported.value = false
+      return false
+    }
+
+    try {
+      console.log('🎹 Initialisation de l\'accès MIDI...')
+      midiSupported.value = true
+
+      const access = await navigator.requestMIDIAccess({ sysex: false })
+      midiAccess.value = access
+
+      // Écouter les changements de périphériques
+      access.addEventListener('statechange', handleMidiStateChange)
+
+      // Lister les périphériques initiaux
+      updateAvailableDevices()
+
+      isInitialized.value = true
+      console.log('✅ MIDI initialisé avec succès')
+
+      return true
+    } catch (error) {
+      console.error('💥 Erreur lors de l\'initialisation MIDI:', error)
+      lastError.value = error.message
+      isInitialized.value = false
+      return false
+    }
+  }
+
+  // Gestion des changements de périphériques
+  function handleMidiStateChange(event) {
+    console.log(`🔄 Changement périphérique MIDI: ${event.port.name} (${event.port.state})`)
+    updateAvailableDevices()
+  }
+
+  // Mise à jour de la liste des périphériques
+  function updateAvailableDevices() {
+    if (!midiAccess.value) return
+
+    // Inputs
+    const inputs = []
+    for (const input of midiAccess.value.inputs.values()) {
+      if (input.state === 'connected') {
+        inputs.push({
+          id: input.id,
+          name: input.name || 'Input sans nom',
+          manufacturer: input.manufacturer || '',
+          type: input.type || 'input',
+          state: input.state,
+          input: input
+        })
+      }
+    }
+    availableInputs.value = inputs
+
+    // Outputs
+    const outputs = []
+    for (const output of midiAccess.value.outputs.values()) {
+      if (output.state === 'connected') {
+        outputs.push({
+          id: output.id,
+          name: output.name || 'Output sans nom',
+          manufacturer: output.manufacturer || '',
+          type: output.type || 'output',
+          state: output.state,
+          output: output
+        })
+      }
+    }
+    availableOutputs.value = outputs
+
+    console.log(`📋 Périphériques MIDI mis à jour: ${inputs.length} entrées, ${outputs.length} sorties`)
+
+    // Debug détaillé
+    if (outputs.length > 0) {
+      console.log('🔍 Sorties MIDI disponibles:')
+      outputs.forEach((output, index) => {
+        console.log(`  ${index + 1}. "${output.name}" (ID: ${output.id})`)
+        console.log(`     - Manufacturer: ${output.manufacturer || 'N/A'}`)
+        console.log(`     - State: ${output.state}`)
+      })
+    }
+  }
+
+  // ✅ CORRECTION: sendControlChange amélioré
+  function sendControlChange(outputId, channel, controller, value) {
+    if (!isInitialized.value || !midiAccess.value) {
+      console.warn('⚠️ MIDI non initialisé')
+      return false
+    }
+
+    const output = findMidiOutput(outputId)
+
+    if (!output || !output.output) {
+      console.error(`❌ Impossible d'envoyer CC${controller}: sortie "${outputId}" introuvable`)
+      return false
+    }
+
+    try {
+      const clampedChannel = Math.max(0, Math.min(15, parseInt(channel) || 0))
+      const clampedController = Math.max(0, Math.min(127, parseInt(controller) || 0))
+      const clampedValue = Math.max(0, Math.min(127, parseInt(value) || 0))
+
+      const message = [0xB0 + clampedChannel, clampedController, clampedValue]
+
+      console.log(`🎛️ Envoi CC: "${output.name}" Canal=${clampedChannel + 1} CC${clampedController}=${clampedValue}`)
+
+      output.output.send(message)
+      return true
+
+    } catch (error) {
+      console.error(`💥 Erreur envoi CC${controller}:`, error)
+      return false
+    }
+  }
+
+  // ✅ CORRECTION: sendMidiMessage amélioré  
+  function sendMidiMessage(outputId, message) {
+    if (!isInitialized.value || !midiAccess.value) {
+      console.warn('⚠️ MIDI non initialisé')
+      return false
+    }
+
+    const output = findMidiOutput(outputId)
+
+    if (!output || !output.output) {
+      console.error(`❌ Sortie MIDI "${outputId}" non trouvée pour message`, message)
+      return false
+    }
+
+    try {
+      output.output.send(message)
+      return true
+    } catch (error) {
+      console.error(`💥 Erreur envoi message MIDI:`, error, { outputId, message })
+      return false
+    }
+  }
+
+  // ✅ CORRECTION: sendProgramChange amélioré
+  function sendProgramChange(outputId, channel, program) {
+    if (!isInitialized.value || !midiAccess.value) {
+      console.warn('⚠️ MIDI non initialisé')
+      return false
+    }
+
+    const output = findMidiOutput(outputId)
+
+    if (!output || !output.output) {
+      console.error(`❌ Impossible d'envoyer Program Change: sortie "${outputId}" introuvable`)
+      return false
+    }
+
+    try {
+      const clampedChannel = Math.max(0, Math.min(15, parseInt(channel) || 0))
+      const clampedProgram = Math.max(0, Math.min(127, parseInt(program) || 0))
+
+      const message = [0xC0 + clampedChannel, clampedProgram]
+
+      console.log(`📯 Envoi Program Change: "${output.name}" Canal=${clampedChannel + 1} Program=${clampedProgram}`)
+
+      output.output.send(message)
+      return true
+
+    } catch (error) {
+      console.error(`💥 Erreur envoi Program Change:`, error)
+      return false
+    }
+  }
+
+  // ✅ CORRECTION: sendBankSelect amélioré
+  function sendBankSelect(outputId, channel, bank) {
+    if (!isInitialized.value || !midiAccess.value) {
+      console.warn('⚠️ MIDI non initialisé')
+      return false
+    }
+
+    const output = findMidiOutput(outputId)
+
+    if (!output || !output.output) {
+      console.error(`❌ Impossible d'envoyer Bank Select: sortie "${outputId}" introuvable`)
+      return false
+    }
+
+    try {
+      const clampedChannel = Math.max(0, Math.min(15, parseInt(channel) || 0))
+      const clampedBank = Math.max(0, Math.min(127, parseInt(bank) || 0))
+
+      // Bank Select MSB (CC0) 
+      const message = [0xB0 + clampedChannel, 0, clampedBank]
+
+      console.log(`🏦 Envoi Bank Select: "${output.name}" Canal=${clampedChannel + 1} Bank=${clampedBank}`)
+
+      output.output.send(message)
+      return true
+
+    } catch (error) {
+      console.error(`💥 Erreur envoi Bank Select:`, error)
+      return false
+    }
+  }
+
+  // Fonction de test MIDI
+  function testMidiOutput(outputId, channel = 0, note = 60, velocity = 100, duration = 500) {
+    if (!isInitialized.value) {
+      console.warn('⚠️ MIDI non initialisé')
+      return false
+    }
+
+    const output = findMidiOutput(outputId)
+    if (!output) {
+      console.error(`❌ Sortie "${outputId}" non trouvée pour test`)
+      return false
+    }
+
+    try {
+      const clampedChannel = Math.max(0, Math.min(15, channel))
+      const clampedNote = Math.max(0, Math.min(127, note))
+      const clampedVelocity = Math.max(1, Math.min(127, velocity))
+
+      console.log(`🧪 Test MIDI: "${output.name}" Canal=${clampedChannel + 1} Note=${clampedNote} Vel=${clampedVelocity}`)
+
+      // Note On
+      const noteOnMessage = [0x90 + clampedChannel, clampedNote, clampedVelocity]
+      output.output.send(noteOnMessage)
+
+      // Note Off après la durée spécifiée
+      setTimeout(() => {
+        const noteOffMessage = [0x80 + clampedChannel, clampedNote, 0]
+        output.output.send(noteOffMessage)
+      }, duration)
+
+      return true
+    } catch (error) {
+      console.error('💥 Erreur test MIDI:', error)
+      return false
+    }
+  }
+
+  // Fonctions utilitaires
+  function getAllNotesOff(outputId, channel) {
+    if (!isInitialized.value) return false
+
+    const output = findMidiOutput(outputId)
+    if (!output) return false
+
+    try {
+      const clampedChannel = Math.max(0, Math.min(15, channel || 0))
+
+      // All Notes Off (CC 123)
+      const allNotesOffMessage = [0xB0 + clampedChannel, 123, 0]
+      output.output.send(allNotesOffMessage)
+
+      // All Sound Off (CC 120)
+      const allSoundOffMessage = [0xB0 + clampedChannel, 120, 0]
+      output.output.send(allSoundOffMessage)
+
+      console.log(`🔇 All Notes/Sound Off envoyé à "${output.name}" Canal=${clampedChannel + 1}`)
+      return true
+    } catch (error) {
+      console.error('💥 Erreur All Notes Off:', error)
+      return false
+    }
+  }
+
+  function resetAllControllers(outputId, channel) {
+    if (!isInitialized.value) return false
+
+    const output = findMidiOutput(outputId)
+    if (!output) return false
+
+    try {
+      const clampedChannel = Math.max(0, Math.min(15, channel || 0))
+
+      // Reset All Controllers (CC 121)
+      const resetMessage = [0xB0 + clampedChannel, 121, 0]
+      output.output.send(resetMessage)
+
+      console.log(`🔄 Reset All Controllers envoyé à "${output.name}" Canal=${clampedChannel + 1}`)
+      return true
+    } catch (error) {
+      console.error('💥 Erreur Reset Controllers:', error)
+      return false
+    }
+  }
+
+  // ✅ CORRECTION: Fonction de debug pour lister les sorties
+  function debugMidiOutputs() {
+    console.log('🔍 Debug - Sorties MIDI disponibles:')
+    const outputs = availableOutputs.value || []
+
+    if (outputs.length === 0) {
+      console.log('  ❌ Aucune sortie MIDI disponible')
+      return
+    }
+
+    outputs.forEach((output, index) => {
+      console.log(`  ${index + 1}. "${output.name}" (ID: ${output.id})`)
+      console.log(`     - Type: ${output.type}`)
+      console.log(`     - État: ${output.state}`)
+      console.log(`     - Manufacturer: ${output.manufacturer || 'N/A'}`)
+    })
+  }
+
+  // Nettoyage
+  function cleanup() {
+    if (midiAccess.value) {
+      midiAccess.value.removeEventListener('statechange', handleMidiStateChange)
+    }
+
+    midiAccess.value = null
+    availableInputs.value = []
+    availableOutputs.value = []
+    isInitialized.value = false
+  }
+
+  // Propriétés calculées
+  const hasOutputs = computed(() => availableOutputs.value.length > 0)
+  const hasInputs = computed(() => availableInputs.value.length > 0)
+  const outputCount = computed(() => availableOutputs.value.length)
+  const inputCount = computed(() => availableInputs.value.length)
+
+  // Getters pour les sorties
+  const getOutputById = computed(() => (id) => {
+    return findMidiOutput(id)
+  })
+
+  const getOutputByName = computed(() => (name) => {
+    return availableOutputs.value.find(output => output.name === name) || null
+  })
+
+  const getDefaultOutput = computed(() => {
+    return availableOutputs.value.length > 0 ? availableOutputs.value[0] : null
+  })
+
   return {
     // État
-    midiAccess: readonly(midiAccess),
-    midiInputs: readonly(midiInputs),
-    midiOutputs: readonly(midiOutputs),
-    midiSupported: readonly(midiSupported),
-    isInitialized: readonly(isInitialized),
-    midiStats: readonly(midiStats),
+    midiAccess,
+    availableInputs,
+    availableOutputs,
+    isInitialized,
+    midiSupported,
+    lastError,
+
+    // Propriétés calculées
+    hasOutputs,
+    hasInputs,
+    outputCount,
+    inputCount,
 
     // Getters
-    hasConnectedOutputs,
-    hasConnectedInputs,
-    availableOutputs,
-    availableInputs,
-    midiStatus,
-    midiStatusText,
-
-    // Actions
-    initializeMidi,
-    updateMidiDevices,
-    refreshDevices,
-    refreshPortNames,
     getOutputById,
-    getInputById,
+    getOutputByName,
+    getDefaultOutput,
+
+    // Fonctions principales
+    initializeMidi,
     sendMidiMessage,
-    sendNote,
-    sendProgramChange,
     sendControlChange,
+    sendProgramChange,
     sendBankSelect,
-    testConnection,
+    testMidiOutput,
+    getAllNotesOff,
+    resetAllControllers,
+
+    // Utilitaires
+    findMidiOutput,
+    debugMidiOutputs,
+    updateAvailableDevices,
     cleanup
-  }
-}
-
-// Utilitaires MIDI
-export const MidiUtils = {
-  noteNumberToName(noteNumber) {
-    const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
-    const octave = Math.floor(noteNumber / 12) - 1
-    const noteName = noteNames[noteNumber % 12]
-    return `${noteName}${octave}`
-  },
-
-  noteNameToNumber(noteName) {
-    const noteNames = { 'C': 0, 'C#': 1, 'Db': 1, 'D': 2, 'D#': 3, 'Eb': 3, 'E': 4, 'F': 5, 'F#': 6, 'Gb': 6, 'G': 7, 'G#': 8, 'Ab': 8, 'A': 9, 'A#': 10, 'Bb': 10, 'B': 11 }
-    const match = noteName.match(/^([A-G][#b]?)(-?\d+)$/)
-    if (!match) return null
-
-    const [, note, octave] = match
-    return (parseInt(octave) + 1) * 12 + noteNames[note]
-  },
-
-  getControllerName(ccNumber) {
-    const controllerNames = {
-      0: 'Bank Select MSB',
-      1: 'Modulation',
-      2: 'Breath Controller',
-      4: 'Foot Controller',
-      5: 'Portamento Time',
-      6: 'Data Entry MSB',
-      7: 'Volume',
-      8: 'Balance',
-      10: 'Pan',
-      11: 'Expression',
-      32: 'Bank Select LSB',
-      64: 'Sustain Pedal',
-      65: 'Portamento',
-      66: 'Sostenuto',
-      67: 'Soft Pedal',
-      68: 'Legato Footswitch',
-      69: 'Hold 2',
-      120: 'All Sound Off',
-      121: 'Reset All Controllers',
-      122: 'Local Control',
-      123: 'All Notes Off'
-    }
-    return controllerNames[ccNumber] || `CC ${ccNumber}`
-  },
-
-  validateChannel(channel) {
-    return Math.max(0, Math.min(15, Math.floor(channel)))
-  },
-
-  validateMidiValue(value) {
-    return Math.max(0, Math.min(127, Math.floor(value)))
   }
 }

@@ -32,7 +32,7 @@ export const useMidiStore = defineStore('midi', () => {
     notesVersion.value++
     tracksVersion.value++
     ccVersion.value++ // NOUVEAU : Incrémenter la version CC
-    
+
     // Forcer Vue à détecter le changement
     notes.value = [...notes.value]
     tracks.value = [...tracks.value]
@@ -153,7 +153,7 @@ export const useMidiStore = defineStore('midi', () => {
       const noteIndex = notes.value.findIndex(note => note.id === noteId)
       if (noteIndex !== -1) {
         const oldNote = notes.value[noteIndex]
-        
+
         // Créer une nouvelle note avec les mises à jour
         const updatedNote = {
           ...oldNote,
@@ -180,7 +180,7 @@ export const useMidiStore = defineStore('midi', () => {
     if (hasChanges) {
       // CORRECTION 4: Forcer la réactivité après les modifications
       triggerReactivity()
-      
+
       // Attendre le prochain tick pour que Vue traite les changements
       await nextTick()
     }
@@ -377,16 +377,13 @@ export const useMidiStore = defineStore('midi', () => {
         })
       }
 
-      // Traitement amélioré des Control Changes
-      let trackCCCount = 0
-      
       if (track.controlChanges && typeof track.controlChanges === 'object') {
         // S'assurer que trackData.controlChanges est initialisé
         trackData.controlChanges = {}
-        
+
         Object.entries(track.controlChanges).forEach(([ccNumber, ccEvents]) => {
           const ccNum = parseInt(ccNumber)
-         
+
           if (Array.isArray(ccEvents) && ccEvents.length > 0) {
             // Traitement des événements CC pour cette piste
             const processedCCEvents = ccEvents.map((cc, ccIndex) => {
@@ -406,7 +403,7 @@ export const useMidiStore = defineStore('midi', () => {
 
               return ccEventData
             })
-            
+
             // Assigner les CC traités à la piste
             trackData.controlChanges[ccNum] = processedCCEvents
           } else {
@@ -445,12 +442,6 @@ export const useMidiStore = defineStore('midi', () => {
       selectedTrack.value = tracks.value[0].id
     }
 
-    // Debug détaillé des CC par piste
-    tracks.value.forEach(track => {
-      const ccControllers = Object.keys(track.controlChanges || {}).length
-      const ccEvents = Object.values(track.controlChanges || {}).reduce((sum, ccArray) => sum + ccArray.length, 0)
-    })
-
     // Forcer la réactivité après l'extraction
     triggerReactivity()
   }
@@ -476,7 +467,7 @@ export const useMidiStore = defineStore('midi', () => {
     toneMidi.value = null
     isLoaded.value = false
     filename.value = ''
-    
+
     // CORRECTION 5: Réinitialiser les compteurs de version
     lastModified.value = Date.now()
     notesVersion.value = 0
@@ -520,13 +511,54 @@ export const useMidiStore = defineStore('midi', () => {
     }
   }
 
-  function updateTrackVolume(trackId, volume) {
+  async function updateTrackVolume(trackId, volume) {
+    const trackIndex = tracks.value.findIndex(t => t.id === trackId)
+    if (trackIndex !== -1) {
+      const newVolume = Math.max(0, Math.min(127, Math.round(volume)))
+
+      // MÉTHODE 1: Modification directe avec forçage
+      tracks.value[trackIndex].volume = newVolume
+      tracks.value[trackIndex].lastModified = Date.now()
+
+      // MÉTHODE 2: Remplacement complet de l'objet (plus sûr pour la réactivité)
+      const updatedTrack = {
+        ...tracks.value[trackIndex],
+        volume: newVolume,
+        lastModified: Date.now()
+      }
+
+      // Utiliser Vue.set équivalent ou splice pour forcer la réactivité
+      tracks.value.splice(trackIndex, 1, updatedTrack)
+
+      // MÉTHODE 3: Incrémenter les compteurs de version
+      tracksVersion.value++
+      lastModified.value = Date.now()
+
+      // MÉTHODE 4: Déclencher manuellement la réactivité
+      triggerReactivity()
+
+      await nextTick()
+
+      console.log(`✅ Volume mis à jour pour la piste ${trackId}: ${newVolume}`)
+      return true
+    }
+
+    console.error(`❌ Piste ${trackId} non trouvée pour mise à jour volume`)
+    return false
+  }
+
+
+  async function updateTrackName(trackId, name) {
     const track = tracks.value.find(t => t.id === trackId)
     if (track) {
-      track.volume = Math.max(0, Math.min(127, volume))
+      track.name = name
       triggerReactivity()
+      await nextTick()
+      return true
     }
+    return false
   }
+
 
   // Gestion des Control Changes
   async function addControlChange(trackId, ccNumber, time, value) {
@@ -582,9 +614,9 @@ export const useMidiStore = defineStore('midi', () => {
     }
 
     const oldCC = midiCC.value[globalCCIndex]
-    const updatedCC = { 
-      ...oldCC, 
-      ...updates, 
+    const updatedCC = {
+      ...oldCC,
+      ...updates,
       lastModified: Date.now(),
       // S'assurer que les valeurs critiques restent dans les limites
       value: updates.value !== undefined ? Math.max(0, Math.min(127, parseInt(updates.value))) : oldCC.value,
@@ -600,12 +632,12 @@ export const useMidiStore = defineStore('midi', () => {
       const trackCCIndex = track.controlChanges[oldCC.number].findIndex(cc => cc.id === ccId)
       if (trackCCIndex !== -1) {
         track.controlChanges[oldCC.number][trackCCIndex] = updatedCC
-        
+
         // Si le numéro de CC a changé, déplacer vers le bon tableau
         if (updates.number !== undefined && updates.number !== oldCC.number) {
           // Supprimer de l'ancien
           track.controlChanges[oldCC.number].splice(trackCCIndex, 1)
-          
+
           // Ajouter au nouveau
           if (!track.controlChanges[updates.number]) {
             track.controlChanges[updates.number] = []
@@ -632,7 +664,7 @@ export const useMidiStore = defineStore('midi', () => {
     }
 
     const ccToDelete = midiCC.value[globalCCIndex]
-    
+
     // Supprimer du tableau global
     midiCC.value.splice(globalCCIndex, 1)
 
@@ -762,12 +794,12 @@ export const useMidiStore = defineStore('midi', () => {
     const noteIndex = notes.value.findIndex(n => n.id === noteId)
     if (noteIndex !== -1) {
       const oldNote = notes.value[noteIndex]
-      const updatedNote = { 
-        ...oldNote, 
-        ...updates, 
-        lastModified: Date.now() 
+      const updatedNote = {
+        ...oldNote,
+        ...updates,
+        lastModified: Date.now()
       }
-      
+
       // Mettre à jour dans le tableau global
       notes.value[noteIndex] = updatedNote
 
@@ -782,10 +814,10 @@ export const useMidiStore = defineStore('midi', () => {
 
       // Forcer la réactivité
       triggerReactivity()
-      
+
       // Attendre le prochain tick
       await nextTick()
-      
+
       return true
     }
 
@@ -944,25 +976,47 @@ export const useMidiStore = defineStore('midi', () => {
     return false
   }
 
-  function updateTrackPan(trackId, pan) {
-    const track = tracks.value.find(t => t.id === trackId)
-    if (track) {
-      track.pan = Math.max(0, Math.min(127, pan))
+  async function updateTrackPan(trackId, pan) {
+    const trackIndex = tracks.value.findIndex(t => t.id === trackId)
+    if (trackIndex !== -1) {
+      // ✅ S'assurer que la valeur est dans la plage MIDI correcte (0-127)
+      const newPan = Math.max(0, Math.min(127, Math.round(pan)))
+
+      console.log(`📝 Store: Mise à jour Pan piste ${trackId}: ${tracks.value[trackIndex].pan} → ${newPan}`)
+
+      const updatedTrack = {
+        ...tracks.value[trackIndex],
+        pan: newPan,
+        lastModified: Date.now()
+      }
+
+      tracks.value.splice(trackIndex, 1, updatedTrack)
+
+      tracksVersion.value++
+      lastModified.value = Date.now()
       triggerReactivity()
+
+      await nextTick()
+
+      console.log(`✅ Store: Pan mis à jour pour piste ${trackId}: ${newPan}`)
       return true
     }
+
+    console.error(`❌ Store: Piste ${trackId} non trouvée pour mise à jour Pan`)
     return false
   }
 
-  function updateTrackColor(trackId, color) {
+
+  async function updateTrackColor(trackId, color) {
     const track = tracks.value.find(t => t.id === trackId)
     if (track) {
       track.color = color
       triggerReactivity()
+      await nextTick()
       return true
     }
     return false
-  }  
+  }
 
   function getTracksWithMetadata() {
     return tracks.value.map(track => ({
@@ -984,15 +1038,58 @@ export const useMidiStore = defineStore('midi', () => {
     }, 0)
   }
 
-  function reorderTrack(trackId, newIndex) {
+  async function reorderTrack(trackId, newIndex) {
     const currentIndex = tracks.value.findIndex(t => t.id === trackId)
-    if (currentIndex === -1 || currentIndex === newIndex) return false
 
-    const track = tracks.value.splice(currentIndex, 1)[0]
-    tracks.value.splice(newIndex, 0, track)
+    if (currentIndex === -1) {
+      console.error(`❌ Piste ${trackId} non trouvée`)
+      return false
+    }
 
-    triggerReactivity()
-    return true
+    // Valider le nouvel index
+    const maxIndex = tracks.value.length - 1
+    if (newIndex < 0 || newIndex > maxIndex) {
+      console.error(`❌ Index invalide: ${newIndex} (doit être entre 0 et ${maxIndex})`)
+      return false
+    }
+
+    // Pas de changement nécessaire
+    if (currentIndex === newIndex) {
+      console.log(`⚠️  Pas de changement nécessaire (même index: ${currentIndex})`)
+      return true
+    }
+
+    console.log(`🔄 Réorganisation: piste ${trackId} de l'index ${currentIndex} vers ${newIndex}`)
+    console.log(`📋 Avant:`, tracks.value.map((t, i) => `${i}:${t.name}(${t.id})`))
+
+    try {
+      // Créer une nouvelle copie du tableau pour forcer la réactivité
+      const newTracks = [...tracks.value]
+
+      // Extraire la piste à déplacer
+      const [movedTrack] = newTracks.splice(currentIndex, 1)
+
+      // L'insérer à la nouvelle position
+      newTracks.splice(newIndex, 0, movedTrack)
+
+      // Mettre à jour le tableau réactif
+      tracks.value = newTracks
+
+      // Forcer la réactivité
+      triggerReactivity()
+
+      // Attendre le prochain tick Vue
+      await nextTick()
+
+      console.log(`✅ Réorganisation réussie`)
+      console.log(`📋 Après:`, tracks.value.map((t, i) => `${i}:${t.name}(${t.id})`))
+
+      return true
+
+    } catch (error) {
+      console.error(`❌ Erreur lors de la réorganisation:`, error)
+      return false
+    }
   }
 
   async function duplicateTrack(trackId) {
@@ -1033,17 +1130,17 @@ export const useMidiStore = defineStore('midi', () => {
           id: newCCId,
           trackId: newTrackId
         }
-        
+
         midiCC.value.push(duplicatedCC)
         return duplicatedCC
       })
     })
 
     tracks.value.push(duplicatedTrack)
-    
+
     triggerReactivity()
     await nextTick()
-    
+
     return newTrackId
   }
 
@@ -1067,6 +1164,32 @@ export const useMidiStore = defineStore('midi', () => {
 
     return emptyTracks.length
   }
+
+  function getTrackIndex(trackId) {
+    return tracks.value.findIndex(t => t.id === trackId)
+  }
+
+  const getTrackNumbers = computed(() => {
+    return tracks.value.map((track, index) => ({
+      trackId: track.id,
+      number: index + 1,
+      name: track.name
+    }))
+  })
+
+  function validateTrackOrder() {
+    const trackIds = tracks.value.map(t => t.id)
+    const uniqueIds = new Set(trackIds)
+
+    if (trackIds.length !== uniqueIds.size) {
+      console.error('❌ IDs de pistes dupliqués détectés!')
+      return false
+    }
+
+    console.log('✅ Ordre des pistes validé')
+    return true
+  }
+
 
   return {
     // État
@@ -1123,16 +1246,20 @@ export const useMidiStore = defineStore('midi', () => {
     updateMultipleControlChanges,
 
     // Fonctions pour les pistes
+    updateTrackName,
     updateTrackChannel,
     updateTrackMidiOutput,
     updateTrackProgram,
     updateTrackBank,
     updateTrackPan,
-    updateTrackColor,  
+    updateTrackColor,
 
     getTracksWithMetadata,
     getTrackDuration,
     reorderTrack,
+    getTrackIndex,
+    getTrackNumbers,
+    validateTrackOrder,
     duplicateTrack,
     removeEmptyTracks,
 
@@ -1157,6 +1284,6 @@ export const useMidiStore = defineStore('midi', () => {
     getControlChangesInTimeRange,
     getControlChangesByNumber,
     getTrackControlChangesByNumber,
-    getControlChangeCount   
+    getControlChangeCount
   }
 })

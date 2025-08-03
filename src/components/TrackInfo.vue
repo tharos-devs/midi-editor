@@ -47,14 +47,14 @@
             :model-value="selectedTrackInfo.midiOutput || 'default'"
             size="small"
             @change="onOutputChange"
-            :disabled="!midiSupported || midiOutputs.length === 0"
+            :disabled="!midiManager.midiSupported?.value || midiManager.availableOutputs?.value?.length === 0"
           >
             <el-option
               label="Sortie par défaut"
               value="default"
             />
             <el-option
-              v-for="output in midiOutputs"
+              v-for="output in midiManager.availableOutputs?.value || []"
               :key="output.id"
               :label="output.name"
               :value="output.id"
@@ -70,12 +70,12 @@
           <div class="pan-control">
             <span class="pan-label">G</span>
             <el-slider
-              :model-value="selectedTrackInfo.pan"
+              v-model="selectedTrackInfo.pan"
               :min="0"
               :max="127"
               :show-tooltip="true"
               size="small"
-              @change="updateTrackPan"
+              @input="updateTrackPan"
               :format-tooltip="formatPanTooltip"
             />
             <span class="pan-label">D</span>
@@ -107,24 +107,44 @@
         </div>
       </div>
 
-      <!-- Volume vertical -->
+      <!-- Volume vertical avec VuMeter à gauche -->
       <div class="info-section volume-section">
         <label>Volume:</label>
         <div class="volume-control">
           <div class="volume-value">{{ selectedTrackInfo.volume }}</div>
-          <el-slider
-            :model-value="selectedTrackInfo.volume"
-            :min="0"
-            :max="127"
-            :show-tooltip="true"
-            vertical
-            height="120px"
-            @change="updateTrackVolume"
-          />
-          <div class="volume-labels">
-            <span>127</span>
-            <span>64</span>
-            <span>0</span>
+          
+          <!-- Conteneur horizontal pour VuMeter + Slider -->
+          <div class="volume-meters">
+            <!-- VuMeter à gauche avec hauteur fixe -->
+            <div class="vumeter-container">
+              <VuMeter
+                v-if="false"
+                :midiVolume="selectedTrackInfo.volume"
+                :midiPan="selectedTrackInfo.pan"
+                :referenceValue="100"
+                :logarithmic="true"
+                :ticks="7"
+                graduationSide="left"
+              />
+            </div>
+            
+            <!-- Slider vertical à droite avec labels alignés -->
+            <div class="slider-container">
+              <el-slider
+                v-model="selectedTrackInfo.volume"
+                :min="0"
+                :max="127"
+                :show-tooltip="true"
+                vertical
+                height="120px"
+                @input="updateTrackVolume"
+              />
+              <div class="volume-labels">
+                <span class="label-top">127</span>
+                <span class="label-middle">64</span>
+                <span class="label-bottom">0</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -162,16 +182,13 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { Mute, VideoPlay, Headset } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
 import { useMidiStore } from '@/stores/midi'
+import { useMidiManager } from '@/composables/useMidiManager'
+import VuMeter from './VuMeter.vue'
 
 // Store
 const midiStore = useMidiStore()
-
-// État local pour MIDI
-const midiAccess = ref(null)
-const midiOutputs = ref([])
-const midiSupported = ref(false)
+const midiManager = useMidiManager()
 
 // Computed
 const selectedTrackInfo = computed(() => midiStore.getSelectedTrackData)
@@ -192,53 +209,15 @@ const selectedTrackCCCount = computed(() => {
   return 0
 })
 
-// Initialisation MIDI
 onMounted(async () => {
-  await initializeMidiAccess()
+  if (!midiManager.isInitialized?.value) {
+    await midiManager.initializeMidi()
+  }
 })
 
 onUnmounted(() => {
-  if (midiAccess.value) {
-    midiAccess.value.onstatechange = null
-  }
+  // Plus rien à nettoyer, useMidiManager gère tout
 })
-
-// Fonctions MIDI
-async function initializeMidiAccess() {
-  try {
-    if (!navigator.requestMIDIAccess) {
-      midiSupported.value = false
-      return
-    }
-
-    midiSupported.value = true
-    midiAccess.value = await navigator.requestMIDIAccess()
-    updateMidiOutputs()
-    
-    midiAccess.value.onstatechange = () => {
-      updateMidiOutputs()
-    }
-    
-  } catch (error) {
-    console.error('Erreur lors de l\'initialisation MIDI:', error)
-    midiSupported.value = false
-  }
-}
-
-function updateMidiOutputs() {
-  if (!midiAccess.value) return
-  
-  const outputs = []
-  for (const output of midiAccess.value.outputs.values()) {
-    outputs.push({
-      id: output.id,
-      name: output.name || `Périphérique ${output.id}`,
-      output: output
-    })
-  }
-  
-  midiOutputs.value = outputs
-}
 
 // Fonctions utilitaires
 function getTrackNumber() {
@@ -268,47 +247,115 @@ function formatDuration(seconds) {
 }
 
 function formatPanTooltip(value) {
-  if (value < 64) {
-    return `G ${64 - value}`
-  } else if (value > 64) {
-    return `D ${value - 64}`
+  if (value === 64) {
+    return '<C>'
+  } else if (value < 64) {
+    const leftAmount = 64 - value
+    return `Pan: G${leftAmount}`
+  } else {
+    const rightAmount = value - 64
+    return `Pan: D${rightAmount}`
   }
-  return 'Centre'
 }
 
 // Gestionnaires d'événements
-function updateTrackName(newName) {
+async function updateTrackName(newName) {
   if (!selectedTrackInfo.value || !newName.trim()) return
-  midiStore.updateTrackName(selectedTrackInfo.value.id, newName.trim())
-  ElMessage.success('Nom de la piste mis à jour')
+  await midiStore.updateTrackName(selectedTrackInfo.value.id, newName.trim())
 }
 
 function onChannelChange(newChannel) {
   if (!selectedTrackInfo.value) return
   const channelIndex = newChannel - 1
   midiStore.updateTrackChannel(selectedTrackInfo.value.id, channelIndex)
-  ElMessage.success(`Canal MIDI changé vers ${newChannel}`)
 }
 
 function onOutputChange(outputId) {
   if (!selectedTrackInfo.value) return
+  
+  console.log(`🎹 Changement sortie MIDI: "${outputId}"`)
+  
+  const output = midiManager.findMidiOutput(outputId)
+  if (!output && outputId !== 'default') {
+    console.warn(`⚠️ Sortie "${outputId}" introuvable, utilisation de 'default'`)
+    outputId = 'default'
+  }
+  
   midiStore.updateTrackMidiOutput(selectedTrackInfo.value.id, outputId)
   
   const outputName = outputId === 'default' 
     ? 'Sortie par défaut'
-    : midiOutputs.value.find(o => o.id === outputId)?.name || 'Inconnu'
+    : output?.name || 'Sortie inconnue'
+    
+  console.log(`✅ Sortie MIDI mise à jour: ${outputName}`)
+}
+
+async function updateTrackPan(pan) {
+  if (!selectedTrackInfo.value) return
   
-  ElMessage.success(`Sortie MIDI changée vers ${outputName}`)
+  const clampedPan = Math.max(0, Math.min(127, Math.round(pan)))
+  console.log(`🎛️ Mise à jour Pan pour piste ${selectedTrackInfo.value.id}: ${clampedPan}`)
+  
+  const success = await midiStore.updateTrackPan(selectedTrackInfo.value.id, clampedPan)
+  
+  if (success) {
+    if (midiManager.isInitialized?.value && midiManager.midiSupported?.value) {
+      const track = selectedTrackInfo.value
+      let trackMidiOutput = track.midiOutput || 'default'
+      const trackChannel = Math.max(0, Math.min(15, track.channel || 0))
+      
+      const resolvedOutput = midiManager.findMidiOutput(trackMidiOutput)
+      if (resolvedOutput) {
+        trackMidiOutput = resolvedOutput.id
+        console.log(`🎛️ Envoi CC10 Pan: "${resolvedOutput.name}" Canal=${trackChannel + 1} Valeur=${clampedPan}`)
+        
+        const ccSent = midiManager.sendControlChange(trackMidiOutput, trackChannel, 10, clampedPan)
+        
+        if (ccSent) {
+          console.log(`✅ Pan CC10 envoyé avec succès`)
+        } else {
+          console.error(`❌ Échec envoi Pan CC10`)
+        }
+      } else {
+        console.warn(`⚠️ Sortie MIDI "${track.midiOutput}" non trouvée pour envoi Pan`)
+      }
+    } else {
+      console.warn('⚠️ MIDI non disponible pour envoi Pan')
+    }
+  }
 }
 
-function updateTrackPan(pan) {
+async function updateTrackVolume(volume) {
   if (!selectedTrackInfo.value) return
-  midiStore.updateTrackPan(selectedTrackInfo.value.id, pan)
-}
-
-function updateTrackVolume(volume) {
-  if (!selectedTrackInfo.value) return
-  midiStore.updateTrackVolume(selectedTrackInfo.value.id, volume)
+  
+  const clampedVolume = Math.max(0, Math.min(127, Math.round(volume)))
+  console.log(`🔊 Mise à jour Volume pour piste ${selectedTrackInfo.value.id}: ${clampedVolume}`)
+  
+  const success = await midiStore.updateTrackVolume(selectedTrackInfo.value.id, clampedVolume)
+  
+  if (success) {
+    if (midiManager.isInitialized?.value && midiManager.midiSupported?.value) {
+      const track = selectedTrackInfo.value
+      let trackMidiOutput = track.midiOutput || 'default'
+      const trackChannel = Math.max(0, Math.min(15, track.channel || 0))
+      
+      const resolvedOutput = midiManager.findMidiOutput(trackMidiOutput)
+      if (resolvedOutput) {
+        trackMidiOutput = resolvedOutput.id
+        console.log(`🔊 Envoi CC7 Volume: "${resolvedOutput.name}" Canal=${trackChannel + 1} Valeur=${clampedVolume}`)
+        
+        const ccSent = midiManager.sendControlChange(trackMidiOutput, trackChannel, 7, clampedVolume)
+        
+        if (ccSent) {
+          console.log(`✅ Volume CC7 envoyé avec succès`)
+        } else {
+          console.error(`❌ Échec envoi Volume CC7`)
+        }
+      } else {
+        console.warn(`⚠️ Sortie MIDI "${track.midiOutput}" non trouvée pour envoi Volume`)
+      }
+    }
+  }
 }
 
 function toggleMute() {
@@ -351,8 +398,8 @@ function toggleSolo() {
 }
 
 .info-section {
-  margin-bottom: 20px;
-  padding-bottom: 16px;
+  margin-bottom: 10px;
+  padding-bottom: 10px;
   border-bottom: 1px solid var(--border-color);
 }
 
@@ -439,6 +486,7 @@ function toggleSolo() {
   flex-direction: column;
   align-items: center;
   gap: 8px;
+  padding-bottom: 20px;
 }
 
 .volume-value {
@@ -452,13 +500,64 @@ function toggleSolo() {
   font-size: 12px;
 }
 
+/* ✅ CORRECTION 1: Conteneur horizontal aligné pour VuMeter + Slider */
+.volume-meters {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 8px;
+  height: 120px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+/* ✅ CORRECTION 1: Conteneur pour le VuMeter avec hauteur exacte du slider */
+.vumeter-container {
+  height: 120px; /* Même hauteur que le slider */
+  display: flex;
+  align-items: flex-start; /* Alignement en haut */
+  flex-shrink: 0; /* Empêche la compression */
+}
+
+/* ✅ CORRECTION 1: Conteneur pour le slider et ses labels avec alignement */
+.slider-container {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  height: 120px;
+  position: relative;
+}
+
+/* ✅ CORRECTION 2: Labels du volume correctement positionnés */
 .volume-labels {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  justify-content: space-between;
+  height: 120px;
   font-size: 10px;
   color: var(--track-details);
-  margin-left: 8px;
+  position: relative;
+  width: 30px;
+  padding: 2px 0; /* Petit padding pour éviter le débordement */
+}
+
+/* ✅ CORRECTION 2: Positionnement précis des labels */
+.label-top {
+  position: absolute;
+  top: 0;
+  transform: translateY(-50%);
+}
+
+.label-middle {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.label-bottom {
+  position: absolute;
+  bottom: 0;
+  transform: translateY(50%);
 }
 
 .stats-section {

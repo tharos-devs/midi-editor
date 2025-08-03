@@ -5,7 +5,15 @@ import { ref, computed } from 'vue'
 export const useUIStore = defineStore('ui', () => {
   // Dimensions des panneaux
   const trackInfoPanelWidth = ref(200) // Largeur fixe de TrackInfo
-  const trackListTotalWidth = ref(300) // Largeur totale de TrackList (contrôlée par le splitter)
+  const showTrackInfo = ref(true) // Afficher ou masquer les informations de la piste
+  
+  // Largeur totale de TrackList (contrôlée par le splitter)
+  // Si showTrackInfo est true par défaut, on doit inclure sa largeur
+  const trackListTotalWidth = ref(
+    showTrackInfo.value 
+      ? 500 // 200 (TrackInfo) + 300 (TrackInstrument minimum)
+      : 300 // Seulement TrackInstrument
+  )
   
   // Largeur calculée de la colonne TrackInstrument
   const trackInstrumentWidth = computed(() => {
@@ -35,11 +43,8 @@ export const useUIStore = defineStore('ui', () => {
   const pixelsPerBeat = computed(() => 96 * horizontalZoom.value)
   const pixelsPerMeasure = computed(() => pixelsPerBeat.value * beatsPerMeasure.value)
 
-  // TRACK INFO
-  const showTrackInfo = ref(false) // Afficher ou masquer les informations de la piste
-
   // SNAP SETTINGS - AJOUT DES PROPRIÉTÉS MANQUANTES
-  const snapToGrid = ref(false) // Snap activé/désactivé
+  const snapToGrid = ref(true) // Snap activé/désactivé
   const snapDivision = ref(4) // Division du beat (4 = doubles-croches, 2 = croches, etc.)
 
   // Piano settings

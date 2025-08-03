@@ -1,18 +1,5 @@
 <template>
   <div class="tool-bar">
-    <!--
-    <div class="tool-group">
-      <div class="transport-controls" v-if="midiStore.isLoaded">
-        <el-button :icon="VideoPlay" size="small" @click="playMidi">
-          Lecture
-        </el-button>
-        <el-button :icon="VideoPause" size="small" @click="stopMidi">
-          Stop
-        </el-button>
-
-      </div>
-    </div>
-    -->
     <div class="tool-group">
       <el-button
         :icon="InfoFilled"
@@ -30,54 +17,48 @@
     <div class="tool-group">
       <SnapToGrid />
     </div>
+
+    <div class="tool-separator"></div>
+
+    <div class="tool-group">
+      <el-button
+        size="small"
+        :type="'default'"
+        @click="reconnectMidi"
+        title="Panic MIDI - Reconnecter les périphériques"
+      >
+        Panic
+      </el-button>
+    </div>    
   </div>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
 import { InfoFilled } from '@element-plus/icons-vue'
+import { useMidiManager } from '@/composables/useMidiManager' 
 import { useUIStore } from '@/stores/ui'
-/*
-import { ElMessage } from 'element-plus'
-import { VideoPlay, VideoPause } from '@element-plus/icons-vue'
-import { useMidiStore } from '@/stores/midi'
-import { useMidiManager } from '@/composables/useMidiManager'
-*/
 import SnapToGrid from './SnapToGrid.vue'
 
+const midiManager = useMidiManager()
 const uiStore = useUIStore()
-/*
-const midiStore = useMidiStore()
-const {
-  hasConnectedOutputs
-} = useMidiManager()
 
-// Contrôles de lecture
-function playMidi() {
-  if (!midiStore.isLoaded) {
-    ElMessage.warning('Aucun fichier MIDI chargé')
-    return
+async function reconnectMidi() {
+  console.log('🔄 Reconnexion MIDI forcée...')
+  
+  if (midiManager.cleanup) {
+    midiManager.cleanup()
   }
   
-  if (!hasConnectedOutputs.value) {
-    ElMessage.warning('Aucun périphérique MIDI connecté')
-    return
+  const success = await midiManager.initializeMidi()
+  
+  if (success) {
+    console.log('✅ Reconnexion MIDI réussie')
+  } else {
+    console.error('❌ Échec de la reconnexion MIDI')
   }
   
-  // Ici vous implémenteriez la lecture MIDI
-  ElMessage.info('Fonction de lecture à implémenter')
+  return success
 }
-
-function stopMidi() {
-  // Ici vous implémenteriez l'arrêt de la lecture
-  ElMessage.info('Lecture arrêtée')
-}
-
-function resetPosition() {
-  // Ici vous implémenteriez le reset de la position
-  ElMessage.info('Position réinitialisée')
-}
-*/
 
 </script>
 

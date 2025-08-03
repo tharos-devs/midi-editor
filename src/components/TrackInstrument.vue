@@ -2,13 +2,18 @@
   <div 
     class="track-instrument" 
     :class="{ active: isSelected, expanded: showExtendedControls }"
-    :style="{ minHeight: `${trackHeight}px` }"
+    :style="{ height: `${trackHeight}px`, minHeight: showExtendedControls ? '140px' : 'auto' }"
+    draggable="true"
+    @dragstart="onDragStart"
+    @dragend="onDragEnd"
+    @dragover.prevent="onDragOver"
+    @drop.prevent="onDrop"
   >
     <!-- Bande de couleur cliquable -->
     <div 
       class="color-band" 
       :style="{ backgroundColor: track.color }"
-      @click="showColorPicker = true"
+      @click.stop="showColorPicker = true"
       title="Cliquer pour changer la couleur"
     ></div>
 
@@ -36,44 +41,61 @@
             >
               {{ track.name }}
             </div>
-            <div class="track-instrument-name">
-              {{ track.instrument?.name || track.instrument || 'Piano' }}
-            </div>
           </div>
         </div>
 
         <div class="track-controls">
-          <!-- Icône + pour toggler les contrôles -->
+          <!-- Boutons Mute et Solo -->
+          <el-button
+            :type="track.muted ? 'danger' : 'default'"
+            size="small"
+            @click.stop="toggleMute"
+            class="control-button mute-btn"
+            title="Muet"
+          >
+            M
+          </el-button>
+          <el-button
+            :type="track.solo ? 'warning' : 'default'"
+            size="small"
+            @click.stop="toggleSolo"
+            class="control-button solo-btn"
+            title="Solo"
+          >
+            S
+          </el-button>
+          
+          <!-- Icône + pour toggler la hauteur (toujours visible) -->
           <el-button
             :icon="Plus"
             size="small"
             circle
             text
-            @click.stop="toggleExtendedControls"
-            :class="{ active: showExtendedControls }"
-            title="Contrôles avancés"
+            @click.stop="toggleTrackHeight"
+            :class="{ active: currentHeightLevel > 0 }"
+            :title="`Hauteur: ${getHeightLevelText()}`"
             class="toggle-btn"
           />
         </div>
       </div>
 
-      <!-- Slider de volume horizontal -->
-      <div class="volume-slider-container">
+      <!-- Slider de volume horizontal (visible si hauteur >= 70px) -->
+      <div v-if="props.height >= 70" class="volume-slider-container">
         <div class="volume-slider">
           <el-slider
-            :model-value="track.volume"
+            v-model="track.volume"
             :min="0"
             :max="127"
             :show-tooltip="false"
             size="small"
-            @change="onVolumeChange"
+            @input="onVolumeChange"
           />
         </div>
         <div class="volume-value">{{ track.volume }}</div>
       </div>
 
-      <!-- Contrôles étendus -->
-      <div v-if="showExtendedControls" class="extended-controls">
+      <!-- Contrôles étendus (visible si hauteur >= 115px) -->
+      <div v-if="props.height >= 115" class="extended-controls">
         <div class="controls-row">
           <!-- Canal MIDI et Sortie MIDI -->
           <div class="midi-controls">
@@ -109,26 +131,6 @@
               />
             </el-select>
           </div>
-
-          <!-- Boutons Mute et Solo -->
-          <div class="button-controls">
-            <el-button
-              :type="track.muted ? 'danger' : 'default'"
-              size="small"
-              @click.stop="toggleMute"
-              class="control-button mute-btn"
-            >
-              M
-            </el-button>
-            <el-button
-              :type="track.solo ? 'warning' : 'default'"
-              size="small"
-              @click.stop="toggleSolo"
-              class="control-button solo-btn"
-            >
-              S
-            </el-button>
-          </div>
         </div>
       </div>
     </div>
@@ -139,6 +141,9 @@
       title="Choisir une couleur"
       width="300px"
       align-center
+      append-to-body
+      :z-index="3000"
+      destroy-on-close
     >
       <div class="color-picker">
         <div class="color-grid">
@@ -167,7 +172,6 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { Plus } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
 import { useMidiStore } from '@/stores/midi'
 
 // Props
@@ -178,7 +182,11 @@ const props = defineProps({
   },
   height: {
     type: Number,
-    default: 48 // Hauteur par défaut
+    default: 30 // Hauteur par défaut
+  },
+  index: {
+    type: Number,
+    default: 0
   }
 })
 
@@ -186,7 +194,9 @@ const props = defineProps({
 const emit = defineEmits([
   'channel-changed',
   'output-changed',
-  'track-selected'
+  'track-selected',
+  'track-reorder',
+  'height-changed' // Nouvelle émission pour changer la hauteur
 ])
 
 // Store
@@ -199,10 +209,18 @@ const editingName = ref(false)
 const tempTrackName = ref('')
 const nameInput = ref(null)
 
+// Système de hauteur avec 3 niveaux : 30px, 70px, 115px
+const heightLevels = [30, 70, 115]
+const currentHeightLevel = ref(0) // Index dans heightLevels (0, 1, 2)
+
 // État MIDI
 const midiAccess = ref(null)
 const midiOutputs = ref([])
 const midiSupported = ref(false)
+
+// État drag & drop
+const isDragging = ref(false)
+const dragOverClass = ref('')
 
 // Couleurs prédefinies
 const colorPresets = [
@@ -215,12 +233,22 @@ const colorPresets = [
 // Computed
 const isSelected = computed(() => midiStore.selectedTrack === props.track.id)
 const trackHeight = computed(() => {
-  // Hauteur de base + espace supplémentaire si les contrôles étendus sont ouverts
-  return showExtendedControls.value ? props.height + 32 : props.height
+  // Utiliser la hauteur de la piste si elle existe, sinon utiliser currentHeightLevel
+  if (props.track.height) {
+    return props.track.height
+  }
+  return heightLevels[currentHeightLevel.value]
 })
 
 // Initialisation
 onMounted(async () => {
+  // Déterminer le niveau de hauteur initial basé sur la hauteur de la piste
+  if (props.track.height) {
+    const levelIndex = heightLevels.indexOf(props.track.height)
+    if (levelIndex !== -1) {
+      currentHeightLevel.value = levelIndex
+    }
+  }
   await initializeMidiAccess()
 })
 
@@ -280,8 +308,25 @@ function selectTrack() {
   emit('track-selected', props.track.id)
 }
 
-function toggleExtendedControls() {
-  showExtendedControls.value = !showExtendedControls.value
+function toggleTrackHeight() {
+  // Faire défiler les niveaux de hauteur : 0 -> 1 -> 2 -> 0
+  currentHeightLevel.value = (currentHeightLevel.value + 1) % heightLevels.length
+  
+  const newHeight = heightLevels[currentHeightLevel.value]
+  
+  console.log(`📏 Hauteur piste ${props.track.name}: niveau ${currentHeightLevel.value} (${newHeight}px)`)
+  
+  // Émettre l'événement pour informer le parent
+  emit('height-changed', {
+    trackId: props.track.id,
+    height: newHeight,
+    level: currentHeightLevel.value
+  })
+}
+
+function getHeightLevelText() {
+  const levels = ['Compacte (30px)', 'Normale (70px)', 'Étendue (115px)']
+  return levels[currentHeightLevel.value]
 }
 
 function startEditName() {
@@ -295,10 +340,9 @@ function startEditName() {
   })
 }
 
-function saveTrackName() {
+async function saveTrackName() {
   if (tempTrackName.value.trim() && tempTrackName.value !== props.track.name) {
-    midiStore.updateTrackName(props.track.id, tempTrackName.value.trim())
-    ElMessage.success('Nom de la piste mis à jour')
+    await midiStore.updateTrackName(props.track.id, tempTrackName.value.trim())
   }
   editingName.value = false
 }
@@ -308,14 +352,19 @@ function cancelEditName() {
   tempTrackName.value = props.track.name
 }
 
-function changeTrackColor(color) {
-  midiStore.updateTrackColor(props.track.id, color)
+async function changeTrackColor(color) {
+  await midiStore.updateTrackColor(props.track.id, color)
   showColorPicker.value = false
-  ElMessage.success('Couleur de la piste mise à jour')
 }
 
-function onVolumeChange(volume) {
-  midiStore.updateTrackVolume(props.track.id, volume)
+async function onVolumeChange(volume) {
+  const clampedVolume = Math.max(0, Math.min(127, Math.round(volume)))
+  await midiStore.updateTrackVolume(props.track.id, clampedVolume)
+}
+
+async function onPanChange(pan) {
+  const clampedPan = Math.max(0, Math.min(127, Math.round(pan)))
+  await midiStore.updateTrackPan(props.track.id, clampedPan)
 }
 
 function onChannelChange(newChannel) {
@@ -326,8 +375,6 @@ function onChannelChange(newChannel) {
     trackId: props.track.id,
     channel: channelIndex
   })
-  
-  ElMessage.success(`Canal MIDI changé vers ${newChannel}`)
 }
 
 function onOutputChange(outputId) {
@@ -337,12 +384,6 @@ function onOutputChange(outputId) {
     trackId: props.track.id,
     outputId: outputId
   })
-  
-  const outputName = outputId === 'default' 
-    ? 'Sortie par défaut'
-    : midiOutputs.value.find(o => o.id === outputId)?.name || 'Inconnu'
-  
-  ElMessage.success(`Sortie MIDI changée vers ${outputName}`)
 }
 
 function toggleMute() {
@@ -351,6 +392,77 @@ function toggleMute() {
 
 function toggleSolo() {
   midiStore.toggleTrackSolo(props.track.id)
+}
+
+// Fonctions drag & drop
+function onDragStart(event) {
+  isDragging.value = true
+  event.dataTransfer.effectAllowed = 'move'
+  event.dataTransfer.setData('text/plain', props.track.id.toString())
+  
+  // Ajouter une classe CSS pour l'élément en cours de drag
+  event.target.classList.add('dragging')
+  
+  console.log('🚀 Début du drag pour la piste:', props.track.name, 'ID:', props.track.id)
+}
+
+function onDragEnd(event) {
+  isDragging.value = false
+  dragOverClass.value = ''
+  
+  // Retirer la classe CSS
+  event.target.classList.remove('dragging')
+  
+  console.log('🏁 Fin du drag pour la piste:', props.track.name)
+}
+
+function onDragOver(event) {
+  if (isDragging.value) return // Ne pas permettre le drop sur soi-même
+  
+  event.preventDefault()
+  event.dataTransfer.dropEffect = 'move'
+  
+  // Déterminer la position du drop (au-dessus ou en-dessous)
+  const rect = event.currentTarget.getBoundingClientRect()
+  const midY = rect.top + rect.height / 2
+  const dropPosition = event.clientY < midY ? 'before' : 'after'
+  
+  dragOverClass.value = `drag-over-${dropPosition}`
+}
+
+function onDrop(event) {
+  event.preventDefault()
+  
+  const draggedTrackId = parseInt(event.dataTransfer.getData('text/plain'))
+  if (draggedTrackId === props.track.id) return // Ne pas se déplacer sur soi-même
+  
+  // Déterminer la position du drop
+  const rect = event.currentTarget.getBoundingClientRect()
+  const midY = rect.top + rect.height / 2
+  const dropPosition = event.clientY < midY ? 'before' : 'after'
+  
+  // Calculer le nouvel index
+  let targetIndex = props.index
+  if (dropPosition === 'after') {
+    targetIndex += 1
+  }
+  
+  console.log('📦 Drop détecté:', {
+    draggedTrackId,
+    targetTrackId: props.track.id,
+    dropPosition,
+    targetIndex
+  })
+  
+  // Émettre l'événement de réorganisation
+  emit('track-reorder', {
+    draggedTrackId,
+    targetIndex,
+    position: dropPosition
+  })
+  
+  // Nettoyer les classes CSS
+  dragOverClass.value = ''
 }
 </script>
 
@@ -361,7 +473,8 @@ function toggleSolo() {
   overflow: hidden;
   transition: all 0.2s ease;
   cursor: pointer;
-  /* Supprimé min-height fixe, maintenant géré par :style */
+  border: 1px solid transparent;
+  position: relative;
 }
 
 .track-instrument:hover {
@@ -379,6 +492,36 @@ function toggleSolo() {
   cursor: default;
 }
 
+/* Styles pour le drag & drop */
+.track-instrument.dragging {
+  opacity: 0.5;
+  z-index: 1000;
+}
+
+.track-instrument.drag-over-before::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: var(--menu-active-fg);
+  border-radius: 2px;
+  z-index: 10;
+}
+
+.track-instrument.drag-over-after::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: var(--menu-active-fg);
+  border-radius: 2px;
+  z-index: 10;
+}
+
 .color-band {
   width: 6px;
   min-width: 6px;
@@ -394,15 +537,17 @@ function toggleSolo() {
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: 8px 12px;
-  justify-content: center; /* Centre le contenu verticalement */
+  padding: 2px 8px;
+  justify-content: flex-start;
 }
 
 .track-header {
   display: flex;
   align-items: center;
   cursor: pointer;
-  margin-bottom: 6px;
+  height: 28px;
+  min-height: 28px;
+  flex-shrink: 0;
 }
 
 .track-main-info {
@@ -410,6 +555,7 @@ function toggleSolo() {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
 .track-number {
@@ -418,6 +564,7 @@ function toggleSolo() {
   font-weight: bold;
   min-width: 20px;
   text-align: center;
+  flex-shrink: 0;
 }
 
 .track-details {
@@ -427,16 +574,16 @@ function toggleSolo() {
 
 .track-name {
   font-weight: 500;
-  font-size: 13px;
+  font-size: 12px;
   color: var(--track-name);
-  margin-bottom: 1px;
   cursor: text;
-  padding: 1px 2px;
+  padding: 1px 3px;
   border-radius: 2px;
   transition: background-color 0.2s;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  line-height: 1.2;
 }
 
 .track-name:hover {
@@ -447,24 +594,45 @@ function toggleSolo() {
   background: var(--panel-bg);
   border: 1px solid var(--menu-active-fg);
   border-radius: 2px;
-  padding: 1px 2px;
+  padding: 1px 3px;
   font-size: 12px;
   font-weight: 500;
   color: var(--track-name);
   width: 100%;
-}
-
-.track-instrument-name {
-  font-size: 10px;
-  color: var(--track-instrument);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.2;
 }
 
 .track-controls {
   display: flex;
   align-items: center;
+  gap: 0;
+  flex-shrink: 0;
+  margin-right: 5px;
+}
+
+.track-controls > * {
+  margin-right: -7px;
+}
+
+.control-button {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  font-size: 9px;
+  font-weight: bold;
+  border-radius: 3px;
+}
+
+.mute-btn.el-button--danger {
+  background-color: #f56565;
+  border-color: #f56565;
+  color: white;
+}
+
+.solo-btn.el-button--warning {
+  background-color: #ed8936;
+  border-color: #ed8936;
+  color: white;
 }
 
 .toggle-btn {
@@ -495,7 +663,9 @@ function toggleSolo() {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 6px;
+  margin: 6px 0 4px 0;
+  padding: 0 4px;
+  flex-shrink: 0;
 }
 
 .volume-slider {
@@ -507,19 +677,26 @@ function toggleSolo() {
   color: var(--track-details);
   min-width: 24px;
   text-align: right;
+  font-weight: 500;
 }
 
 .extended-controls {
   background: rgba(0, 0, 0, 0.05);
   border-radius: 4px;
   padding: 8px;
-  margin-top: 4px;
+  margin-top: 2px;
+  flex-shrink: 0;
 }
 
 .controls-row {
   display: flex;
   align-items: center;
   gap: 8px;
+  margin-bottom: 6px;
+}
+
+.controls-row:last-child {
+  margin-bottom: 0;
 }
 
 .midi-controls {
@@ -534,29 +711,28 @@ function toggleSolo() {
   min-width: 60px;
 }
 
-.button-controls {
+.pan-control {
+  flex: 1;
   display: flex;
-  gap: 4px;
+  align-items: center;
+  gap: 8px;
 }
 
-.control-button {
-  width: 24px;
-  height: 24px;
-  padding: 0;
+.pan-control label {
   font-size: 10px;
-  font-weight: bold;
+  color: var(--track-details);
+  min-width: 30px;
 }
 
-.mute-btn.el-button--danger {
-  background-color: #f56565;
-  border-color: #f56565;
-  color: white;
+.pan-control .el-slider {
+  flex: 1;
 }
 
-.solo-btn.el-button--warning {
-  background-color: #ed8936;
-  border-color: #ed8936;
-  color: white;
+.pan-value {
+  font-size: 10px;
+  color: var(--track-details);
+  min-width: 24px;
+  text-align: right;
 }
 
 .color-picker {
@@ -630,21 +806,5 @@ function toggleSolo() {
 
 :deep(.el-button--small) {
   font-size: 10px;
-}
-
-/* Responsive */
-@media (max-width: 768px) {
-  .controls-row {
-    flex-direction: column;
-    gap: 6px;
-  }
-  
-  .midi-controls {
-    width: 100%;
-  }
-  
-  .button-controls {
-    justify-content: center;
-  }
 }
 </style>

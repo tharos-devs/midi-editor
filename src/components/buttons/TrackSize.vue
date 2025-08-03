@@ -1,177 +1,154 @@
 <template>
-  <div ref="buttonWrapper" class="relative h-full flex items-center track-size">
-    <!-- Slider affiché au-dessus du bouton -->
-    <transition name="fade">
-      <div
-        v-if="showSlider"
-        class="slider-popup z-50"
-        :style="popupStyle"
-        ref="sliderPopup"
-      >
-        <div class="slider-wrapper">
-          <!-- Info-bulle dynamique -->
-          <div
-            v-if="showTooltip"
-            class="size-tooltip"
-            :style="{ bottom: `${tooltipOffset}px` }"
-          >
-            {{ getSizeLabel(sliderValue) }}
-          </div>
-
-          <!-- Slider vertical -->
-          <el-slider
-            ref="sliderRef"
-            v-model="sliderValue"
-            vertical
-            :min="0"
-            :max="100"
-            :show-tooltip="false"
-            style="height: 120px"
-            @input="onSliderInput"
-            
-          /><!--@change="onSliderRelease"-->
-        </div>
-      </div>
-    </transition>
-
+  <div class="track-size">
     <!-- Bouton avec icône de redimensionnement -->
     <el-button
       :icon="List"
       size="small"
-      @click="toggleSlider"
+      @click="cycleSize"
       class="size-btn"
-      title="Ajuster la hauteur des pistes"
+      :title="getSizeTooltip()"
     />
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onBeforeUnmount, nextTick, computed, watchEffect } from 'vue'
+import { ref, watch } from 'vue'
 import { List } from '@element-plus/icons-vue'
+import { useMidiStore } from '@/stores/midi'
+
+// Store
+const midiStore = useMidiStore()
 
 // Props
 const props = defineProps({
   modelValue: {
     type: Number,
-    default: 50
+    default: 30
   }
 })
 
 // Emits
 const emit = defineEmits(['update:modelValue', 'size-changed'])
 
-const showSlider = ref(false)
-const showTooltip = ref(false)
-const sliderValue = ref(props.modelValue)
-const previousValue = ref(props.modelValue)
-const tooltipOffset = ref(0)
+// Les 3 tailles disponibles
+const sizes = [
+  { value: 30, label: 'Compact' },
+  { value: 70, label: 'Moyen' },
+  { value: 115, label: 'Étendu' }
+]
 
-const buttonWrapper = ref(null)
-const sliderPopup = ref(null)
-const sliderRef = ref(null)
+const currentSizeIndex = ref(0)
 
-const popupStyle = reactive({
-  position: 'fixed',
-  left: '0px',
-  top: '0px' // Changé de bottom à top
-})
-
-const minHeightValue = ref(50) // Hauteur minimale en pixels
-const maxHeightValue = ref(800) // Hauteur maximale en pixels 
-
-// Computed pour obtenir le label de taille
-const getSizeLabel = (value) => {
-  /*
-  if (value <= 20) return 'Très petit'
-  if (value <= 40) return 'Petit'
-  if (value <= 60) return 'Moyen'
-  if (value <= 80) return 'Grand'
-  return 'Très grand'
-  */
- return ''
+// Initialiser l'index basé sur la valeur actuelle
+const initializeSize = () => {
+  const index = sizes.findIndex(size => size.value === props.modelValue)
+  currentSizeIndex.value = index >= 0 ? index : 0
 }
 
-const toggleSlider = () => {
-  showSlider.value = !showSlider.value
-  if (showSlider.value) {
-    updatePopupPosition()
-    nextTick(() => {
-      document.addEventListener('mousedown', onClickOutside)
-    })
-  } else {
-    document.removeEventListener('mousedown', onClickOutside)
-  }
-}
-
-const updatePopupPosition = () => {
-  const rect = buttonWrapper.value?.getBoundingClientRect()
-  if (rect) {
-    popupStyle.left = `${rect.left + rect.width / 2 - 20}px`
-    // Positionner le popup au-dessus du bouton avec assez d'espace pour le slider
-    popupStyle.top = `${rect.top - 140 - 8}px` // 140px = hauteur du popup + marge
-  }
-}
-
-const onSliderInput = (val) => {
-  // showTooltip.value = true
-  updateTooltipOffset(val)
+// Fonction pour passer à la taille suivante
+const cycleSize = async () => {
+  currentSizeIndex.value = (currentSizeIndex.value + 1) % sizes.length
+  const newSize = sizes[currentSizeIndex.value]
   
-  // Émettre les changements
-  emit('update:modelValue', val)
-  emit('size-changed', {
-    value: val,
-    size: getSizeLabel(val),
-    heightPx: getHeightFromValue(val)
+  console.log(`🎛️ TrackSize: Changement global vers ${newSize.value}px (${newSize.label})`)
+  
+  try {
+    // Mettre à jour TOUTES les pistes avec la nouvelle taille
+    const updatePromises = midiStore.tracks.map(track => {
+      return updateTrackHeight(track.id, newSize.value, currentSizeIndex.value)
+    })
+    
+    await Promise.all(updatePromises)
+    
+    // Forcer la réactivité du store
+    midiStore.triggerReactivity()
+    
+    // Émettre les événements comme avant
+    emit('update:modelValue', newSize.value)
+    emit('size-changed', {
+      value: newSize.value,
+      heightPx: newSize.value,
+      label: newSize.label,
+      level: currentSizeIndex.value
+    })
+    
+    console.log(`✅ TrackSize: ${midiStore.tracks.length} pistes mises à jour à ${newSize.value}px`)
+    
+  } catch (error) {
+    console.error('❌ TrackSize: Erreur lors de la mise à jour globale:', error)
+  }
+}
+
+// Fonction pour mettre à jour la hauteur d'une piste
+async function updateTrackHeight(trackId, height, level) {
+  const trackIndex = midiStore.tracks.findIndex(t => t.id === trackId)
+  if (trackIndex !== -1) {
+    // Mettre à jour les propriétés de hauteur
+    midiStore.tracks[trackIndex].height = height
+    midiStore.tracks[trackIndex].heightLevel = level
+    
+    console.log(`📏 TrackSize: Piste ${trackId} -> ${height}px (niveau ${level})`)
+  }
+}
+
+// Tooltip dynamique
+const getSizeTooltip = () => {
+  const currentSize = sizes[currentSizeIndex.value]
+  const nextIndex = (currentSizeIndex.value + 1) % sizes.length
+  const nextSize = sizes[nextIndex]
+  
+  return `Hauteur: ${currentSize.value}px (${currentSize.label}) - Cliquer pour ${nextSize.label}`
+}
+
+// Watcher pour synchroniser avec les changements externes
+watch(() => props.modelValue, (newValue) => {
+  const index = sizes.findIndex(size => size.value === newValue)
+  if (index >= 0 && index !== currentSizeIndex.value) {
+    currentSizeIndex.value = index
+  }
+}, { immediate: true })
+
+// Fonction pour synchroniser avec l'état actuel des pistes (appelée depuis l'extérieur)
+const syncWithTracks = () => {
+  if (midiStore.tracks.length === 0) {
+    currentSizeIndex.value = 0
+    return
+  }
+  
+  // Trouver la taille la plus commune parmi les pistes
+  const sizeCounts = [0, 0, 0]
+  
+  midiStore.tracks.forEach(track => {
+    const height = track.height || 30
+    const sizeIndex = sizes.findIndex(size => size.value === height)
+    if (sizeIndex !== -1) {
+      sizeCounts[sizeIndex]++
+    }
   })
   
-  previousValue.value = val
-}
-/*
-const onSliderRelease = () => {
-  showTooltip.value = false
-}
-*/
-const updateTooltipOffset = (val) => {
-  // Calcul de la position verticale du curseur (inversé car on compte depuis le bas)
-  const percent = (val - 0) / (100 - 0)
-  tooltipOffset.value = percent * 120 + 10 // +10 pour décaler un peu
-}
-
-// Convertir la valeur du slider en hauteur en pixels
-const getHeightFromValue = (value) => {
-  return Math.round(minHeightValue.value + (value / 100) * (maxHeightValue.value - minHeightValue.value))
-}
-
-const onClickOutside = (event) => {
-  const btn = buttonWrapper.value
-  const popup = sliderPopup.value
-
-  if (!btn?.contains(event.target) && !popup?.contains(event.target)) {
-    showSlider.value = false
-    document.removeEventListener('mousedown', onClickOutside)
+  // Prendre la taille la plus fréquente
+  const mostCommonSize = sizeCounts.indexOf(Math.max(...sizeCounts))
+  if (mostCommonSize >= 0) {
+    currentSizeIndex.value = mostCommonSize
+    const newValue = sizes[mostCommonSize].value
+    if (newValue !== props.modelValue) {
+      emit('update:modelValue', newValue)
+    }
   }
 }
 
-onBeforeUnmount(() => {
-  document.removeEventListener('mousedown', onClickOutside)
+// Exposer la fonction de synchronisation pour les composants parents
+defineExpose({
+  syncWithTracks
 })
 
-// Synchroniser avec le modelValue externe
-const syncWithProp = () => {
-  if (props.modelValue !== sliderValue.value) {
-    sliderValue.value = props.modelValue
-  }
-}
-
-// Watcher pour les changements de props
-watchEffect(() => {
-  syncWithProp()
-})
+// Initialiser au montage
+initializeSize()
 </script>
 
 <style scoped>
 .track-size {
-  z-index: 100;
+  position: relative;
   margin: 0 2px;
 }
 
@@ -183,88 +160,16 @@ watchEffect(() => {
   background: var(--panel-bg);
   border: 1px solid var(--border-color);
   color: var(--track-instrument);
+  transition: all 0.2s ease;
 }
 
 .size-btn:hover {
   border-color: var(--menu-active-fg);
   color: var(--menu-active-fg);
+  transform: scale(1.05);
 }
 
-.slider-popup {
-  background: var(--panel-bg);
-  opacity: 1;
-  border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  border: 1px solid var(--border-color);
-  width: 35px;
-  height: 140px; /* Hauteur fixe pour contenir le slider */
-  z-index: 99; /* Z-index très élevé */
-}
-
-.slider-wrapper {
-  position: relative;
-  display: flex;
-  align-items: flex-start;
-  height: 100%;
-}
-/*
-.size-tooltip {
-  position: absolute;
-  left: -50px;
-  transform: translateY(-50%);
-  background-color: var(--menu-active-fg);
-  color: white;
-  padding: 4px 8px;
-  font-size: 11px;
-  border-radius: 4px;
-  white-space: nowrap;
-  font-weight: 500;
-  z-index: 10000;
-}
-
-.size-tooltip::after {
-  content: '';
-  position: absolute;
-  right: -5px;
-  top: 50%;
-  transform: translateY(-50%);
-  border: 5px solid transparent;
-  border-left-color: var(--menu-active-fg);
-}
-*/
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.2s ease;
-}
-
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-}
-
-/* Styles personnalisés pour le slider vertical */
-:deep(.el-slider.is-vertical) {
-  width: 6px;
-}
-
-:deep(.el-slider.is-vertical .el-slider__runway) {
-  width: 6px;
-  background: var(--lane-bg);
-}
-
-:deep(.el-slider.is-vertical .el-slider__bar) {
-  width: 6px;
-  background: var(--menu-active-fg);
-}
-
-:deep(.el-slider.is-vertical .el-slider__button) {
-  width: 14px;
-  height: 14px;
-  border: 2px solid var(--menu-active-fg);
-  background: white;
-}
-
-:deep(.el-slider.is-vertical .el-slider__button:hover) {
-  transform: scale(1.2);
+.size-btn:active {
+  transform: scale(0.95);
 }
 </style>

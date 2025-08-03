@@ -85,8 +85,8 @@ const previewSelectedItems = ref([])
 const laneHeightPx = ref(100)
 
 // Constantes
-const VELOCITY_MARGIN_TOP = 2
-const VELOCITY_MARGIN_BOTTOM = 2
+const VELOCITY_MARGIN_TOP = 0
+const VELOCITY_MARGIN_BOTTOM = 0
 const FIXED_BAR_WIDTH = 8
 
 // ✅ Utiliser les mesures calculées avec signatures rythmiques

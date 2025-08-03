@@ -6,6 +6,7 @@
       class="velocity-scale-line-bg"
       :class="{ 
         'max-velocity': level === 127, 
+        'l-96': level === 96, 
         'min-velocity': level === 0 
       }"
       :style="getVelocityScaleLineStyle(level)"
@@ -31,7 +32,7 @@ const { velocityToY } = useVelocityCalculations()
 
 // Niveaux de vélocité à afficher
 const velocityLevels = [127, 96, 64, 32, 0]
-const VELOCITY_MARGIN_TOP = 5
+const VELOCITY_MARGIN_TOP = 0
 
 const getVelocityScaleLineStyle = (level) => {
   const topPosition = velocityToY(level, props.usableHeight, VELOCITY_MARGIN_TOP)
@@ -64,5 +65,13 @@ const getVelocityScaleLineStyle = (level) => {
 .velocity-scale-line-bg.min-velocity {
   background: var(--velocity-scale-line-strong, #888);
   height: 2px;
+}
+
+/* Remonter uniquement la ligne des 0 de 1px */
+.velocity-scale-line-bg.min-velocity {
+  transform: translateY(-1px);
+}
+.velocity-scale-line-bg.l-96 {
+  transform: translateY(2px);
 }
 </style>

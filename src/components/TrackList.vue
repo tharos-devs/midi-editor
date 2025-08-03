@@ -1,4 +1,3 @@
-
 <template>
   <div class="track-list">
     <!-- Colonne 1: Informations de la piste sélectionnée (largeur fixe) -->
@@ -29,18 +28,33 @@
         </div>
       </div>
 
-      <div class="track-instruments-content">
+      <div 
+        class="track-instruments-content"
+        :class="{ 
+          'drag-active': dragState.isDragging,
+          'reorder-feedback': showReorderFeedback
+        }"
+        @dragover.prevent
+        @drop.prevent
+      >
         <div
-          v-for="track in tracks"
-          :key="track.id"
+          v-for="(track, index) in tracks"
+          :key="`track-${track.id}`"
           class="track-instrument-wrapper"
+          :class="{ 
+            'drag-placeholder': dragState.isDragging && dragState.draggedTrackId === track.id,
+            'drag-target': dragState.isDragging && dragState.draggedTrackId !== track.id
+          }"
         >
           <TrackInstrument
             :track="track"
-            :height="trackHeightPx" 
+            :height="track.height || 30"
+            :index="index"
             @channel-changed="onTrackChannelChanged"
             @output-changed="onTrackOutputChanged"
             @track-selected="onTrackSelected"
+            @track-reorder="onTrackReorder"
+            @height-changed="onTrackHeightChanged"
           />
         </div>
 
@@ -64,6 +78,7 @@
 
       <!-- Barre de statut -->
       <TrackStatusBar 
+        ref="trackStatusBarRef"
         v-model="trackSize"
         @track-size-changed="onTrackSizeChanged"
       />
@@ -72,14 +87,14 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, reactive, watch } from 'vue'
 import { Plus, Headset } from '@element-plus/icons-vue'
 import { useMidiStore } from '@/stores/midi'
 import { useUIStore } from '@/stores/ui'
-import { ElMessage } from 'element-plus'
 import TrackInfo from './TrackInfo.vue'
 import TrackInstrument from './TrackInstrument.vue'
 import TrackStatusBar from './TrackStatusBar.vue'
+import { ElMessage } from 'element-plus'
 
 const midiStore = useMidiStore()
 const uiStore = useUIStore()
@@ -91,20 +106,47 @@ const showTrackInfo = computed(() => {
 // Computed pour récupérer les données du store
 const tracks = computed(() => midiStore.tracks)
 
+const trackSizeRef = ref(null)
 const trackSize = ref(50) // Valeur 0-100
-const trackHeightPx = ref(48) // Hauteur en pixels
+const trackHeightPx = ref(30) // Hauteur en pixels
+
+// État du drag & drop
+const dragState = reactive({
+  isDragging: false,
+  draggedTrackId: null,
+  draggedTrackIndex: -1,
+  targetIndex: -1,
+  dragStartTime: 0
+})
+
+// État pour le feedback visuel
+const showReorderFeedback = ref(false)
 
 // Gestionnaires d'événements pour TrackInstrument
 const onTrackChannelChanged = ({ trackId, channel }) => {
-  // Logique additionnelle si nécessaire
+  console.log(`🎵 Canal changé pour piste ${trackId}: ${channel}`)
 }
 
 const onTrackOutputChanged = ({ trackId, outputId }) => {
-  // Logique additionnelle si nécessaire
+  console.log(`🔌 Sortie changée pour piste ${trackId}: ${outputId}`)
 }
 
 const onTrackSelected = (trackId) => {
-  // Logique additionnelle si nécessaire
+  console.log(`🎯 Piste sélectionnée: ${trackId}`)
+}
+
+const onTrackHeightChanged = ({ trackId, height, level }) => {
+  // Mettre à jour la hauteur dans le store (comme avant)
+  const trackIndex = tracks.value.findIndex(t => t.id === trackId)
+  if (trackIndex !== -1) {
+    midiStore.tracks[trackIndex].height = height
+    midiStore.tracks[trackIndex].heightLevel = level
+  }
+  
+  // Synchroniser TrackSize avec les changements individuels
+  if (trackSizeRef.value) {
+    trackSizeRef.value.syncWithTracks()
+  }
 }
 
 const onTrackSizeChanged = (sizeInfo) => {
@@ -112,9 +154,112 @@ const onTrackSizeChanged = (sizeInfo) => {
   trackHeightPx.value = sizeInfo.heightPx
 }
 
+// Gestionnaire principal de réorganisation des pistes
+const onTrackReorder = async (reorderData) => {
+  const { draggedTrackId, targetIndex, position } = reorderData
+  
+  console.log(`🎯 Réorganisation demandée:`, {
+    draggedTrackId,
+    targetIndex,
+    position,
+    currentTracks: tracks.value.map(t => `${t.id}:${t.name}`)
+  })
+
+  // Mettre à jour l'état du drag
+  dragState.isDragging = true
+  dragState.draggedTrackId = draggedTrackId
+  dragState.targetIndex = targetIndex
+
+  try {
+    // Trouver l'index actuel de la piste déplacée
+    const currentIndex = tracks.value.findIndex(track => track.id === draggedTrackId)
+    
+    if (currentIndex === -1) {
+      console.error(`❌ Piste ${draggedTrackId} non trouvée`)
+      dragState.isDragging = false
+      return
+    }
+
+    // Calculer le nouvel index final
+    let finalIndex = targetIndex
+    
+    // Si on déplace vers le bas et que la piste actuelle est au-dessus de la cible,
+    // il faut ajuster l'index final
+    if (currentIndex < targetIndex) {
+      finalIndex = targetIndex - 1
+    }
+    
+    // Éviter de déplacer au même endroit
+    if (currentIndex === finalIndex) {
+      console.log(`⚠️  Pas de changement nécessaire (index ${currentIndex} -> ${finalIndex})`)
+      dragState.isDragging = false
+      return
+    }
+
+    console.log(`📦 Déplacement: index ${currentIndex} -> ${finalIndex}`)
+
+    // Utiliser la fonction du store pour réorganiser
+    const success = await midiStore.reorderTrack(draggedTrackId, finalIndex)
+    
+    if (success) {
+      ElMessage.success({
+        message: `Piste déplacée à la position ${finalIndex + 1}`,
+        duration: 2000,
+        showClose: true
+      })
+      console.log(`✅ Piste ${draggedTrackId} déplacée avec succès`)
+      console.log(`📋 Nouvel ordre:`, tracks.value.map(t => `${t.id}:${t.name}`))
+      
+      // Déclencher une animation de feedback
+      triggerReorderFeedback()
+      
+    } else {
+      ElMessage.error({
+        message: 'Erreur lors du déplacement de la piste',
+        duration: 3000,
+        showClose: true
+      })
+      console.error(`❌ Échec du déplacement de la piste ${draggedTrackId}`)
+    }
+    
+  } catch (error) {
+    console.error('❌ Erreur lors de la réorganisation:', error)
+    ElMessage.error({
+      message: 'Erreur lors du déplacement de la piste',
+      duration: 3000,
+      showClose: true
+    })
+  } finally {
+    // Nettoyer l'état du drag après un délai
+    setTimeout(() => {
+      dragState.isDragging = false
+      dragState.draggedTrackId = null
+      dragState.targetIndex = -1
+    }, 300)
+  }
+}
+
+// Fonction pour déclencher un feedback visuel après réorganisation
+const triggerReorderFeedback = () => {
+  showReorderFeedback.value = true
+  setTimeout(() => {
+    showReorderFeedback.value = false
+  }, 600)
+}
+
+// Watcher pour surveiller les changements d'état du drag
+watch(() => dragState.isDragging, (isDragging) => {
+  if (isDragging) {
+    dragState.dragStartTime = Date.now()
+    console.log('🚀 Début du drag & drop')
+  } else {
+    const dragDuration = Date.now() - dragState.dragStartTime
+    console.log(`🏁 Fin du drag & drop (durée: ${dragDuration}ms)`)
+  }
+})
+
 // Ajouter une nouvelle piste
-// Ajouter une nouvelle piste
-const addNewTrack = () => {
+const addNewTrack = async () => {
   const trackNumber = tracks.value.length + 1
   const colors = [
     '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7',
@@ -123,29 +268,70 @@ const addNewTrack = () => {
     '#1ABC9C', '#34495E', '#95A5A6', '#E67E22', '#C0392B'
   ]
   
-  // Créer une nouvelle piste
-  const newTrack = {
-    id: Date.now(), // ID temporaire
-    name: `Nouvelle Piste ${trackNumber}`,
-    channel: Math.min(trackNumber - 1, 15),
-    instrument: { name: 'Acoustic Grand Piano', number: 0 },
-    notes: [],
-    controlChanges: {},
-    pitchBends: [],
-    volume: 100,
-    pan: 64,
-    bank: 0,
-    midiOutput: 'default',
-    muted: false,
-    solo: false,
-    color: colors[(trackNumber - 1) % colors.length]
+  try {
+    // Créer une nouvelle piste
+    const newTrack = {
+      id: Date.now(), // ID temporaire basé sur le timestamp
+      name: `Nouvelle Piste ${trackNumber}`,
+      channel: Math.min(trackNumber - 1, 15), // Canal MIDI (0-15)
+      instrument: { name: 'Acoustic Grand Piano', number: 0 },
+      notes: [],
+      controlChanges: {},
+      pitchBends: [],
+      volume: 100,
+      pan: 64,
+      bank: 0,
+      midiOutput: 'default',
+      muted: false,
+      solo: false,
+      color: colors[(trackNumber - 1) % colors.length]
+    }
+    
+    // Ajouter la piste au store
+    midiStore.tracks.push(newTrack)
+    
+    // Sélectionner la nouvelle piste
+    midiStore.selectTrack(newTrack.id)
+    
+    // Forcer la réactivité
+    midiStore.triggerReactivity()
+    
+    ElMessage.success({
+      message: `Piste "${newTrack.name}" créée avec succès`,
+      duration: 2000
+    })
+    
+    console.log(`✅ Nouvelle piste créée:`, newTrack)
+    
+  } catch (error) {
+    console.error('❌ Erreur lors de la création de la piste:', error)
+    ElMessage.error({
+      message: 'Erreur lors de la création de la piste',
+      duration: 3000
+    })
   }
-  
-  // Ajouter la piste au store
-  midiStore.tracks.push(newTrack)
-  midiStore.selectTrack(newTrack.id)
-  
-  ElMessage.success('Nouvelle piste ajoutée')
+}
+
+// Fonction utilitaire pour obtenir le nom d'une piste
+const getTrackName = (trackId) => {
+  const track = tracks.value.find(t => t.id === trackId)
+  return track ? track.name : `Piste ${trackId}`
+}
+
+// Debug: surveiller les changements d'ordre des pistes
+if (process.env.NODE_ENV === 'development') {
+  watch(tracks, (newTracks, oldTracks) => {
+    if (oldTracks && newTracks.length === oldTracks.length) {
+      const oldOrder = oldTracks.map(t => t.id).join(',')
+      const newOrder = newTracks.map(t => t.id).join(',')
+      
+      if (oldOrder !== newOrder) {
+        console.log('🔄 Ordre des pistes changé:')
+        console.log('Ancien:', oldTracks.map((t, i) => `${i + 1}.${t.name}`))
+        console.log('Nouveau:', newTracks.map((t, i) => `${i + 1}.${t.name}`))
+      }
+    }
+  }, { deep: true })
 }
 </script>
 
@@ -197,14 +383,63 @@ const addNewTrack = () => {
 .track-instruments-content {
   flex: 1;
   overflow-y: auto;
+  transition: background-color 0.3s ease;
+  padding: 4px;
 }
 
 .track-instrument-wrapper {
-  margin-bottom: 8px;
+  margin-bottom: 4px;
+  transition: all 0.2s ease;
+  border-radius: 4px;
 }
 
 .track-instrument-wrapper:last-child {
   margin-bottom: 0;
+}
+
+/* Styles pour le drag & drop */
+.track-instruments-content.drag-active {
+  background: rgba(64, 158, 255, 0.05);
+  border: 2px dashed rgba(64, 158, 255, 0.3);
+}
+
+.track-instrument-wrapper.drag-placeholder {
+  opacity: 0.3;
+  transform: scale(0.95);
+  filter: grayscale(50%);
+  border: 2px dashed rgba(64, 158, 255, 0.5);
+}
+
+.track-instrument-wrapper.drag-target {
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.track-instrument-wrapper.drag-target:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(64, 158, 255, 0.2);
+  background: rgba(64, 158, 255, 0.1);
+  border-radius: 6px;
+}
+
+/* Animation de feedback après réorganisation */
+.track-instruments-content.reorder-feedback {
+  animation: reorderSuccess 0.6s ease;
+}
+
+@keyframes reorderSuccess {
+  0% {
+    background: rgba(34, 197, 94, 0.2);
+    border-color: rgba(34, 197, 94, 0.5);
+  }
+  50% {
+    background: rgba(34, 197, 94, 0.1);
+    border-color: rgba(34, 197, 94, 0.3);
+  }
+  100% {
+    background: transparent;
+    border-color: transparent;
+  }
 }
 
 .no-tracks {
@@ -237,6 +472,26 @@ const addNewTrack = () => {
   margin: 0 0 16px 0;
   font-size: 14px;
   line-height: 1.5;
+}
+
+/* Indicateurs visuels pour le drag & drop */
+.track-instruments-content.drag-active::before {
+  content: '↕️ Glissez pour réorganiser les pistes';
+  display: block;
+  text-align: center;
+  padding: 8px;
+  background: rgba(64, 158, 255, 0.1);
+  color: var(--menu-active-fg);
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 4px;
+  margin-bottom: 8px;
+  border: 1px solid rgba(64, 158, 255, 0.3);
+}
+
+/* Amélioration du curseur pendant le drag */
+.track-instruments-content.drag-active * {
+  cursor: grabbing !important;
 }
 
 /* Responsive */
@@ -308,4 +563,47 @@ const addNewTrack = () => {
   outline: 2px solid var(--menu-active-fg);
   outline-offset: -2px;
 }
-</style>"
+
+/* Amélioration des performances pour les longues listes */
+.track-instrument-wrapper {
+  contain: layout style paint;
+}
+
+/* Animation d'entrée pour les nouvelles pistes */
+@keyframes trackFadeIn {
+  from {
+    opacity: 0;
+    transform: translateX(-20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+.track-instrument-wrapper:last-child {
+  animation: trackFadeIn 0.3s ease-out;
+}
+
+/* Styles spéciaux pour le drag actif */
+.drag-ghost {
+  opacity: 0.5;
+  transform: rotate(5deg);
+  z-index: 1000;
+  pointer-events: none;
+}
+
+/* Indicateur de position de drop */
+.drop-indicator {
+  height: 4px;
+  background: var(--menu-active-fg);
+  border-radius: 2px;
+  margin: 2px 0;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.drop-indicator.active {
+  opacity: 1;
+}
+</style>

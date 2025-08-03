@@ -1,28 +1,21 @@
 <template>
   <div class="track-status-bar">
     <div class="status-left">
-      <span class="track-count">{{ trackCount }} piste{{ trackCount > 1 ? 's' : '' }}</span>
-      <span v-if="selectedTrackName" class="selected-track">
-        • "{{ selectedTrackName }}" sélectionnée
-      </span>
     </div>
 
     <div class="status-center">
-      <span v-if="totalNotes > 0" class="notes-info">
-        {{ totalNotes }} note{{ totalNotes > 1 ? 's' : '' }} au total
-      </span>
     </div>
 
     <div class="status-right">
       <!-- Contrôle de taille des pistes -->
       <TrackSize 
+        ref="trackSizeRef"
         v-model="trackSize" 
         @size-changed="onTrackSizeChanged"
       />
       
       <!-- Indicateur de statut -->
       <div class="status-indicator">
-        <span class="status-text">Prêt</span>
       </div>
     </div>
   </div>
