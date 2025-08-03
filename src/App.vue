@@ -243,6 +243,10 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  user-select: none; /* Empêche la sélection de texte */
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
 }
 
 /* ========================================== */
@@ -336,8 +340,19 @@ onUnmounted(() => {
 
 .piano-grid-scroll {
   flex: 1;
-  overflow-x: hidden;
+  overflow-x: auto;
   overflow-y: auto;
+  /* Masquer la scrollbar horizontale sur WebKit (Chrome, Safari, Edge) */
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE et Edge */
+}
+
+.piano-grid-scroll::-webkit-scrollbar {
+  height: 0px; /* Masquer la scrollbar horizontale sur WebKit */
+}
+
+.piano-grid-scroll::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .horizontal-splitter {
