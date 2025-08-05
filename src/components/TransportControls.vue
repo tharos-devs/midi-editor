@@ -1,6 +1,12 @@
 <!-- components/TransportControls.vue - VERSION SIMPLIFIÉE -->
 <template>
   <div class="transport-controls" :class="{ compact, playing: isPlaying, paused: isPaused }">
+    <!-- Affichage de la position (mesure.temps.subdivision) -->
+    <div class="position-display">
+      <el-icon><Location /></el-icon>
+      <span class="position-text">{{ currentPositionFormatted }}</span>
+    </div>
+
     <div class="transport-buttons">
       <!-- Bouton Rewind -->
       <el-button
@@ -47,34 +53,9 @@
 
     <!-- Affichage du temps -->
     <div class="time-display">
-      <span class="current-time">{{ currentTimeFormatted }}</span>
+      <span class="current-time">{{ safeCurrentTimeFormatted }}</span>
       <span class="separator">/</span>
       <span class="total-time">{{ totalDurationFormatted }}</span>
-    </div>
-
-    <!-- Affichage de la position (mesure.temps.subdivision) -->
-    <div class="position-display">
-      <el-icon><Location /></el-icon>
-      <span class="position-text">{{ currentPositionFormatted }}</span>
-    </div>
-
-    <!-- Barre de progression (optionnelle) -->
-    <div 
-      v-if="showProgressBar" 
-      class="progress-bar"
-      @click="handleProgressClick"
-      ref="progressBarRef"
-    >
-      <div class="progress-background">
-        <div 
-          class="progress-fill"
-          :style="{ width: progress + '%' }"
-        />
-        <div 
-          class="progress-handle"
-          :style="{ left: progress + '%' }"
-        />
-      </div>
     </div>
 
     <!-- Indicateur de tempo (optionnel) -->
@@ -135,7 +116,6 @@ import {
   Connection,
   Close,
   Warning,
-  Star,
   Location
 } from '@element-plus/icons-vue'
 import { useMidiPlayer } from '@/composables/useMidiPlayer'
@@ -176,7 +156,6 @@ const cursor = usePlaybackCursor()
 const timeSignature = useTimeSignature()
 
 // Refs locales
-const progressBarRef = ref(null)
 const localPlaybackRate = ref(1)
 
 // ============ SYNCHRONISATION SIMPLIFIÉE ============
@@ -234,7 +213,6 @@ const {
   totalDuration,
   currentTimeFormatted,
   totalDurationFormatted,
-  progress,
   canPlay,
   playbackRate,
   isLooping,
@@ -279,6 +257,15 @@ const midiStatusIcon = computed(() => {
 
 const midiStatusText = computed(() => {
   return midiManager.midiStatusText
+})
+
+// Computed pour un temps sécurisé qui ne dépasse jamais la durée totale
+const safeCurrentTimeFormatted = computed(() => {
+  const safeTime = Math.min(currentTime.value, totalDuration.value)
+  const mins = Math.floor(safeTime / 60)
+  const secs = Math.floor(safeTime % 60)
+  const ms = Math.floor((safeTime % 1) * 100)
+  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(2, '0')}`
 })
 
 // NOUVEAU: Computed pour la position mesure.temps.subdivision
@@ -375,17 +362,6 @@ function handleRewind() {
   rewind()
 }
 
-function handleProgressClick(event) {
-  if (!canPlay.value || !progressBarRef.value) return
-  
-  const rect = progressBarRef.value.getBoundingClientRect()
-  const clickX = event.clientX - rect.left
-  const percentage = clickX / rect.width
-  const targetTime = percentage * totalDuration.value
-  
-  console.log('📍 Seek vers:', targetTime)
-  seekTo(targetTime)
-}
 
 function handlePlaybackRateChange(newRate) {
   playbackRate.value = newRate
@@ -472,6 +448,7 @@ onUnmounted(() => {
   border: 1px solid var(--el-border-color);
   border-radius: 6px;
   user-select: none;
+  box-sizing: border-box;
 }
 
 .transport-buttons {
