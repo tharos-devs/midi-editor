@@ -377,8 +377,10 @@ function handlePlaybackRateChange(newRate) {
 }
 
 function handlePlaybackMarker() {
-  console.log('🅿️ Touche P pressée à la position:', currentTime.value.toFixed(2) + 's')
-  markerStore.toggleMarker(currentTime.value)
+  // Utiliser la position du curseur store qui suit les clics timeline
+  const cursorTime = cursor.currentTime.value
+  console.log('🅿️ Touche P pressée à la position:', cursorTime.toFixed(2) + 's')
+  markerStore.toggleMarker(cursorTime)
 }
 
 // Gestion des raccourcis clavier
