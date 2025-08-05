@@ -246,10 +246,15 @@ function setupAutoSync() {
   })
   
   // Watcher pour détecter un stop (isPlaying=false ET isPaused=false)
+  // CORRECTION: Ne pas reset si c'est un arrêt de fin de morceau
   const unwatchStop = watch(
-    () => ({ playing: midiPlayer.isPlaying.value, paused: midiPlayer.isPaused.value }),
-    ({ playing, paused }) => {
-      if (props.autoSync && !playing && !paused) {
+    () => ({ 
+      playing: midiPlayer.isPlaying.value, 
+      paused: midiPlayer.isPaused.value,
+      stoppedAtEnd: midiPlayer.stoppedAtEnd?.value 
+    }),
+    ({ playing, paused, stoppedAtEnd }) => {
+      if (props.autoSync && !playing && !paused && !stoppedAtEnd) {
         cursor.stopPlayback()
       }
     }

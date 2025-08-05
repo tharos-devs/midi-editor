@@ -313,11 +313,10 @@ export function usePlaybackCursor() {
           })
         }
       } else {
-        // Fin de morceau
+        // Fin de morceau - utiliser stopAtEnd pour garder la position
         currentTime.value = totalDuration.value
-        stopInternalTimer()
-        isPlaying.value = false
-        console.log('🔚 Fin de morceau atteinte')
+        stopAtEnd()
+        console.log('🔚 Fin de morceau atteinte par le curseur')
       }
     }, 16) // ~60fps - équilibré entre fluidité et performance
   }
@@ -452,6 +451,15 @@ export function usePlaybackCursor() {
     currentTime.value = 0
     stopInternalTimer()
     console.log('⏹️ Lecture arrêtée par curseur')
+  }
+
+  // Stop en fin de morceau - garde la position finale
+  function stopAtEnd() {
+    isPlaying.value = false
+    isPaused.value = false
+    // NE PAS remettre currentTime.value = 0 - garder la position finale
+    stopInternalTimer()
+    console.log('🏁 Fin de morceau - position gardée à', currentTime.value.toFixed(2) + 's')
   }
 
   function seekTo(time) {
@@ -662,6 +670,7 @@ export function usePlaybackCursor() {
     startPlayback,
     pausePlayback,
     stopPlayback,
+    stopAtEnd,
     seekTo,
     
     // Utilitaires
