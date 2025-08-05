@@ -22,8 +22,20 @@
 
 <script setup>
 import { usePlaybackMarkerStore } from '@/stores/playbackMarker'
+import { watch } from 'vue'
 
 const markerStore = usePlaybackMarkerStore()
+
+// Debug: surveiller les changements de position
+watch(() => markerStore.markerPixelPosition, (newPos, oldPos) => {
+  if (newPos !== null) {
+    console.log('🅿️ PlaybackMarker position mise à jour:', {
+      ancienne: oldPos,
+      nouvelle: newPos,
+      temps: markerStore.markerTime
+    })
+  }
+}, { immediate: true })
 </script>
 
 <style scoped>

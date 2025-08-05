@@ -7,6 +7,7 @@ export const usePlaybackMarkerStore = defineStore('playbackMarker', () => {
   // État
   const markerTime = ref(null) // Position en secondes du marqueur P, null = pas de marqueur
   
+  // Récupérer la fonction de conversion directement
   const { timeToPixelsWithSignatures } = useTimeSignature()
   
   // Computed pour la position en pixels
@@ -14,7 +15,7 @@ export const usePlaybackMarkerStore = defineStore('playbackMarker', () => {
     if (markerTime.value === null || !timeToPixelsWithSignatures) {
       return null
     }
-    return timeToPixelsWithSignatures(markerTime.value)
+    return Math.max(0, timeToPixelsWithSignatures(markerTime.value))
   })
   
   // Computed pour savoir si le marqueur est actif
@@ -24,6 +25,14 @@ export const usePlaybackMarkerStore = defineStore('playbackMarker', () => {
   function setMarker(time) {
     markerTime.value = time
     console.log('🅿️ Marqueur P placé à:', time.toFixed(2) + 's', '→', markerPixelPosition.value?.toFixed(1) + 'px')
+    
+    // Debug: comparer avec le curseur de lecture
+    console.log('🅿️ Debug position:', {
+      markerTime: time,
+      markerPixels: markerPixelPosition.value,
+      hasTimeToPixels: !!timeToPixelsWithSignatures,
+      timeToPixelsFunction: timeToPixelsWithSignatures?.toString?.()?.substring(0, 50) + '...'
+    })
   }
   
   function clearMarker() {
