@@ -158,6 +158,17 @@ const fillStyle = computed(() => {
   const midiVelocity = props.note.velocity !== undefined ? props.note.velocity : 100
   const clampedVelocity = Math.max(0, Math.min(127, Math.round(midiVelocity)))
   
+  // Debug temporaire
+  if (props.note.velocity !== 100) {
+    console.log('🔊 VelocityBar debug:', {
+      noteId: props.note.id,
+      rawVelocity: props.note.velocity,
+      midiVelocity,
+      clampedVelocity,
+      isUndefined: props.note.velocity === undefined
+    })
+  }
+  
   // Utiliser le cache si la vélocité n'a pas changé
   if (lastVelocityValue.value === clampedVelocity && cachedVelocityCalc.value) {
     return {
