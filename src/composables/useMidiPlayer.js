@@ -589,7 +589,7 @@ export function useMidiPlayer() {
       playerTime: currentTime.value.toFixed(2) + 's',
       cursorTime: cursorStore.currentTime.toFixed(2) + 's'
     })
-    cursorStore.seekTo(currentTime.value, false)
+    cursorStore.seekTo(currentTime.value, false, true) // Désactiver auto-scroll pour stopAtEnd
     
     // Stop du curseur global SANS reset
     cursorStore.stopAtEnd()

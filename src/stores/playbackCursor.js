@@ -95,7 +95,7 @@ export const usePlaybackCursorStore = defineStore('playbackCursor', () => {
   }
 
   // Seek
-  function seekTo(time, fromTimelineClick = false) {
+  function seekTo(time, fromTimelineClick = false, disableAutoScroll = false) {
     // S'assurer que la durée totale est à jour - CORRECTION: utiliser la vraie durée
     const { getLastMidiEventTime } = useTimeSignature()
     const realDuration = getLastMidiEventTime?.value || midiStore.getTotalDuration
@@ -122,7 +122,8 @@ export const usePlaybackCursorStore = defineStore('playbackCursor', () => {
     
     // CORRECTION: Déclencher l'auto-scroll SEULEMENT si le curseur est hors de la zone visible
     // après un seek manuel pour s'assurer qu'il reste visible
-    setTimeout(() => {
+    if (!disableAutoScroll) {
+      setTimeout(() => {
       const scrollController = document.querySelector('.scroll-controller')
       const timelineScroll = document.querySelector('.timeline-scroll')
       const referenceElement = scrollController || timelineScroll
@@ -197,6 +198,7 @@ export const usePlaybackCursorStore = defineStore('playbackCursor', () => {
         }
       }
     }, 100)
+    }
     
     if (isPlaying.value) {
       startTimer() // Redémarrer le timer avec le nouveau temps
