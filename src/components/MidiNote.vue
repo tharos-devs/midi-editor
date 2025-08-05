@@ -136,13 +136,14 @@ const noteName = computed(() => {
   return getNoteName(props.note.midi)
 })
 
+/*
 // Watcher pour détecter les changements de note MIDI et mettre à jour le nom
 watch(() => props.note.midi, (newMidi, oldMidi) => {
   if (newMidi !== oldMidi) {
     console.log(`🎵 Note MIDI changée: ${oldMidi} → ${newMidi} (${getNoteName(newMidi)})`)
   }
 })
-
+*/
 // CORRECTION PROBLÈME VÉLOCITÉ : Fonction pour obtenir la couleur basée sur la vélocité avec conversion
 const getVelocityColor = (velocity) => {
   // Convertir la vélocité en format 0-1 si elle est en format MIDI (0-127)
@@ -276,7 +277,7 @@ const playNoteSound = () => {
     // Utiliser la fonction utilitaire pour normaliser la vélocité
     const midiVelocity = normalizeVelocityToMidi(props.note.velocity)
     
-    console.log(`🎵 Conversion vélocité: ${props.note.velocity} → ${midiVelocity}`)
+   // console.log(`🎵 Conversion vélocité: ${props.note.velocity} → ${midiVelocity}`)
     
     // Arrêter d'abord toute note qui pourrait jouer sur ce MIDI/canal
     stopNote({
@@ -296,7 +297,7 @@ const playNoteSound = () => {
         duration: 200 // Durée courte pour le preview
       })
       
-      console.log(`🎵 Note jouée au clic: ${getNoteName(props.note.midi)} (${props.note.midi}) - Vélocité Tone.js: ${props.note.velocity} - Vélocité MIDI: ${midiVelocity}`)
+      // console.log(`🎵 Note jouée au clic: ${getNoteName(props.note.midi)} (${props.note.midi}) - Vélocité Tone.js: ${props.note.velocity} - Vélocité MIDI: ${midiVelocity}`)
     }, 10) // Délai de 10ms pour laisser le temps au Note Off d'être traité
   }
 }

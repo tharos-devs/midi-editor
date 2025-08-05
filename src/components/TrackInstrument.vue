@@ -348,7 +348,7 @@ function toggleTrackHeight() {
   
   const newHeight = heightLevels[currentHeightLevel.value]
   
-  console.log(`📏 Hauteur piste ${props.track.name}: niveau ${currentHeightLevel.value} (${newHeight}px)`)
+  // console.log(`📏 Hauteur piste ${props.track.name}: niveau ${currentHeightLevel.value} (${newHeight}px)`)
   
   // Émettre l'événement pour informer le parent
   emit('height-changed', {
@@ -401,7 +401,7 @@ async function onVolumeChange(volume) {
   // Débouncer pour éviter trop d'appels
   if (volumeTimeout) clearTimeout(volumeTimeout)
   volumeTimeout = setTimeout(async () => {
-    console.log(`🔊 TrackInstrument: Mise à jour Volume piste ${props.track.id}: ${clampedVolume}`)
+    // console.log(`🔊 TrackInstrument: Mise à jour Volume piste ${props.track.id}: ${clampedVolume}`)
     await midiStore.updateTrackVolume(props.track.id, clampedVolume)
     await sendMidiCC(7, clampedVolume) // CC7 pour Volume
   }, 50) // 50ms de débounce
@@ -423,19 +423,19 @@ async function sendMidiCC(ccNumber, value) {
     
     if (targetOutput) {
       const ccName = ccNumber === 7 ? 'Volume' : 'Pan'
-      console.log(`🎛️ TrackInstrument: Envoi CC${ccNumber} ${ccName}: Canal=${trackChannel + 1} Valeur=${value}`)
+      // console.log(`🎛️ TrackInstrument: Envoi CC${ccNumber} ${ccName}: Canal=${trackChannel + 1} Valeur=${value}`)
       
       try {
         targetOutput.send([0xB0 + trackChannel, ccNumber, value])
-        console.log(`✅ TrackInstrument: ${ccName} CC${ccNumber} envoyé avec succès`)
+        // console.log(`✅ TrackInstrument: ${ccName} CC${ccNumber} envoyé avec succès`)
       } catch (error) {
-        console.error(`❌ TrackInstrument: Erreur envoi ${ccName} CC${ccNumber}:`, error)
+        // console.error(`❌ TrackInstrument: Erreur envoi ${ccName} CC${ccNumber}:`, error)
       }
     } else {
-      console.warn(`⚠️ TrackInstrument: Sortie MIDI "${trackMidiOutput}" non trouvée pour envoi CC${ccNumber}`)
+      // console.warn(`⚠️ TrackInstrument: Sortie MIDI "${trackMidiOutput}" non trouvée pour envoi CC${ccNumber}`)
     }
   } else {
-    console.warn(`⚠️ TrackInstrument: MIDI non disponible pour envoi CC${ccNumber}`)
+    // console.warn(`⚠️ TrackInstrument: MIDI non disponible pour envoi CC${ccNumber}`)
   }
 }
 
@@ -477,7 +477,7 @@ function onDragStart(event) {
   // Ajouter une classe CSS pour l'élément en cours de drag
   event.target.classList.add('dragging')
   
-  console.log('🚀 Début du drag pour la piste:', props.track.name, 'ID:', props.track.id)
+  // console.log('🚀 Début du drag pour la piste:', props.track.name, 'ID:', props.track.id)
 }
 
 function onDragEnd(event) {
@@ -487,7 +487,7 @@ function onDragEnd(event) {
   // Retirer la classe CSS
   event.target.classList.remove('dragging')
   
-  console.log('🏁 Fin du drag pour la piste:', props.track.name)
+  // console.log('🏁 Fin du drag pour la piste:', props.track.name)
 }
 
 function onDragOver(event) {
@@ -520,14 +520,14 @@ function onDrop(event) {
   if (dropPosition === 'after') {
     targetIndex += 1
   }
-  
+  /*
   console.log('📦 Drop détecté:', {
     draggedTrackId,
     targetTrackId: props.track.id,
     dropPosition,
     targetIndex
   })
-  
+  */
   // Émettre l'événement de réorganisation
   emit('track-reorder', {
     draggedTrackId,

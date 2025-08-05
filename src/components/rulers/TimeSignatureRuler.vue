@@ -1,5 +1,5 @@
 <template>
-  <div class="signature-ruler" :style="{ width: totalWidth + 'px' }">
+  <div class="signature-ruler" :style="{ width: totalWidth + 'px' }" >
     <div class="signature-ruler-content">
       <!-- Utilisation de GridRenderer pour les lignes de mesure et beats -->
       <GridRenderer
@@ -51,6 +51,8 @@ const {
   measuresWithSignatures,
   totalWidth
 } = useTimeSignature()
+
+// TimeSignatureRuler n'a plus de logique wheel - géré par WheelHandler global
 
 // Exposition des données pour les composants parents
 defineExpose({

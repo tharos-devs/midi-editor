@@ -22,8 +22,13 @@
         :show-measure-numbers="false"
         :show-beat-labels="false"
         class="grid-background"
-      />
-
+      >
+        <GlobalPlaybackCursor
+          :container-height="laneHeight"
+          :show-debug-info="false"
+        />
+      </GridRenderer>
+    
       <!-- Zone d'affichage des vélocités - AU PREMIER PLAN -->
       <VelocityDisplayArea
         :lane-height="laneHeight"
@@ -44,13 +49,15 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { provide, ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useUIStore } from '@/stores/ui'
 import { useMidiStore } from '@/stores/midi'
 import { useTimeSignature } from '@/composables/useTimeSignature'
 import { useMouseInteractions } from '@/composables/useMouseInteractions'
 import { useVelocityCalculations } from '@/composables/useVelocityCalculations'
 import { useMidiOutput } from '@/composables/useMidiOutput' // Ajout du composable MIDI
+import GlobalPlaybackCursor from '@/components/GlobalPlaybackCursor.vue'
+import { usePlaybackCursorStore } from '@/stores/playbackCursor'
 
 // Composants
 import SelectionRectangle from './SelectionRectangle.vue'
@@ -72,6 +79,8 @@ const uiStore = useUIStore()
 const midiStore = useMidiStore()
 const velocityLaneRef = ref(null)
 
+const cursorStore = usePlaybackCursorStore()
+
 // Composables
 const { toneToMidi, midiToTone, velocityToY, yToVelocity } = useVelocityCalculations()
 const timeSignatureComposable = useTimeSignature()
@@ -80,6 +89,16 @@ const { playNote, stopNote } = useMidiOutput() // Ajout des fonctions MIDI
 // ✅ Utiliser les données correctes du composable timeSignature
 const totalWidth = computed(() => {
   return timeSignatureComposable?.totalWidth?.value || 800
+})
+
+const timeToPixel = computed(() => {
+  if (!totalWidth.value || !cursorStore.totalDuration) {
+    return () => 0
+  }
+  return (timeInSeconds) => {
+    if (!timeInSeconds || timeInSeconds < 0) return 0
+    return (timeInSeconds / cursorStore.totalDuration) * totalWidth.value
+  }
 })
 
 // État local
@@ -159,7 +178,7 @@ const playNoteWithVelocity = (note, midiVelocity, duration = 150) => {
     playingNotes.value.delete(noteKey)
   }, duration + 50)
 
-  console.log(`🎵 Note vélocité jouée: ${note.midi} - Vélocité MIDI: ${midiVelocity}`)
+  // console.log(`🎵 Note vélocité jouée: ${note.midi} - Vélocité MIDI: ${midiVelocity}`)
 }
 
 // ✅ Utiliser les mesures calculées avec signatures rythmiques
@@ -169,7 +188,7 @@ const measuresWithSignatures = computed(() => {
   }
   
   // Fallback uniquement si le composable n'est pas disponible
-  console.warn('VelocityLane: measuresWithSignatures non disponible, utilisation du fallback')
+  // console.warn('VelocityLane: measuresWithSignatures non disponible, utilisation du fallback')
   const simpleMeasures = []
   const basePixelsPerBeat = 60
   const pixelsPerBeat = basePixelsPerBeat * uiStore.horizontalZoom
@@ -497,6 +516,8 @@ const stopAllPlayingNotes = () => {
   playingNotes.value.clear()
 }
 
+// VelocityLane n'a plus de logique wheel - géré par WheelHandler global
+
 // Lifecycle
 let resizeObserver = null
 
@@ -528,6 +549,9 @@ onUnmounted(() => {
   
   updateCache.clear()
 })
+
+provide('timeToPixel', timeToPixel)
+provide('totalWidth', totalWidth)
 </script>
 
 <style scoped>

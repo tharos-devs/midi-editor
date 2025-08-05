@@ -28,7 +28,6 @@ async function initializeMidi() {
     }
 
     isInitialized.value = true
-    console.log('✅ MIDI initialisé avec succès')
     return true
 
   } catch (error) {

@@ -50,7 +50,7 @@ const cycleSize = async () => {
   currentSizeIndex.value = (currentSizeIndex.value + 1) % sizes.length
   const newSize = sizes[currentSizeIndex.value]
   
-  console.log(`🎛️ TrackSize: Changement global vers ${newSize.value}px (${newSize.label})`)
+  // console.log(`🎛️ TrackSize: Changement global vers ${newSize.value}px (${newSize.label})`)
   
   try {
     // Mettre à jour TOUTES les pistes avec la nouvelle taille
@@ -72,10 +72,10 @@ const cycleSize = async () => {
       level: currentSizeIndex.value
     })
     
-    console.log(`✅ TrackSize: ${midiStore.tracks.length} pistes mises à jour à ${newSize.value}px`)
+    // console.log(`✅ TrackSize: ${midiStore.tracks.length} pistes mises à jour à ${newSize.value}px`)
     
   } catch (error) {
-    console.error('❌ TrackSize: Erreur lors de la mise à jour globale:', error)
+    // console.error('❌ TrackSize: Erreur lors de la mise à jour globale:', error)
   }
 }
 
@@ -87,7 +87,7 @@ async function updateTrackHeight(trackId, height, level) {
     midiStore.tracks[trackIndex].height = height
     midiStore.tracks[trackIndex].heightLevel = level
     
-    console.log(`📏 TrackSize: Piste ${trackId} -> ${height}px (niveau ${level})`)
+    //console.log(`📏 TrackSize: Piste ${trackId} -> ${height}px (niveau ${level})`)
   }
 }
 

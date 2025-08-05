@@ -8,6 +8,7 @@
     @mouseup="onContainerMouseUp"
     @mouseleave="onContainerMouseLeave"
     @dblclick="onContainerDoubleClick"
+    @wheel="onWheel"
   >
     <!-- Couche de fond avec les lignes horizontales uniquement -->
     <div class="grid-background-fixed" :style="gridBackgroundStyle">
@@ -36,7 +37,14 @@
       :showBeatLines="true"
       :showSignatureIndicators="false"
       :showMeasureNumbers="false"
-    />
+    >
+      <!-- Curseur de lecture GLOBAL -->
+      <GlobalPlaybackCursor
+        :container-height="calculatedPianoHeight"
+        :show-debug-info="false"
+      />
+
+    </GridRenderer>
 
     <!-- Notes MIDI -->
     <div class="notes-layer">
@@ -79,7 +87,7 @@
 </template>
 
 <script setup>
-import { computed, ref, provide, onMounted, onUnmounted } from 'vue'
+import { provide, computed, ref, onMounted, onUnmounted } from 'vue'
 import { useUIStore } from '@/stores/ui'
 import { useMidiStore } from '@/stores/midi'
 import { useTimeSignature } from '@/composables/useTimeSignature'
@@ -88,12 +96,13 @@ import { useMultiSelection } from '@/composables/useMultiSelection'
 import { useSnapLogic } from '@/composables/useSnapLogic'
 import MidiNote from '@/components/MidiNote.vue'
 import GridRenderer from '@/components/GridRenderer.vue'
+import GlobalPlaybackCursor from '@/components/GlobalPlaybackCursor.vue'
+import { usePlaybackCursorStore } from '@/stores/playbackCursor'
 
 const midiStore = useMidiStore()
 const uiStore = useUIStore()
 const multiSelection = useMultiSelection()
-
-provide('multiSelection', multiSelection)
+const cursorStore = usePlaybackCursorStore()
 
 const showDebug = ref(false)
 const timeSignatureComposable = useTimeSignature()
@@ -110,7 +119,7 @@ const {
 const {
   pixelsToTimeWithSignatures,
   timeToPixelsWithSignatures
-} = useTimeSignature()
+} = timeSignatureComposable
 
 const {
   snapTimeToGrid,
@@ -125,6 +134,15 @@ let isDraggingNote = false
 
 const totalWidth = computed(() => {
   return timeSignatureComposable?.totalWidth?.value || 800
+})
+
+const timeToPixel = computed(() => {
+  // Utiliser la fonction qui prend en compte les signatures temporelles et changements de tempo
+  return timeToPixelsWithSignatures || ((timeInSeconds) => {
+    if (!timeInSeconds || timeInSeconds < 0) return 0
+    const duration = midiStore.getTotalDuration || 1
+    return (timeInSeconds / duration) * totalWidth.value
+  })
 })
 
 const selectedTrackNotes = computed(() => {
@@ -209,6 +227,7 @@ const onContainerDoubleClick = (event) => {
   const newNoteId = midiStore.addNote(newNoteData)
   
   if (newNoteId) {
+    /*
     console.log(`🎵 Nouvelle note créée:`, {
       id: newNoteId,
       midi: midiNumber,
@@ -217,7 +236,7 @@ const onContainerDoubleClick = (event) => {
       duration: noteDuration.toFixed(3),
       track: selectedTrack?.name || `Track ${midiStore.selectedTrack}`
     })
-
+    */
     // Sélectionner la note nouvellement créée
     multiSelection.selectNote(newNoteId)
   } else {
@@ -331,6 +350,27 @@ const clearSelection = () => {
   multiSelection.clearSelection()
 }
 
+// Gestion wheel spécifique à PianoGrid - SEULEMENT scroll vertical
+function onWheel(event) {
+  const deltaX = event.deltaX
+  const deltaY = event.deltaY
+  
+  // Déterminer si c'est un scroll horizontal ou vertical
+  const isHorizontalScroll = Math.abs(deltaX) > Math.abs(deltaY)
+  
+  if (isHorizontalScroll) {
+    // Scroll horizontal - NE PAS gérer, laisser WheelHandler global s'occuper
+    return
+  } else {
+    // Scroll vertical - PianoGrid gère sa propre navigation dans les notes
+    // NE PAS faire event.preventDefault() pour laisser le scroll naturel
+    console.log('🎼 PianoGrid scroll vertical:', deltaY)
+    
+    // Le comportement de scroll vertical est naturel (pas besoin de code supplémentaire)
+    // Le navigateur appliquera automatiquement le scroll sur le conteneur avec overflow-y
+  }
+}
+
 const handleKeyDown = (event) => {
   if (event.key === 'Escape') {
     multiSelection.clearSelection()
@@ -359,7 +399,7 @@ const handleKeyDown = (event) => {
       })
       
       multiSelection.clearSelection()
-      console.log(`🗑️ ${selectedNoteIds.length} note(s) supprimée(s)`)
+      // console.log(`🗑️ ${selectedNoteIds.length} note(s) supprimée(s)`)
     }
   }
 }
@@ -372,6 +412,10 @@ onUnmounted(() => {
   document.removeEventListener('keydown', handleKeyDown)
   document.body.style.userSelect = ''
 })
+
+provide('multiSelection', multiSelection)
+provide('timeToPixel', timeToPixel)
+provide('totalWidth', totalWidth)
 </script>
 
 <style scoped>

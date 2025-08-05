@@ -36,14 +36,14 @@ export function useMidiManager() {
     // 1. Recherche exacte par ID
     let output = outputList.find(o => o.id === outputId)
     if (output) {
-      console.log(`🎯 Sortie trouvée par ID: ${output.name} (${output.id})`)
+      // console.log(`🎯 Sortie trouvée par ID: ${output.name} (${output.id})`)
       return output
     }
 
     // 2. Recherche par nom (fallback pour anciennes configurations)
     output = outputList.find(o => o.name === outputId)
     if (output) {
-      console.log(`🎯 Sortie trouvée par nom: ${output.name} (${output.id})`)
+      // console.log(`🎯 Sortie trouvée par nom: ${output.name} (${output.id})`)
       return output
     }
 
@@ -71,7 +71,6 @@ export function useMidiManager() {
     }
 
     try {
-      console.log('🎹 Initialisation de l\'accès MIDI...')
       midiSupported.value = true
 
       const access = await navigator.requestMIDIAccess({ sysex: false })
@@ -84,7 +83,6 @@ export function useMidiManager() {
       updateAvailableDevices()
 
       isInitialized.value = true
-      console.log('✅ MIDI initialisé avec succès')
 
       return true
     } catch (error) {
@@ -97,7 +95,6 @@ export function useMidiManager() {
 
   // Gestion des changements de périphériques
   function handleMidiStateChange(event) {
-    console.log(`🔄 Changement périphérique MIDI: ${event.port.name} (${event.port.state})`)
     updateAvailableDevices()
   }
 
@@ -136,18 +133,6 @@ export function useMidiManager() {
       }
     }
     availableOutputs.value = outputs
-
-    console.log(`📋 Périphériques MIDI mis à jour: ${inputs.length} entrées, ${outputs.length} sorties`)
-
-    // Debug détaillé
-    if (outputs.length > 0) {
-      console.log('🔍 Sorties MIDI disponibles:')
-      outputs.forEach((output, index) => {
-        console.log(`  ${index + 1}. "${output.name}" (ID: ${output.id})`)
-        console.log(`     - Manufacturer: ${output.manufacturer || 'N/A'}`)
-        console.log(`     - State: ${output.state}`)
-      })
-    }
   }
 
   // ✅ CORRECTION: sendControlChange amélioré
@@ -171,13 +156,13 @@ export function useMidiManager() {
 
       const message = [0xB0 + clampedChannel, clampedController, clampedValue]
 
-      console.log(`🎛️ Envoi CC: "${output.name}" Canal=${clampedChannel + 1} CC${clampedController}=${clampedValue}`)
+     //  console.log(`🎛️ Envoi CC: "${output.name}" Canal=${clampedChannel + 1} CC${clampedController}=${clampedValue}`)
 
       output.output.send(message)
       return true
 
     } catch (error) {
-      console.error(`💥 Erreur envoi CC${controller}:`, error)
+      // console.error(`💥 Erreur envoi CC${controller}:`, error)
       return false
     }
   }
@@ -185,14 +170,14 @@ export function useMidiManager() {
   // ✅ CORRECTION: sendMidiMessage amélioré  
   function sendMidiMessage(outputId, message) {
     if (!isInitialized.value || !midiAccess.value) {
-      console.warn('⚠️ MIDI non initialisé')
+      // console.warn('⚠️ MIDI non initialisé')
       return false
     }
 
     const output = findMidiOutput(outputId)
 
     if (!output || !output.output) {
-      console.error(`❌ Sortie MIDI "${outputId}" non trouvée pour message`, message)
+      // console.error(`❌ Sortie MIDI "${outputId}" non trouvée pour message`, message)
       return false
     }
 
@@ -200,7 +185,7 @@ export function useMidiManager() {
       output.output.send(message)
       return true
     } catch (error) {
-      console.error(`💥 Erreur envoi message MIDI:`, error, { outputId, message })
+      // console.error(`💥 Erreur envoi message MIDI:`, error, { outputId, message })
       return false
     }
   }
@@ -208,14 +193,14 @@ export function useMidiManager() {
   // ✅ CORRECTION: sendProgramChange amélioré
   function sendProgramChange(outputId, channel, program) {
     if (!isInitialized.value || !midiAccess.value) {
-      console.warn('⚠️ MIDI non initialisé')
+      // console.warn('⚠️ MIDI non initialisé')
       return false
     }
 
     const output = findMidiOutput(outputId)
 
     if (!output || !output.output) {
-      console.error(`❌ Impossible d'envoyer Program Change: sortie "${outputId}" introuvable`)
+      // console.error(`❌ Impossible d'envoyer Program Change: sortie "${outputId}" introuvable`)
       return false
     }
 
@@ -225,7 +210,7 @@ export function useMidiManager() {
 
       const message = [0xC0 + clampedChannel, clampedProgram]
 
-      console.log(`📯 Envoi Program Change: "${output.name}" Canal=${clampedChannel + 1} Program=${clampedProgram}`)
+      // console.log(`📯 Envoi Program Change: "${output.name}" Canal=${clampedChannel + 1} Program=${clampedProgram}`)
 
       output.output.send(message)
       return true
@@ -257,7 +242,7 @@ export function useMidiManager() {
       // Bank Select MSB (CC0) 
       const message = [0xB0 + clampedChannel, 0, clampedBank]
 
-      console.log(`🏦 Envoi Bank Select: "${output.name}" Canal=${clampedChannel + 1} Bank=${clampedBank}`)
+      // console.log(`🏦 Envoi Bank Select: "${output.name}" Canal=${clampedChannel + 1} Bank=${clampedBank}`)
 
       output.output.send(message)
       return true

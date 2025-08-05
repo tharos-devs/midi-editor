@@ -84,6 +84,14 @@ export const useMidiStore = defineStore('midi', () => {
       console.log(`🔇 Mute piste ${trackId}: ${newMutedState}`)
       triggerReactivity(`mute-${trackId}`)
       
+      // NOUVEAU: Émettre un événement pour que le lecteur MIDI puisse réagir
+      // Si on mute pendant la lecture, il faut couper les notes en cours
+      if (newMutedState && window.dispatchEvent) {
+        window.dispatchEvent(new CustomEvent('track-muted', { 
+          detail: { trackId, track: updatedTrack } 
+        }))
+      }
+      
       return true
     }
     return false

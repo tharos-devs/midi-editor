@@ -1,6 +1,6 @@
-<!-- components/TransportControls.vue -->
+<!-- components/TransportControls.vue - VERSION SIMPLIFIÉE -->
 <template>
-  <div class="transport-controls">
+  <div class="transport-controls" :class="{ compact, playing: isPlaying, paused: isPaused }">
     <div class="transport-buttons">
       <!-- Bouton Rewind -->
       <el-button
@@ -50,6 +50,12 @@
       <span class="current-time">{{ currentTimeFormatted }}</span>
       <span class="separator">/</span>
       <span class="total-time">{{ totalDurationFormatted }}</span>
+    </div>
+
+    <!-- Affichage de la position (mesure.temps.subdivision) -->
+    <div class="position-display">
+      <el-icon><Location /></el-icon>
+      <span class="position-text">{{ currentPositionFormatted }}</span>
     </div>
 
     <!-- Barre de progression (optionnelle) -->
@@ -103,11 +109,22 @@
         <component :is="midiStatusIcon" />
       </el-icon>
     </div>
+
+    <!-- DEBUG: Affichage temporaire pour diagnostic -->
+    <div v-if="showDebug" class="debug-transport">
+      <div>Player: {{ isPlaying ? 'Playing' : 'Stopped' }}</div>
+      <div>Cursor: {{ cursor.isPlaying.value ? 'Playing' : 'Stopped' }}</div>
+      <div>Time: {{ currentTime.toFixed(2) }}s</div>
+      <div>CursorTime: {{ cursor.currentTime.value.toFixed(2) }}s</div>
+      <div>Position: {{ cursor.pixelPosition.value.toFixed(1) }}px</div>
+      <div>Duration: {{ totalDuration.toFixed(2) }}s</div>
+      <div>CanPlay: {{ canPlay ? 'Yes' : 'No' }}</div>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, provide } from 'vue'
 import { 
   VideoPlay, 
   VideoPause, 
@@ -118,11 +135,14 @@ import {
   Connection,
   Close,
   Warning,
-  Star
+  Star,
+  Location
 } from '@element-plus/icons-vue'
 import { useMidiPlayer } from '@/composables/useMidiPlayer'
 import { useMidiManager } from '@/composables/useMidiManager'
 import { useMidiStore } from '@/stores/midi'
+import { usePlaybackCursor } from '@/composables/usePlaybackCursor'
+import { useTimeSignature } from '@/composables/useTimeSignature'
 
 // Props
 const props = defineProps({
@@ -141,6 +161,10 @@ const props = defineProps({
   compact: {
     type: Boolean,
     default: true
+  },
+  showDebug: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -148,10 +172,59 @@ const props = defineProps({
 const midiPlayer = useMidiPlayer()
 const midiManager = useMidiManager()
 const midiStore = useMidiStore()
+const cursor = usePlaybackCursor()
+const timeSignature = useTimeSignature()
 
 // Refs locales
 const progressBarRef = ref(null)
 const localPlaybackRate = ref(1)
+
+// ============ SYNCHRONISATION SIMPLIFIÉE ============
+// Synchroniser uniquement le curseur avec le lecteur MIDI
+watch(() => midiPlayer.isPlaying.value, (playing) => {
+  console.log('🎵 MidiPlayer.isPlaying changé:', playing, 'stoppedAtEnd:', midiPlayer.stoppedAtEnd?.value)
+  
+  if (playing) {
+    // Démarrer le curseur avec synchronisation initiale
+    cursor.syncWithPlayer(midiPlayer.currentTime.value)
+    cursor.startPlayback()
+  } else {
+    // CORRECTION: Ne pas réinitialiser le curseur si c'est un arrêt de fin de morceau
+    if (midiPlayer.stoppedAtEnd?.value) {
+      console.log('🏁 TransportControls: Arrêt de fin de morceau - pas de reset du curseur')
+      cursor.unsyncFromPlayer() // Juste arrêter la sync, pas le curseur
+    } else {
+      console.log('⏹️ TransportControls: Arrêt normal - reset du curseur')
+      cursor.pausePlayback()
+      cursor.unsyncFromPlayer()
+    }
+  }
+}, { immediate: true })
+
+// Synchroniser le temps uniquement quand nécessaire
+watch(() => midiPlayer.currentTime.value, (newTime) => {
+  // Synchroniser seulement si le curseur n'est pas déjà en train de jouer
+  if (!cursor.isPlaying.value || Math.abs(cursor.currentTime.value - newTime) > 0.5) {
+    cursor.syncWithPlayer(newTime)
+  }
+})
+
+// Synchroniser la durée totale
+watch(() => midiPlayer.totalDuration.value, (newDuration) => {
+  if (newDuration && newDuration > 0) {
+    cursor.totalDuration.value = newDuration
+    console.log('📏 Durée synchronisée:', newDuration)
+  }
+}, { immediate: true })
+
+// Synchroniser le tempo
+watch(() => midiStore.getCurrentTempo, (newTempo) => {
+  cursor.currentTempo.value = newTempo
+}, { immediate: true })
+
+// ============ PROVISION DES DONNÉES ============
+provide('midiPlayer', midiPlayer)
+provide('playbackCursor', cursor)
 
 // Destructurer les propriétés du lecteur
 const {
@@ -173,9 +246,15 @@ const {
   toggleLoop
 } = midiPlayer
 
-// Computed
+// Computed pour le tempo en temps réel
 const currentTempo = computed(() => {
-  return midiStore.getTempoAtTime(currentTime.value)
+  // Priorité au tempo du lecteur MIDI s'il est en cours de lecture
+  if (isPlaying.value && midiPlayer.currentTempo?.value) {
+    return midiPlayer.currentTempo.value
+  }
+  
+  // Sinon, calculer le tempo basé sur la position actuelle
+  return midiStore.getTempoAtTime ? midiStore.getTempoAtTime(currentTime.value) : 120
 })
 
 const midiStatusClass = computed(() => {
@@ -202,20 +281,97 @@ const midiStatusText = computed(() => {
   return midiManager.midiStatusText
 })
 
-// Méthodes
+// NOUVEAU: Computed pour la position mesure.temps.subdivision
+const currentPositionFormatted = computed(() => {
+  if (!midiStore.isLoaded || !timeSignature) {
+    return '0000.00.00'
+  }
+
+  const time = currentTime.value
+  
+  // Utiliser les fonctions de timeSignature pour calculer la position
+  const measures = timeSignature.measuresWithSignatures?.value || []
+  if (measures.length === 0) {
+    return '0000.00.00'
+  }
+
+  // Trouver la mesure courante
+  let currentMeasure = null
+  let measureIndex = 0
+  
+  for (let i = 0; i < measures.length; i++) {
+    const measure = measures[i]
+    const measureStartTime = measure.startTime || 0
+    const measureEndTime = measure.endTime || measureStartTime + 2 // fallback 2s par mesure
+    
+    if (time >= measureStartTime && time < measureEndTime) {
+      currentMeasure = measure
+      measureIndex = i
+      break
+    }
+  }
+
+  if (!currentMeasure) {
+    // Si pas trouvé, prendre la dernière mesure
+    currentMeasure = measures[measures.length - 1]
+    measureIndex = measures.length - 1
+  }
+
+  const measureNumber = (measureIndex + 1).toString().padStart(4, '0')
+  
+  // Calculer le temps dans la mesure
+  const measureStartTime = currentMeasure.startTime || 0
+  const timeInMeasure = time - measureStartTime
+  const signature = currentMeasure.timeSignature || { numerator: 4, denominator: 4 }
+  
+  // Calculer la durée d'un temps (quarter note en secondes)
+  const tempo = currentTempo.value || 120
+  const quarterNoteDuration = 60 / tempo
+  const beatDuration = quarterNoteDuration * (4 / signature.denominator)
+  
+  // Calculer le temps et subdivision
+  const beatNumber = Math.floor(timeInMeasure / beatDuration) + 1
+  const timeInBeat = timeInMeasure % beatDuration
+  const subdivisionNumber = Math.floor((timeInBeat / beatDuration) * 16) + 1 // 16 subdivisions par temps
+  
+  const beatFormatted = Math.min(beatNumber, signature.numerator).toString().padStart(2, '0')
+  const subdivisionFormatted = Math.min(subdivisionNumber, 16).toString().padStart(2, '0')
+  
+  return `${measureNumber}.${beatFormatted}.${subdivisionFormatted}`
+})
+
+// ============ MÉTHODES SIMPLIFIÉES ============
 function handlePlayPause() {
+  console.log('🎮 PlayPause clicked:', {
+    canPlay: canPlay.value,
+    isPlaying: isPlaying.value,
+    stoppedAtEnd: midiPlayer.stoppedAtEnd?.value
+  })
+  
+  if (!canPlay.value) {
+    console.warn('❌ Impossible de jouer')
+    return
+  }
+  
   if (isPlaying.value) {
     pause()
   } else {
+    // CORRECTION: Reset stoppedAtEnd quand on relance manuellement
+    if (midiPlayer.stoppedAtEnd?.value) {
+      console.log('🔄 Reset stoppedAtEnd pour permettre le redémarrage')
+      midiPlayer.stoppedAtEnd.value = false
+    }
     play()
   }
 }
 
 function handleStop() {
+  console.log('⏹️ Stop clicked')
   stop()
 }
 
 function handleRewind() {
+  console.log('⏪ Rewind clicked')
   rewind()
 }
 
@@ -227,6 +383,7 @@ function handleProgressClick(event) {
   const percentage = clickX / rect.width
   const targetTime = percentage * totalDuration.value
   
+  console.log('📍 Seek vers:', targetTime)
   seekTo(targetTime)
 }
 
@@ -269,26 +426,38 @@ function handleKeyPress(event) {
     case 'ArrowLeft':
       if (event.shiftKey) {
         event.preventDefault()
-        seekTo(Math.max(0, currentTime.value - 5)) // Reculer de 5 secondes
+        const newTime = Math.max(0, currentTime.value - 5)
+        seekTo(newTime)
       }
       break
     case 'ArrowRight':
       if (event.shiftKey) {
         event.preventDefault()
-        seekTo(Math.min(totalDuration.value, currentTime.value + 5)) // Avancer de 5 secondes
+        const newTime = Math.min(totalDuration.value, currentTime.value + 5)
+        seekTo(newTime)
       }
       break
-  }
+    }
 }
 
 // Lifecycle
 onMounted(() => {
+  console.log('🚀 TransportControls monté')
+  
+  // Initialisation du curseur si MIDI déjà chargé
+  if (midiStore.isLoaded && midiStore.midiInfo?.duration) {
+    cursor.totalDuration.value = midiStore.midiInfo.duration
+    console.log('🔧 Curseur initialisé avec durée:', midiStore.midiInfo.duration)
+  }
+  
+  // Gestion des événements clavier
   document.addEventListener('keydown', handleKeyPress)
   localPlaybackRate.value = playbackRate.value
 })
 
 onUnmounted(() => {
   document.removeEventListener('keydown', handleKeyPress)
+  cursor.stopPlayback()
 })
 </script>
 
@@ -384,6 +553,25 @@ onUnmounted(() => {
   min-width: 70px;
 }
 
+.position-display {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-family: monospace;
+  font-size: 12px;
+  font-weight: bold;
+  color: var(--el-text-color-primary);
+  background: var(--el-fill-color-light);
+  padding: 4px 8px;
+  border-radius: 4px;
+  min-width: 100px;
+}
+
+.position-text {
+  min-width: 80px;
+  text-align: center;
+}
+
 .playback-rate {
   display: flex;
   align-items: center;
@@ -419,6 +607,21 @@ onUnmounted(() => {
   color: var(--el-text-color-secondary);
 }
 
+/* DEBUG */
+.debug-transport {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  background: rgba(0, 0, 0, 0.9);
+  color: #00ff00;
+  padding: 8px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 10px;
+  z-index: 9999;
+  border: 1px solid #00ff00;
+}
+
 /* Mode compact */
 .transport-controls.compact {
   padding: 4px 8px;
@@ -446,10 +649,16 @@ onUnmounted(() => {
 /* États de lecture */
 .transport-controls.playing .current-time {
   color: var(--el-color-success);
+  animation: pulse-time 1s ease-in-out infinite alternate;
 }
 
 .transport-controls.paused .current-time {
   color: var(--el-color-warning);
+}
+
+@keyframes pulse-time {
+  from { opacity: 0.8; }
+  to { opacity: 1; }
 }
 
 /* Responsive */
@@ -465,6 +674,7 @@ onUnmounted(() => {
   }
   
   .tempo-display,
+  .position-display,
   .playback-rate {
     display: none;
   }

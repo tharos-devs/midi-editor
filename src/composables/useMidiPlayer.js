@@ -1,12 +1,25 @@
-// composables/useMidiPlayer.js - CORRECTIONS POUR LA RÉACTIVITÉ
+// composables/useMidiPlayer.js - CORRECTION POUR SYNCHRONISATION CURSEUR
 
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useMidiStore } from '@/stores/midi'
 import { useMidiManager } from '@/composables/useMidiManager'
+import { usePlaybackCursorStore } from '@/stores/playbackCursor'
+import { useTimeSignature } from '@/composables/useTimeSignature'
+
+// CORRECTION: Instance singleton partagée
+let sharedInstance = null
 
 export function useMidiPlayer() {
+  // Retourner l'instance partagée si elle existe
+  if (sharedInstance) {
+    return sharedInstance
+  }
+  
+  // Créer la nouvelle instance
   const midiStore = useMidiStore()
   const midiManager = useMidiManager()
+  const cursorStore = usePlaybackCursorStore()
+  const timeSignatureComposable = useTimeSignature()
 
   // État du lecteur
   const isPlaying = ref(false)
@@ -16,6 +29,11 @@ export function useMidiPlayer() {
   const loopStart = ref(0)
   const loopEnd = ref(0)
   const isLooping = ref(false)
+  const stoppedAtEnd = ref(false) // Flag pour différencier stop normal vs fin de morceau
+
+  // Gestion du tempo
+  const currentTempo = ref(120)
+  const tempoEvents = ref([])
 
   // Debug - compteurs d'événements
   const debugStats = ref({
@@ -30,8 +48,10 @@ export function useMidiPlayer() {
   let playbackTimer = null
   let scheduledEvents = []
   let lastUpdateTime = 0
-  let playStartTime = 0
   let pauseTime = 0
+
+  // CORRECTION: Flag pour éviter les boucles de synchronisation
+  let isSyncingWithCursor = false
 
   // Configuration de lecture
   const lookAheadTime = 25.0 // ms
@@ -42,7 +62,7 @@ export function useMidiPlayer() {
   const currentEventIndex = ref(0)
   const lastEventsPrepareTime = ref(0)
 
-  // NOUVEAU : Signature des données pour détecter les changements
+  // Signature des données pour détecter les changements
   const dataSignature = ref('')
 
   const canSendMidi = computed(() => {
@@ -53,8 +73,11 @@ export function useMidiPlayer() {
     return managerInitialized && midiSupported && hasOutputs
   })
 
-  // Getters calculés
-  const totalDuration = computed(() => midiStore.getTotalDuration)
+  // Getters calculés - CORRECTION: Utiliser la vraie fin de tous les événements MIDI
+  const totalDuration = computed(() => {
+    // Utiliser la durée calculée qui prend en compte TOUS les événements MIDI (notes, CC, etc.)
+    return timeSignatureComposable.getLastMidiEventTime?.value || midiStore.getTotalDuration
+  })
   const isLoaded = computed(() => midiStore.isLoaded)
 
   const canPlay = computed(() => {
@@ -70,7 +93,7 @@ export function useMidiPlayer() {
     return Math.min(100, (currentTime.value / totalDuration.value) * 100)
   })
 
-  // CORRECTION 1: Fonction pour générer une signature des données
+  // Fonction pour générer une signature des données
   function generateDataSignature() {
     const tracks = midiStore.tracks
     const signature = tracks.map(track => ({
@@ -89,7 +112,7 @@ export function useMidiPlayer() {
     return JSON.stringify(signature)
   }
 
-  // CORRECTION 2: Fonction pour vérifier si les données ont changé
+  // Fonction pour vérifier si les données ont changé
   function hasDataChanged() {
     const newSignature = generateDataSignature()
     if (newSignature !== dataSignature.value) {
@@ -99,7 +122,58 @@ export function useMidiPlayer() {
     return false
   }
 
-  // CORRECTION 3: Surveiller les changements avec détection fine
+  // Synchroniser les tempos avec le store
+  watch(() => midiStore.tempoEvents, (newTempoEvents) => {
+    if (newTempoEvents && Array.isArray(newTempoEvents)) {
+      tempoEvents.value = [...newTempoEvents].sort((a, b) => a.time - b.time)
+      
+      // Mettre à jour le tempo initial
+      if (tempoEvents.value.length > 0 && tempoEvents.value[0].time === 0) {
+        currentTempo.value = tempoEvents.value[0].bpm
+      } else if (midiStore.midiInfo?.tempo) {
+        currentTempo.value = midiStore.midiInfo.tempo
+      }
+      
+      // Tempos synchronisés
+    }
+  }, { immediate: true, deep: true })
+
+  // Calculer le tempo à un moment donné
+  function getTempoAtTime(time) {
+    if (!tempoEvents.value.length) {
+      return currentTempo.value
+    }
+
+    let tempo = midiStore.midiInfo?.tempo || 120
+    
+    for (const tempoEvent of tempoEvents.value) {
+      if (tempoEvent.time <= time) {
+        tempo = tempoEvent.bpm
+      } else {
+        break
+      }
+    }
+    
+    return tempo
+  }
+
+  // CORRECTION: Synchronisation supprimée pour éviter la dépendance circulaire
+  // La synchronisation se fait maintenant via les watchers dans PlaybackCursor.vue
+  
+  /*
+  // Ancienne synchronisation avec playbackCursor (commentée)
+  watch(() => playbackCursor.currentTime.value, (newTime) => {
+    if (isSyncingWithCursor) return
+    if (isPlaying.value && playbackCursor.isPlaying.value) {
+      isSyncingWithCursor = true
+      currentTime.value = newTime
+      currentTempo.value = getTempoAtTime(newTime)
+      isSyncingWithCursor = false
+    }
+  })
+  */
+
+  // Surveiller les changements de chargement
   watch(() => midiStore.isLoaded, (newVal) => {
     if (newVal) {
       preparePlaybackEvents()
@@ -109,7 +183,7 @@ export function useMidiPlayer() {
     }
   })
 
-  // CORRECTION 4: Surveiller spécifiquement les propriétés qui affectent la lecture
+  // Surveiller les changements de pistes
   watch(() => midiStore.tracks.map(t => ({
     id: t.id,
     volume: t.volume,
@@ -121,63 +195,132 @@ export function useMidiPlayer() {
     lastModified: t.lastModified
   })), (newTrackData) => {
     if (midiStore.isLoaded) {
-      console.log('🔄 Détection changement pistes, régénération événements')
       preparePlaybackEvents()
     }
   }, { deep: true })
 
-  // CORRECTION 5: Surveiller les versions pour forcer la mise à jour
+  // Surveiller les versions pour forcer la mise à jour
   watch(() => midiStore.tracksVersion, () => {
     if (midiStore.isLoaded) {
-      console.log('🔄 Version pistes changée, régénération événements')
       preparePlaybackEvents()
     }
   })
 
   watch(() => midiStore.notesVersion, () => {
     if (midiStore.isLoaded) {
-      console.log('🔄 Version notes changée, régénération événements')
       preparePlaybackEvents()
     }
   })
 
   watch(() => midiStore.ccVersion, () => {
     if (midiStore.isLoaded) {
-      console.log('🔄 Version CC changée, régénération événements')
       preparePlaybackEvents()
     }
   })
 
-  // CORRECTION 6: Fonction play améliorée avec vérification des changements
+  // CORRECTION: Fonction play qui délègue le timing au curseur
   function play() {
-    // Vérifier si les données ont changé depuis la dernière préparation
+    console.log('🎬 PLAY appelé:', {
+      canPlay: canPlay.value,
+      isLoaded: midiStore.isLoaded,
+      playbackEventsLength: playbackEvents.value.length,
+      canSendMidi: canSendMidi.value,
+      stoppedAtEnd: stoppedAtEnd.value,
+      currentTime: currentTime.value.toFixed(2) + 's'
+    })
+    
+    // DEBUG: Examiner les notes de la piste 1
+    const track1 = midiStore.tracks.find(t => t.id === 1)
+    if (track1 && track1.notes) {
+      const lastNotes = track1.notes.slice(-3) // Dernières 3 notes
+      console.log('🎵 PISTE 1 - Dernières notes:', lastNotes.map(note => ({
+        time: note.time?.toFixed(2) + 's',
+        duration: note.duration?.toFixed(2) + 's', 
+        endTime: (note.time + note.duration)?.toFixed(2) + 's',
+        midi: note.midi
+      })))
+      
+      const maxEndTime = Math.max(...track1.notes.map(note => note.time + note.duration))
+      console.log('🎵 PISTE 1 - Fin réelle de la dernière note:', maxEndTime.toFixed(2) + 's')
+    }
+    
+    // DEBUG: Comparer durée MIDI vs vraie fin des notes
+    let realEndTime = 0
+    midiStore.tracks.forEach(track => {
+      if (track.notes && track.notes.length > 0) {
+        const trackEndTime = Math.max(...track.notes.map(note => note.time + note.duration))
+        realEndTime = Math.max(realEndTime, trackEndTime)
+      }
+    })
+    
+    console.log('🎵 COMPARAISON DURÉES:', {
+      totalDurationMIDI: totalDuration.value.toFixed(2) + 's',
+      realEndTime: realEndTime.toFixed(2) + 's',
+      différence: (realEndTime - totalDuration.value).toFixed(2) + 's',
+      problème: realEndTime > totalDuration.value ? '⚠️ NOTES DÉPASSENT' : '✅ OK'
+    })
+    
+    // Vérifier si les données ont changé
     if (hasDataChanged() || playbackEvents.value.length === 0) {
       console.log('🔄 Données changées détectées, régénération des événements avant lecture')
       preparePlaybackEvents()
     }
 
     if (!canPlay.value) {
-      console.warn('⚠️ Impossible de lire : conditions non remplies')
+      console.warn('⚠️ Impossible de lire : conditions non remplies', {
+        isLoaded: midiStore.isLoaded,
+        playbackEventsLength: playbackEvents.value.length,
+        canSendMidi: canSendMidi.value
+      })
       return false
     }
 
+    // CORRECTION CRITIQUE: Synchroniser avec le curseur store avant de commencer
+    // Ceci résout le problème de désynchronisation après seek manuel
+    const cursorTime = cursorStore.currentTime
+    if (Math.abs(currentTime.value - cursorTime) > 0.1) {
+      console.log(`🔄 Synchronisation player MIDI: ${currentTime.value.toFixed(2)}s → ${cursorTime.toFixed(2)}s`)
+      currentTime.value = cursorTime
+      
+      // Recalculer l'index des événements pour la nouvelle position
+      let eventIndex = 0
+      for (let i = 0; i < playbackEvents.value.length; i++) {
+        if (playbackEvents.value[i].time <= cursorTime) {
+          eventIndex = i + 1
+        } else {
+          break
+        }
+      }
+      currentEventIndex.value = eventIndex
+      
+      // Appliquer l'état MIDI à cette position
+      applyCurrentMidiStateAtTime(cursorTime)
+    }
+
+    // Configuration initiale
     if (isPaused.value) {
       isPaused.value = false
-      playStartTime = performance.now() - pauseTime
     } else {
-      playStartTime = performance.now()
-
       if (currentTime.value === 0) {
         currentEventIndex.value = 0
       }
-
-      // CORRECTION 7: Toujours envoyer la configuration initiale avec les valeurs actuelles
       sendInitialMidiSetupFromCurrentData()
     }
 
     isPlaying.value = true
-    startPlaybackTimer()
+    stoppedAtEnd.value = false // Reset la flag quand on relance
 
+    // CORRECTION: Initialiser seulement si pas encore initialisé
+    if (cursorStore.totalDuration === 0 || cursorStore.totalDuration !== totalDuration.value) {
+      cursorStore.initialize()
+      cursorStore.totalDuration = totalDuration.value
+    }
+    cursorStore.startPlayback()
+
+    // Démarrer le timer d'événements MIDI
+    startEventScheduler()
+
+    // Lecture démarrée
     return true
   }
 
@@ -188,17 +331,9 @@ export function useMidiPlayer() {
     }
 
     const availableOutputs = midiManager.availableOutputs?.value ?? []
-    let setupCount = 0
-
-    console.log('🎛️ Initialisation MIDI avec données actuelles...')
-    console.log(`📋 ${availableOutputs.length} sortie(s) MIDI disponible(s):`)
-    availableOutputs.forEach((output, i) => {
-      console.log(`  ${i + 1}. "${output.name}" (ID: ${output.id})`)
-    })
 
     midiStore.tracks.forEach(track => {
       if (track.muted) {
-        console.log(`🔇 Piste ${track.name} ignorée (mutée)`)
         return
       }
 
@@ -210,37 +345,23 @@ export function useMidiPlayer() {
         return
       }
 
-      console.log(`🎵 Configuration piste "${track.name}" -> "${output.name}" canal ${trackChannel + 1}`)
-
       // Program Change
       if (track.instrument?.number !== undefined) {
-        if (midiManager.sendProgramChange(output.id, trackChannel, track.instrument.number)) {
-          setupCount++
-          console.log(`  📯 Program Change: ${track.instrument.number}`)
-        }
+        midiManager.sendProgramChange(output.id, trackChannel, track.instrument.number)
       }
 
       // Bank Select
       if (track.bank !== undefined && track.bank !== 0) {
-        if (midiManager.sendBankSelect(output.id, trackChannel, track.bank)) {
-          setupCount++
-          console.log(`  🏦 Bank Select: ${track.bank}`)
-        }
+        midiManager.sendBankSelect(output.id, trackChannel, track.bank)
       }
 
       // Volume avec valeur actuelle
       const currentVolume = Math.max(0, Math.min(127, parseInt(track.volume) || 100))
-      if (midiManager.sendControlChange(output.id, trackChannel, 7, currentVolume)) {
-        setupCount++
-        console.log(`  🔊 Volume (CC7): ${currentVolume}`)
-      }
+      midiManager.sendControlChange(output.id, trackChannel, 7, currentVolume)
 
       // Pan avec valeur actuelle
       const currentPan = Math.max(0, Math.min(127, parseInt(track.pan) || 64))
-      if (midiManager.sendControlChange(output.id, trackChannel, 10, currentPan)) {
-        setupCount++
-        console.log(`  🎛️ Pan (CC10): ${currentPan}`)
-      }
+      midiManager.sendControlChange(output.id, trackChannel, 10, currentPan)
 
       // Autres Control Changes initiaux
       const controlChanges = track.controlChanges || {}
@@ -253,17 +374,12 @@ export function useMidiPlayer() {
 
             // Éviter de redéfinir Volume (7) et Pan (10) déjà envoyés
             if (ccNum !== 7 && ccNum !== 10) {
-              if (midiManager.sendControlChange(output.id, trackChannel, ccNum, ccValue)) {
-                setupCount++
-                console.log(`  🎛️ CC${ccNum}: ${ccValue}`)
-              }
+              midiManager.sendControlChange(output.id, trackChannel, ccNum, ccValue)
             }
           }
         })
       }
     })
-
-    console.log(`✅ Configuration MIDI terminée (${setupCount} messages envoyés)`)
   }
 
   function preparePlaybackEvents() {
@@ -277,8 +393,6 @@ export function useMidiPlayer() {
       return
     }
 
-    console.log('🔄 Génération des événements de lecture...')
-
     const events = []
     const availableOutputs = midiManager.availableOutputs?.value ?? []
     const generationTime = Date.now()
@@ -287,12 +401,6 @@ export function useMidiPlayer() {
       console.error('❌ Aucune sortie MIDI disponible pour la génération des événements')
       return
     }
-
-    // Debug des sorties disponibles
-    console.log(`📋 Sorties MIDI disponibles (${availableOutputs.length}):`)
-    availableOutputs.forEach((output, i) => {
-      console.log(`  ${i + 1}. "${output.name}" (ID: ${output.id})`)
-    })
 
     // Ajouter les événements de tempo
     midiStore.tempoEvents.forEach(tempoEvent => {
@@ -311,8 +419,7 @@ export function useMidiPlayer() {
     let totalCC = 0
 
     currentTracks.forEach((track, trackIndex) => {
-      if (track.muted) {
-        console.log(`🔇 Piste ${track.name} ignorée (mutée)`)
+      if (track.muted) {        
         return
       }
 
@@ -320,11 +427,8 @@ export function useMidiPlayer() {
       const resolvedOutput = resolveMidiOutput(track.midiOutput, availableOutputs)
 
       if (!resolvedOutput) {
-        console.warn(`⚠️ Aucune sortie trouvée pour la piste ${track.name}, événements ignorés`)
         return
       }
-
-      console.log(`🎵 Traitement piste "${track.name}" -> "${resolvedOutput.name}" (Canal ${trackChannel + 1})`)
 
       // Traiter les notes
       const trackNotes = track.notes || []
@@ -343,7 +447,7 @@ export function useMidiPlayer() {
           trackId: track.id,
           trackName: track.name,
           channel: trackChannel,
-          outputId: resolvedOutput.id, // ✅ Utiliser l'ID résolu
+          outputId: resolvedOutput.id,
           outputName: resolvedOutput.name,
           note: midiNote,
           velocity: velocity,
@@ -427,46 +531,77 @@ export function useMidiPlayer() {
     lastEventsPrepareTime.value = generationTime
     dataSignature.value = generateDataSignature()
 
-    console.log(`✅ ${events.length} événements générés (${totalNotes} notes, ${totalCC} CC)`)
-
-    // Debug des événements générés par sortie
-    const eventsByOutput = events.reduce((acc, event) => {
-      if (event.outputId) {
-        acc[event.outputId] = (acc[event.outputId] || 0) + 1
-      }
-      return acc
-    }, {})
-
-    console.log('📊 Événements par sortie:')
-    Object.entries(eventsByOutput).forEach(([outputId, count]) => {
-      const output = availableOutputs.find(o => o.id === outputId)
-      const outputName = output ? output.name : 'Inconnue'
-      console.log(`  "${outputName}" (${outputId}): ${count} événements`)
-    })
+    // Événements préparés
   }
 
-  // Le reste des fonctions reste identique...
   function pause() {
     if (!isPlaying.value) return
 
     isPlaying.value = false
     isPaused.value = true
-    pauseTime = performance.now() - playStartTime
-    stopPlaybackTimer()
+    
+    // Pause du curseur global
+    cursorStore.pausePlayback()
+    
+    // Arrêter le scheduler d'événements
+    stopEventScheduler()
 
     stopAllNotes()
     maintainCurrentCCState()
+
+    // Lecture mise en pause
   }
 
   function stop() {
+    console.log('⏹️ MIDI PLAYER: Stop normal appelé')
+    console.trace('⚠️ STACK TRACE - qui appelle stop() ?')
     isPlaying.value = false
     isPaused.value = false
     currentTime.value = 0
     currentEventIndex.value = 0
-    stopPlaybackTimer()
+    stoppedAtEnd.value = false // Reset la flag
+    
+    // Stop du curseur global
+    cursorStore.stopPlayback()
+    
+    // Arrêter le scheduler d'événements
+    stopEventScheduler()
+    
+    // Remettre le tempo initial
+    currentTempo.value = midiStore.midiInfo?.tempo || 120
 
     stopAllNotes()
     resetAllControllers()
+
+    // Lecture arrêtée
+  }
+
+  // Stop en fin de morceau (garde la position)
+  function stopAtEnd() {
+    isPlaying.value = false
+    isPaused.value = false
+    stoppedAtEnd.value = true // MARQUER comme arrêt de fin de morceau
+    // NE PAS remettre currentTime.value = 0
+    // NE PAS remettre currentEventIndex.value = 0
+    
+    // CORRECTION CRITIQUE: Synchroniser le curseur store AVANT stopAtEnd
+    console.log('🔄 Synchronisation curseur store avant stopAtEnd:', {
+      playerTime: currentTime.value.toFixed(2) + 's',
+      cursorTime: cursorStore.currentTime.toFixed(2) + 's'
+    })
+    cursorStore.seekTo(currentTime.value, false)
+    
+    // Stop du curseur global SANS reset
+    cursorStore.stopAtEnd()
+    
+    // Arrêter le scheduler d'événements
+    stopEventScheduler()
+    
+    // Garder le tempo actuel
+    stopAllNotes()
+    resetAllControllers()
+    
+    console.log('🏁 Fin de morceau - position gardée à', currentTime.value.toFixed(2) + 's')
   }
 
   function seekTo(time) {
@@ -476,12 +611,23 @@ export function useMidiPlayer() {
       pause()
     }
 
-    currentTime.value = Math.max(0, Math.min(totalDuration.value, time))
+    // CORRECTION: Ne pas limiter le temps lors du seek manuel
+    // Laisser l'utilisateur positionner le curseur où il veut sur la timeline
+    const clampedTime = Math.max(0, time) // Seulement >= 0, pas de limite max
+    currentTime.value = clampedTime
+
+    // Mettre à jour le tempo selon la nouvelle position
+    // Utiliser min pour le tempo car on ne peut pas avoir de tempo au-delà de la fin
+    const tempoTime = Math.min(totalDuration.value, clampedTime)
+    currentTempo.value = getTempoAtTime(tempoTime)
+
+    // CORRECTION: Synchroniser le curseur store avec le temps non limité
+    cursorStore.seekTo(clampedTime, false)
 
     // Trouver l'index de l'événement correspondant
     let eventIndex = 0
     for (let i = 0; i < playbackEvents.value.length; i++) {
-      if (playbackEvents.value[i].time <= currentTime.value) {
+      if (playbackEvents.value[i].time <= clampedTime) {
         eventIndex = i + 1
       } else {
         break
@@ -489,18 +635,18 @@ export function useMidiPlayer() {
     }
     currentEventIndex.value = eventIndex
 
-    // Appliquer l'état MIDI incluant les CC avec données actuelles
-    applyCurrentMidiStateAtTime(currentTime.value)
+    applyCurrentMidiStateAtTime(clampedTime)
 
     if (wasPlaying) {
       play()
     }
+
+    // Seek terminé
   }
 
-  // CORRECTION 12: Nouvelle fonction pour appliquer l'état avec données actuelles
   function applyCurrentMidiStateAtTime(time) {
     stopAllNotes()
-    sendInitialMidiSetupFromCurrentData() // Utiliser les données actuelles
+    sendInitialMidiSetupFromCurrentData()
 
     const ccState = new Map()
     const pbState = new Map()
@@ -538,41 +684,86 @@ export function useMidiPlayer() {
 
   function rewind() {
     seekTo(0)
+    
+    // Remettre le scroll horizontal à 0 pour visualiser la première mesure
+    const syncElements = document.querySelectorAll('.sync-scroll-x')
+    syncElements.forEach(element => {
+      element.scrollLeft = 0
+    })
+    
+    // Synchroniser aussi le ScrollController
+    const scrollControllerElement = document.querySelector('.scroll-controller')
+    if (scrollControllerElement) {
+      scrollControllerElement.scrollLeft = 0
+    }
   }
 
-  // Timer de lecture
-  function startPlaybackTimer() {
+  // CORRECTION: Timer complet du lecteur MIDI (timing + événements)
+  let playStartTime = 0
+  let playStartMusicTime = 0
+  
+  function startEventScheduler() {
     if (playbackTimer) return
+
+    playStartTime = performance.now()
+    playStartMusicTime = currentTime.value
+    
+    // Timer démarré
 
     playbackTimer = setInterval(() => {
       if (!isPlaying.value) return
 
+      // Calculer le temps de musique actuel basé sur le temps réel écoulé
       const now = performance.now()
-      const elapsed = (now - playStartTime) / 1000 * playbackRate.value
-      currentTime.value = elapsed
+      const realTimeElapsed = (now - playStartTime) / 1000
+      const currentPlayTime = playStartMusicTime + realTimeElapsed
+      
+      // Mettre à jour le temps courant
+      currentTime.value = currentPlayTime
+      currentTempo.value = getTempoAtTime(currentPlayTime)
 
-      if (currentTime.value >= totalDuration.value) {
+      // CORRECTION: Vérifier la fin de TimeLine plutôt que la durée MIDI
+      // Calculer le temps correspondant à la fin de la TimeLine
+      const { pixelsToTimeWithSignatures, totalWidth } = timeSignatureComposable
+      const timelineEndTime = pixelsToTimeWithSignatures ? pixelsToTimeWithSignatures(totalWidth.value) : totalDuration.value
+      
+      // Utiliser le maximum entre durée MIDI et fin de TimeLine
+      const effectiveEndTime = Math.max(totalDuration.value, timelineEndTime)
+      
+      // Vérifier la fin de morceau
+      if (currentPlayTime >= effectiveEndTime) {
+        console.log('🏁 FIN DE MORCEAU DÉTECTÉE:', {
+          currentPlayTime: currentPlayTime.toFixed(2) + 's',
+          totalDuration: totalDuration.value.toFixed(2) + 's',
+          timelineEndTime: timelineEndTime.toFixed(2) + 's',
+          effectiveEndTime: effectiveEndTime.toFixed(2) + 's',
+          timelineWidth: totalWidth.value + 'px',
+          isLooping: isLooping.value,
+          action: isLooping.value && loopEnd.value > loopStart.value ? 'LOOP' : 'STOP_AT_END'
+        })
+        
         if (isLooping.value && loopEnd.value > loopStart.value) {
           seekTo(loopStart.value)
         } else {
-          stop()
+          stopAtEnd() // CORRECTION: Garder la position en fin de morceau
         }
         return
       }
 
-      scheduleUpcomingEvents()
+      // Programmer les événements MIDI à venir
+      scheduleUpcomingEvents(currentPlayTime)
     }, lookAheadTime)
   }
 
-  function stopPlaybackTimer() {
+  function stopEventScheduler() {
     if (playbackTimer) {
       clearInterval(playbackTimer)
       playbackTimer = null
     }
   }
 
-  function scheduleUpcomingEvents() {
-    const scheduleTime = currentTime.value + (scheduleAheadTime / 1000)
+  function scheduleUpcomingEvents(currentPlayTime) {
+    const scheduleTime = currentPlayTime + (scheduleAheadTime / 1000)
     let eventsScheduledThisRound = 0
     const maxEventsPerRound = 50
 
@@ -583,12 +774,12 @@ export function useMidiPlayer() {
         break
       }
 
-      if (event.time < currentTime.value - 0.1) {
+      if (event.time < currentPlayTime - 0.1) {
         currentEventIndex.value++
         continue
       }
 
-      const delay = Math.max(0, (event.time - currentTime.value) * 1000)
+      const delay = Math.max(0, (event.time - currentPlayTime) * 1000)
 
       if (delay < 16) {
         requestAnimationFrame(() => {
@@ -663,8 +854,15 @@ export function useMidiPlayer() {
           break
 
         case 'tempo':
+          // Le tempo est géré par le curseur maintenant
+          currentTempo.value = event.bpm
           success = true
+          console.log(`🎵 Changement de tempo: ${event.bpm} BPM à ${event.time.toFixed(2)}s`)
           break
+      }
+
+      if (success) {
+        debugStats.value.eventsExecuted++
       }
     } catch (error) {
       console.error('💥 Erreur lors de l\'exécution de l\'événement:', error, event)
@@ -768,60 +966,106 @@ export function useMidiPlayer() {
   }
 
   function forceRefreshEvents() {
-    console.log('🔄 Régénération forcée des événements')
     preparePlaybackEvents()
+  }
+
+  function resolveMidiOutput(trackMidiOutput, availableOutputs) {
+    if (!availableOutputs || availableOutputs.length === 0) {
+      console.warn('⚠️ Aucune sortie MIDI disponible')
+      return null
+    }
+
+    // Cas spécial : 'default' ou vide
+    if (!trackMidiOutput || trackMidiOutput === 'default') {
+      return availableOutputs[0] // Première sortie disponible
+    }
+
+    // 1. Recherche exacte par ID
+    let output = availableOutputs.find(o => o.id === trackMidiOutput)
+    if (output) {
+      return output
+    }
+
+    // 2. Recherche par nom (pour compatibilité)
+    output = availableOutputs.find(o => o.name === trackMidiOutput)
+    if (output) {
+      return output
+    }
+
+    // 3. Recherche partielle
+    output = availableOutputs.find(o => 
+      o.name.toLowerCase().includes(String(trackMidiOutput).toLowerCase())
+    )
+    if (output) {
+      console.log(`🔄 Correspondance partielle: "${trackMidiOutput}" -> "${output.name}"`)
+      return output
+    }
+
+    console.error(`❌ Sortie "${trackMidiOutput}" introuvable, utilisation de la première disponible`)
+    return availableOutputs[0] // Fallback
   }
 
   onUnmounted(() => {
     stop()
-    stopPlaybackTimer()
+    stopEventScheduler()
   })
+
+  // NOUVEAU: Fonction pour arrêter toutes les notes d'une piste
+  function stopAllNotesForTrack(trackId) {
+    if (!isPlaying.value) return
+    
+    console.log(`🔇 Arrêt de toutes les notes pour la piste ${trackId}`)
+    
+    // Parcourir toutes les sorties MIDI et envoyer noteOff sur tous les canaux/notes
+    const availableOutputs = midiManager.availableOutputs?.value ?? []
+    const track = midiStore.getTrackById(trackId)
+    
+    if (track && availableOutputs.length > 0) {
+      const trackChannel = Math.max(0, Math.min(15, track.channel || 0))
+      const output = resolveMidiOutput(track.midiOutput, availableOutputs)
+      
+      if (output && output.connection) {
+        // Envoyer All Notes Off (CC 123) sur le canal de la piste
+        try {
+          const allNotesOffMessage = [0xB0 + trackChannel, 123, 0] // Control Change: All Notes Off
+          output.connection.send(allNotesOffMessage)
+          console.log(`🔇 All Notes Off envoyé sur piste ${trackId}, canal ${trackChannel}`)
+          
+          // Aussi envoyer All Sound Off (CC 120) pour être sûr
+          const allSoundOffMessage = [0xB0 + trackChannel, 120, 0]
+          output.connection.send(allSoundOffMessage)
+          console.log(`🔇 All Sound Off envoyé sur piste ${trackId}, canal ${trackChannel}`)
+        } catch (error) {
+          console.error(`❌ Erreur lors de l'arrêt des notes pour piste ${trackId}:`, error)
+        }
+      }
+    }
+  }
+
+  // NOUVEAU: Listener pour les événements de mute
+  function handleTrackMuted(event) {
+    const { trackId } = event.detail
+    stopAllNotesForTrack(trackId)
+  }
 
   onMounted(() => {
     if (midiStore.isLoaded) {
       preparePlaybackEvents()
     }
+    
+    // NOUVEAU: Écouter les événements de mute
+    window.addEventListener('track-muted', handleTrackMuted)
+  })
+  
+  onUnmounted(() => {
+    stop()
+    stopEventScheduler()
+    
+    // NOUVEAU: Nettoyer le listener
+    window.removeEventListener('track-muted', handleTrackMuted)
   })
 
-  function resolveMidiOutput(trackMidiOutput, availableOutputs) {
-  if (!availableOutputs || availableOutputs.length === 0) {
-    console.warn('⚠️ Aucune sortie MIDI disponible')
-    return null
-  }
-
-  // Cas spécial : 'default' ou vide
-  if (!trackMidiOutput || trackMidiOutput === 'default') {
-    return availableOutputs[0] // Première sortie disponible
-  }
-
-  // 1. Recherche exacte par ID
-  let output = availableOutputs.find(o => o.id === trackMidiOutput)
-  if (output) {
-    return output
-  }
-
-  // 2. Recherche par nom (pour compatibilité)
-  output = availableOutputs.find(o => o.name === trackMidiOutput)
-  if (output) {
-    console.log(`🔄 Migration: "${trackMidiOutput}" trouvé par nom, ID=${output.id}`)
-    return output
-  }
-
-  // 3. Recherche partielle
-  output = availableOutputs.find(o => 
-    o.name.toLowerCase().includes(String(trackMidiOutput).toLowerCase())
-  )
-  if (output) {
-    console.log(`🔄 Correspondance partielle: "${trackMidiOutput}" -> "${output.name}"`)
-    return output
-  }
-
-  console.error(`❌ Sortie "${trackMidiOutput}" introuvable, utilisation de la première disponible`)
-  return availableOutputs[0] // Fallback
-}
-
-
-  return {
+  const instance = {
     // État
     isPlaying,
     isPaused,
@@ -832,8 +1076,13 @@ export function useMidiPlayer() {
     loopStart,
     loopEnd,
     canPlay,
+    stoppedAtEnd,
     progress,
     debugStats,
+    
+    // État du tempo
+    currentTempo,
+    tempoEvents,
 
     // Getters formatés
     currentTimeFormatted,
@@ -843,6 +1092,7 @@ export function useMidiPlayer() {
     play,
     pause,
     stop,
+    stopAtEnd,
     rewind,
     seekTo,
 
@@ -854,8 +1104,13 @@ export function useMidiPlayer() {
 
     // Nouvelles fonctions
     maintainCurrentCCState,
+    getTempoAtTime,
 
     // Utilitaires
     formatTime
   }
+  
+  // Sauvegarder l'instance pour la réutiliser
+  sharedInstance = instance
+  return instance
 }

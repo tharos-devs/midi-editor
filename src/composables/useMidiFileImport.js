@@ -115,9 +115,10 @@ export function useMidiFileImport() {
 
     // Forcer la réactivité
     midiStore.triggerReactivity()
-
+    /*
     console.log(`✅ Nouveau projet créé à partir de "${filename}"`)
     console.log(`📊 Pistes: ${midiData.tracks.length}, Notes: ${midiData.notes.length}, CC: ${midiData.midiCC.length}`)
+    */
   }
 
   /**

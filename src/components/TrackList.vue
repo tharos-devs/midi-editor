@@ -124,15 +124,15 @@ const showReorderFeedback = ref(false)
 
 // Gestionnaires d'événements pour TrackInstrument
 const onTrackChannelChanged = ({ trackId, channel }) => {
-  console.log(`🎵 Canal changé pour piste ${trackId}: ${channel}`)
+  // console.log(`🎵 Canal changé pour piste ${trackId}: ${channel}`)
 }
 
 const onTrackOutputChanged = ({ trackId, outputId }) => {
-  console.log(`🔌 Sortie changée pour piste ${trackId}: ${outputId}`)
+  // console.log(`🔌 Sortie changée pour piste ${trackId}: ${outputId}`)
 }
 
 const onTrackSelected = (trackId) => {
-  console.log(`🎯 Piste sélectionnée: ${trackId}`)
+  // console.log(`🎯 Piste sélectionnée: ${trackId}`)
 }
 
 const onTrackHeightChanged = ({ trackId, height, level }) => {
@@ -175,7 +175,7 @@ const onTrackReorder = async (reorderData) => {
     const currentIndex = tracks.value.findIndex(track => track.id === draggedTrackId)
     
     if (currentIndex === -1) {
-      console.error(`❌ Piste ${draggedTrackId} non trouvée`)
+      // console.error(`❌ Piste ${draggedTrackId} non trouvée`)
       dragState.isDragging = false
       return
     }
@@ -191,12 +191,12 @@ const onTrackReorder = async (reorderData) => {
     
     // Éviter de déplacer au même endroit
     if (currentIndex === finalIndex) {
-      console.log(`⚠️  Pas de changement nécessaire (index ${currentIndex} -> ${finalIndex})`)
+      // console.log(`⚠️  Pas de changement nécessaire (index ${currentIndex} -> ${finalIndex})`)
       dragState.isDragging = false
       return
     }
 
-    console.log(`📦 Déplacement: index ${currentIndex} -> ${finalIndex}`)
+    // console.log(`📦 Déplacement: index ${currentIndex} -> ${finalIndex}`)
 
     // Utiliser la fonction du store pour réorganiser
     const success = await midiStore.reorderTrack(draggedTrackId, finalIndex)
@@ -207,9 +207,11 @@ const onTrackReorder = async (reorderData) => {
         duration: 2000,
         showClose: true
       })
+      /*
       console.log(`✅ Piste ${draggedTrackId} déplacée avec succès`)
       console.log(`📋 Nouvel ordre:`, tracks.value.map(t => `${t.id}:${t.name}`))
-      
+      */
+
       // Déclencher une animation de feedback
       triggerReorderFeedback()
       
@@ -219,11 +221,11 @@ const onTrackReorder = async (reorderData) => {
         duration: 3000,
         showClose: true
       })
-      console.error(`❌ Échec du déplacement de la piste ${draggedTrackId}`)
+      // console.error(`❌ Échec du déplacement de la piste ${draggedTrackId}`)
     }
     
   } catch (error) {
-    console.error('❌ Erreur lors de la réorganisation:', error)
+    // console.error('❌ Erreur lors de la réorganisation:', error)
     ElMessage.error({
       message: 'Erreur lors du déplacement de la piste',
       duration: 3000,
@@ -251,10 +253,10 @@ const triggerReorderFeedback = () => {
 watch(() => dragState.isDragging, (isDragging) => {
   if (isDragging) {
     dragState.dragStartTime = Date.now()
-    console.log('🚀 Début du drag & drop')
+    // console.log('🚀 Début du drag & drop')
   } else {
     const dragDuration = Date.now() - dragState.dragStartTime
-    console.log(`🏁 Fin du drag & drop (durée: ${dragDuration}ms)`)
+    // console.log(`🏁 Fin du drag & drop (durée: ${dragDuration}ms)`)
   }
 })
 
@@ -301,10 +303,10 @@ const addNewTrack = async () => {
       duration: 2000
     })
     
-    console.log(`✅ Nouvelle piste créée:`, newTrack)
+    // console.log(`✅ Nouvelle piste créée:`, newTrack)
     
   } catch (error) {
-    console.error('❌ Erreur lors de la création de la piste:', error)
+    // console.error('❌ Erreur lors de la création de la piste:', error)
     ElMessage.error({
       message: 'Erreur lors de la création de la piste',
       duration: 3000
@@ -324,12 +326,13 @@ if (process.env.NODE_ENV === 'development') {
     if (oldTracks && newTracks.length === oldTracks.length) {
       const oldOrder = oldTracks.map(t => t.id).join(',')
       const newOrder = newTracks.map(t => t.id).join(',')
-      
+      /*
       if (oldOrder !== newOrder) {
         console.log('🔄 Ordre des pistes changé:')
         console.log('Ancien:', oldTracks.map((t, i) => `${i + 1}.${t.name}`))
         console.log('Nouveau:', newTracks.map((t, i) => `${i + 1}.${t.name}`))
       }
+      */
     }
   }, { deep: true })
 }

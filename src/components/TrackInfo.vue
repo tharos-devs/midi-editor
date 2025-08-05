@@ -319,11 +319,11 @@ function onChannelChange(newChannel) {
 function onOutputChange(outputId) {
   if (!selectedTrackInfo.value) return
   
-  console.log(`🎹 Changement sortie MIDI: "${outputId}"`)
+  // console.log(`🎹 Changement sortie MIDI: "${outputId}"`)
   
   const output = midiManager.findMidiOutput(outputId)
   if (!output && outputId !== 'default') {
-    console.warn(`⚠️ Sortie "${outputId}" introuvable, utilisation de 'default'`)
+    // console.warn(`⚠️ Sortie "${outputId}" introuvable, utilisation de 'default'`)
     outputId = 'default'
   }
   
@@ -333,7 +333,7 @@ function onOutputChange(outputId) {
     ? 'Sortie par défaut'
     : output?.name || 'Sortie inconnue'
     
-  console.log(`✅ Sortie MIDI mise à jour: ${outputName}`)
+  // console.log(`✅ Sortie MIDI mise à jour: ${outputName}`)
 }
 
 async function updateTrackPan(pan) {
@@ -345,7 +345,7 @@ async function updateTrackPan(pan) {
   // Débouncer pour éviter trop d'appels
   if (panTimeout) clearTimeout(panTimeout)
   panTimeout = setTimeout(async () => {
-    console.log(`🎛️ Mise à jour Pan pour piste ${selectedTrackInfo.value.id}: ${clampedPan}`)
+    // console.log(`🎛️ Mise à jour Pan pour piste ${selectedTrackInfo.value.id}: ${clampedPan}`)
     
     const success = await midiStore.updateTrackPan(selectedTrackInfo.value.id, clampedPan)
     
@@ -364,7 +364,7 @@ async function updateTrackVolume(volume) {
   // Débouncer pour éviter trop d'appels
   if (volumeTimeout) clearTimeout(volumeTimeout)
   volumeTimeout = setTimeout(async () => {
-    console.log(`🔊 Mise à jour Volume pour piste ${selectedTrackInfo.value.id}: ${clampedVolume}`)
+    // console.log(`🔊 Mise à jour Volume pour piste ${selectedTrackInfo.value.id}: ${clampedVolume}`)
     
     const success = await midiStore.updateTrackVolume(selectedTrackInfo.value.id, clampedVolume)
     
@@ -384,20 +384,22 @@ async function sendMidiCC(ccNumber, value) {
     if (resolvedOutput) {
       trackMidiOutput = resolvedOutput.id
       const ccName = ccNumber === 7 ? 'Volume' : 'Pan'
-      console.log(`🎛️ Envoi CC${ccNumber} ${ccName}: "${resolvedOutput.name}" Canal=${trackChannel + 1} Valeur=${value}`)
+      // console.log(`🎛️ Envoi CC${ccNumber} ${ccName}: "${resolvedOutput.name}" Canal=${trackChannel + 1} Valeur=${value}`)
       
       const ccSent = midiManager.sendControlChange(trackMidiOutput, trackChannel, ccNumber, value)
       
+      /*
       if (ccSent) {
         console.log(`✅ ${ccName} CC${ccNumber} envoyé avec succès`)
       } else {
         console.error(`❌ Échec envoi ${ccName} CC${ccNumber}`)
       }
+      */    
     } else {
-      console.warn(`⚠️ Sortie MIDI "${track.midiOutput}" non trouvée pour envoi CC${ccNumber}`)
+      // console.warn(`⚠️ Sortie MIDI "${track.midiOutput}" non trouvée pour envoi CC${ccNumber}`)
     }
   } else {
-    console.warn(`⚠️ MIDI non disponible pour envoi CC${ccNumber}`)
+    // console.warn(`⚠️ MIDI non disponible pour envoi CC${ccNumber}`)
   }
 }
 

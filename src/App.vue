@@ -21,9 +21,9 @@
         ></div>
 
         <!-- Right Column: Editor Area -->
-        <div class="right-column">
-          <!-- Timeline -->
-          <div class="timeline-container">
+        <div class="right-column" @wheel="handleGlobalWheel">
+            <!-- Timeline -->
+            <div class="timeline-container">
             <div class="timeline-spacer" :style="{ width: uiStore.pianoKeysWidth + 'px' }"></div>
             <div class="timeline-scroll sync-scroll-x">
               <TimeLine />
@@ -71,6 +71,17 @@
                 </div>
               </div>
             </div>
+          </div>
+
+          <!-- Scroll Controller - Auto-scroll indépendant -->
+          <div class="scroll-controller-container">
+            <div class="scroll-controller-spacer" :style="{ width: uiStore.pianoKeysWidth + 'px' }"></div>
+            <div class="scroll-controller-wrapper">
+              <ScrollController 
+                @scroll-change="handleScrollControllerChange"
+                ref="scrollControllerRef"
+              />
+            </div>
           </div>       
         </div>
       </div>
@@ -79,7 +90,11 @@
       <StatusBar />
 
       <!-- Transport Controls -->
-      <TransportControls />
+      <TransportControls 
+        :show-debug="false"
+        :show-progress-bar="true"
+        :show-tempo="true"
+      />
     </div>
   </div>
 </template>
@@ -99,6 +114,8 @@ import MidiLaneInfos from './components/MidiLaneInfos.vue'
 import StatusBar from './components/StatusBar.vue'
 import TimeSignatureRuler from './components/rulers/TimeSignatureRuler.vue'
 import TransportControls from './components/TransportControls.vue'
+import ScrollController from './components/ScrollController.vue'
+import WheelHandler from './components/WheelHandler.vue'
 
 const uiStore = useUIStore()
 
@@ -108,6 +125,9 @@ const selectedLane = ref(null)
 // Refs pour le scroll vertical piano/grid
 const pianoGridContainerRef = ref(null)
 const pianoKeysContainerRef = ref(null)
+
+// Ref pour le ScrollController
+const scrollControllerRef = ref(null)
 
 // Redimensionnement
 let isResizingTrackList = false
@@ -129,10 +149,90 @@ function syncHorizontalScroll(e) {
   scrollSyncing = true
   const source = e.target
   const scrollLeft = source.scrollLeft
+  
+  // Synchroniser tous les éléments avec la classe sync-scroll-x
   document.querySelectorAll('.sync-scroll-x').forEach(div => {
     if (div !== source) div.scrollLeft = scrollLeft
   })
+  
+  // Synchroniser aussi le ScrollController si ce n'est pas lui la source
+  if (scrollControllerRef.value && !source.closest('.scroll-controller-wrapper')) {
+    scrollControllerRef.value.scrollTo(scrollLeft)
+  }
+  
   scrollSyncing = false
+}
+
+// Gestion du scroll depuis le ScrollController
+function handleScrollControllerChange(scrollData) {
+  if (scrollSyncing) return
+  scrollSyncing = true
+  
+  const scrollLeft = scrollData.scrollLeft
+  
+  console.log('🔄 ScrollController sync:', {
+    newScrollLeft: scrollLeft.toFixed(1) + 'px',
+    source: scrollData.source,
+    syncElements: document.querySelectorAll('.sync-scroll-x').length
+  })
+  
+  // Synchroniser tous les éléments avec la classe sync-scroll-x
+  document.querySelectorAll('.sync-scroll-x').forEach((div, index) => {
+    div.scrollLeft = scrollLeft
+    console.log(`✅ Sync élément ${index}: ${div.className} → ${scrollLeft.toFixed(1)}px`)
+  })
+  
+  scrollSyncing = false
+}
+
+// Gestion globale de la wheel pour le scroll horizontal
+function handleGlobalWheel(event) {
+  const deltaX = event.deltaX
+  const deltaY = event.deltaY
+  
+  // Déterminer si c'est un scroll horizontal
+  const isHorizontalScroll = Math.abs(deltaX) > Math.abs(deltaY)
+  
+  // Identifier sur quel composant on est
+  const target = event.target
+  const isPianoGrid = target.closest('.piano-grid-scroll') || target.closest('.piano-grid')
+  const isTimeLine = target.closest('.timeline-scroll') || target.closest('.timeline')
+  
+  if (isHorizontalScroll) {
+    // ✅ SCROLL HORIZONTAL GLOBAL - Synchroniser tous les composants
+    event.preventDefault()
+    
+    // Trouver le premier élément scrollable sync-scroll-x
+    const syncElements = document.querySelectorAll('.sync-scroll-x')
+    if (syncElements.length > 0) {
+      const firstElement = syncElements[0]
+      
+      // Appliquer le scroll
+      firstElement.scrollLeft += deltaX
+      
+      // Déclencher la synchronisation avec les autres
+      const syncEvent = new Event('scroll', { bubbles: true })
+      firstElement.dispatchEvent(syncEvent)
+    }
+    
+    console.log('🖱️ App.vue - Scroll horizontal global:', deltaX)
+  } else {
+    // ✅ SCROLL VERTICAL - Laisser les composants spécialisés gérer
+    
+    if (isPianoGrid) {
+      // PianoGrid : Laisser passer le scroll vertical (il a sa propre gestion)
+      console.log('🎼 App.vue - PianoGrid scroll vertical autorisé')
+      return // NE PAS empêcher
+    } else if (isTimeLine) {
+      // TimeLine : Laisser gérer son zoom focal
+      console.log('📏 App.vue - TimeLine zoom focal autorisé')
+      return // NE PAS empêcher
+    } else {
+      // Autres composants : Pas de comportement vertical spécial
+      console.log('🚫 App.vue - Scroll vertical bloqué sur autres composants')
+      event.preventDefault() // Empêcher le scroll sur les autres composants
+    }
+  }
 }
 
 // Synchronisation du scroll vertical (générique via classe)
@@ -340,18 +440,32 @@ onUnmounted(() => {
 
 .piano-grid-scroll {
   flex: 1;
-  overflow-x: auto;
+  overflow-x: hidden; /* Masquer complètement le scroll horizontal */
   overflow-y: auto;
-  /* Masquer la scrollbar horizontale sur WebKit (Chrome, Safari, Edge) */
-  scrollbar-width: none; /* Firefox */
-  -ms-overflow-style: none; /* IE et Edge */
+  /* Firefox - scrollbar uniquement verticale */
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb, #888) var(--scrollbar-track, #f1f1f1);
 }
 
+/* WebKit - Scrollbar verticale uniquement */
 .piano-grid-scroll::-webkit-scrollbar {
-  height: 0px; /* Masquer la scrollbar horizontale sur WebKit */
+  width: 12px; /* Largeur de la scrollbar verticale */
 }
 
 .piano-grid-scroll::-webkit-scrollbar-track {
+  background: var(--scrollbar-track, #f1f1f1);
+}
+
+.piano-grid-scroll::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb, #888);
+  border-radius: 6px;
+}
+
+.piano-grid-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover, #555);
+}
+
+.piano-grid-scroll::-webkit-scrollbar-corner {
   background: transparent;
 }
 
@@ -405,6 +519,35 @@ onUnmounted(() => {
   flex: 1;
   overflow-x: auto;
   overflow-y: hidden;
+  /* Masquer la scrollbar horizontale sur WebKit (Chrome, Safari, Edge) */
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE et Edge */
+}
+
+.midi-lanes-scroll::-webkit-scrollbar {
+  height: 0px; /* Masquer la scrollbar horizontale sur WebKit */
+}
+
+.midi-lanes-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Scroll Controller */
+.scroll-controller-container {
+  display: flex;
+  flex-shrink: 0;
+  border-top: 1px solid var(--border-color, #ddd);
+}
+
+.scroll-controller-spacer {
+  flex-shrink: 0;
+  background: var(--scroll-controller-spacer-bg, #f0f0f0);
+  border-right: 1px solid var(--border-color, #ddd);
+}
+
+.scroll-controller-wrapper {
+  flex: 1;
+  overflow: hidden; /* Important pour que le ScrollController puisse dépasser */
 }
 
 </style>

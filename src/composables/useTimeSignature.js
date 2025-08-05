@@ -65,7 +65,8 @@ export function useTimeSignature() {
     }
 
     const events = midiStore.timeSignatureEvents
-    const totalDuration = midiStore.midiInfo.duration || 60
+    // CORRECTION: Utiliser la durée basée sur le dernier événement MIDI
+    const totalDuration = getLastMidiEventTime.value || midiStore.midiInfo.duration || 60
 
     const processedEvents = []
 
@@ -156,27 +157,129 @@ export function useTimeSignature() {
     return sections.length > 0 ? sections[sections.length - 1].signature : DEFAULT_SIGNATURE
   }
 
-  // Calculer le nombre total de mesures basé sur la durée du MIDI
-  const calculateTotalMeasures = computed(() => {
-    if (!midiStore.isLoaded || !midiStore.midiInfo.duration) {
-      return DEFAULT_MEASURES
+  // NOUVEAU: Trouver le dernier événement MIDI (notes + control changes + tous événements)
+  const getLastMidiEventTime = computed(() => {
+    console.log('🔍 getLastMidiEventTime appelé - isLoaded:', midiStore.isLoaded)
+    
+    if (!midiStore.isLoaded) {
+      console.log('🔍 MIDI non chargé, retour durée par défaut:', midiStore.midiInfo.duration || 0)
+      return midiStore.midiInfo.duration || 0
     }
-    const duration = midiStore.midiInfo.duration
-    const sections = getTimeSignatureSections.value
-    const tempo = midiStore.getCurrentTempo || 120
-    let totalMeasures = 0
-    for (const section of sections) {
-      const sectionStart = section.startTime
-      const sectionEnd = Math.min(section.endTime, duration)
-      const sectionDuration = sectionEnd - sectionStart
-      if (sectionDuration > 0) {
-        const quarterNotesPerMeasure = section.signature.numerator * (4 / section.signature.denominator)
-        const measureDuration = quarterNotesPerMeasure * (60 / tempo)
-        const measuresInSection = Math.ceil(sectionDuration / measureDuration)
-        totalMeasures += measuresInSection
+    
+    let lastTime = 0
+    
+    // 1. Vérifier les notes (noteOn + noteOff)
+    if (midiStore.notes?.length) {
+      for (const note of midiStore.notes) {
+        const noteEndTime = note.time + (note.duration || 0)
+        if (noteEndTime > lastTime) {
+          lastTime = noteEndTime
+        }
       }
     }
-    return Math.max(totalMeasures, 1)
+    
+    // 2. Vérifier les Control Changes (CC)
+    if (midiStore.midiCC?.length) {
+      for (const cc of midiStore.midiCC) {
+        if (cc.time > lastTime) {
+          lastTime = cc.time
+        }
+      }
+    }
+    
+    // 3. Vérifier les événements de tempo
+    if (midiStore.tempoEvents?.length) {
+      for (const tempo of midiStore.tempoEvents) {
+        if (tempo.time > lastTime) {
+          lastTime = tempo.time
+        }
+      }
+    }
+    
+    // 4. Vérifier les événements de signature temporelle
+    if (midiStore.timeSignatureEvents?.length) {
+      for (const timeSig of midiStore.timeSignatureEvents) {
+        if (timeSig.time > lastTime) {
+          lastTime = timeSig.time
+        }
+      }
+    }
+    
+    // 5. Vérifier les événements de signature tonale
+    if (midiStore.keySignatureEvents?.length) {
+      for (const keySig of midiStore.keySignatureEvents) {
+        if (keySig.time > lastTime) {
+          lastTime = keySig.time
+        }
+      }
+    }
+    
+    const finalTime = Math.max(lastTime, midiStore.midiInfo.duration || 0)
+    
+    console.log('🎵 Calcul du dernier événement MIDI:', {
+      notes: midiStore.notes?.length || 0,
+      controlChanges: midiStore.midiCC?.length || 0,
+      tempoEvents: midiStore.tempoEvents?.length || 0,
+      timeSignatureEvents: midiStore.timeSignatureEvents?.length || 0,
+      keySignatureEvents: midiStore.keySignatureEvents?.length || 0,
+      lastEventTime: lastTime.toFixed(3) + 's',
+      midiFileDuration: (midiStore.midiInfo.duration || 0).toFixed(3) + 's',
+      finalResult: finalTime.toFixed(3) + 's'
+    })
+    
+    return finalTime
+  })
+
+  // CORRIGÉ: Calculer les mesures jusqu'à la fin de la mesure contenant la dernière note
+  const calculateTotalMeasures = computed(() => {
+    console.log('📏 calculateTotalMeasures appelé:', {
+      isLoaded: midiStore.isLoaded,
+      midiInfoDuration: midiStore.midiInfo.duration || 0
+    })
+    
+    if (!midiStore.isLoaded) {
+      console.log('📏 MIDI non chargé, utilisation default:', DEFAULT_MEASURES + ' mesures')
+      return DEFAULT_MEASURES
+    }
+    
+    // Utiliser la fin du dernier événement MIDI au lieu de midiInfo.duration
+    const lastEventTime = getLastMidiEventTime.value
+    const sections = getTimeSignatureSections.value
+    const tempo = midiStore.getCurrentTempo || 120
+    
+    let totalMeasures = 0
+    let currentTime = 0
+    
+    for (const section of sections) {
+      const sectionStart = Math.max(section.startTime, currentTime)
+      const sectionEnd = Math.min(section.endTime, lastEventTime)
+      
+      if (sectionEnd > sectionStart) {
+        const quarterNotesPerMeasure = section.signature.numerator * (4 / section.signature.denominator)
+        const measureDuration = quarterNotesPerMeasure * (60 / tempo)
+        
+        // Calculer combien de mesures COMPLÈTES sont nécessaires pour couvrir cette section
+        const measuresInSection = Math.ceil((sectionEnd - sectionStart) / measureDuration)
+        totalMeasures += measuresInSection
+        currentTime = sectionStart + (measuresInSection * measureDuration)
+        
+        console.log('📏 Section signature:', {
+          signature: `${section.signature.numerator}/${section.signature.denominator}`,
+          durée: (sectionEnd - sectionStart).toFixed(3) + 's',
+          mesuresCalculées: measuresInSection,
+          duréeCouverte: (measuresInSection * measureDuration).toFixed(3) + 's'
+        })
+      }
+    }
+    
+    const result = Math.max(totalMeasures, 1)
+    console.log('📊 Calcul total mesures:', {
+      baseSur: 'Dernière note + mesures complètes',
+      totalMesures: result,
+      tempsCouvert: currentTime.toFixed(3) + 's'
+    })
+    
+    return result
   })
 
   const getTimeSignatureAtTicks = (ticks) => {
@@ -189,9 +292,33 @@ export function useTimeSignature() {
       return generateDefaultMeasures(totalMeasures)
     }
     
-    const sections = getTimeSignatureSections.value
+    let sections = getTimeSignatureSections.value
     const tempo = midiStore.getCurrentTempo || 120
-    const totalDuration = midiStore.midiInfo.duration || 60
+    // CORRECTION: Utiliser la durée basée sur le dernier événement MIDI au lieu de midiInfo.duration
+    const totalDuration = getLastMidiEventTime.value
+    console.log('📐 measuresWithSignatures utilise totalDuration =', totalDuration.toFixed(3) + 's (source: getLastMidiEventTime)')
+    
+    // CORRECTION CRUCIALE: Étendre la dernière section jusqu'à la nouvelle durée
+    if (sections.length > 0 && totalDuration > sections[sections.length - 1].endTime) {
+      const oldEndTime = sections[sections.length - 1].endTime
+      sections = [...sections]  // Copie pour éviter la mutation
+      sections[sections.length - 1] = {
+        ...sections[sections.length - 1],
+        endTime: totalDuration
+      }
+      console.log('🔧 Section finale étendue:', {
+        de: oldEndTime.toFixed(3) + 's',
+        à: totalDuration.toFixed(3) + 's',
+        extension: (totalDuration - oldEndTime).toFixed(3) + 's'
+      })
+    } else {
+      console.log('🔧 Pas d\'extension nécessaire:', {
+        sectionsLength: sections.length,
+        totalDuration: totalDuration.toFixed(3) + 's',
+        lastSectionEnd: sections.length > 0 ? sections[sections.length - 1].endTime.toFixed(3) + 's' : 'N/A'
+      })
+    }
+    
     const measures = []
     let measureNumber = 1
     let cumulativePixels = 0
@@ -212,6 +339,8 @@ export function useTimeSignature() {
       const beatWidth = Math.round((measureWidth / section.signature.numerator) * 100) / 100
       
       const measuresInSection = Math.ceil(sectionDuration / measureDurationSeconds)
+      
+      console.log(`🔢 Section ${sectionIndex}: ${section.signature.numerator}/${section.signature.denominator}, durée: ${sectionDuration.toFixed(2)}s, mesureDuration: ${measureDurationSeconds.toFixed(2)}s, mesuresCalculées: ${measuresInSection}`)
       
       for (let i = 0; i < measuresInSection; i++) {
         const measureStartTime = sectionStartTime + (i * measureDurationSeconds)
@@ -244,6 +373,9 @@ export function useTimeSignature() {
         measures.push(measure)
         measureNumber++
         cumulativePixels += measureWidth
+        
+        // Debug: log chaque mesure générée
+        console.log(`📏 Mesure ${measure.number}: ${measure.startTime.toFixed(2)}s-${measure.endTime.toFixed(2)}s, largeur: ${measureWidth.toFixed(0)}px, cumul: ${cumulativePixels.toFixed(0)}px (section ${sectionIndex}, index ${i})`)
       }
     }
     
@@ -387,7 +519,19 @@ export function useTimeSignature() {
     const measures = measuresWithSignatures.value
     if (measures.length === 0) return DEFAULT_MEASURES * PIXELS_PER_QUARTER.value * 4
     const lastMeasure = measures[measures.length - 1]
-    return lastMeasure.startPixel + lastMeasure.measureWidth
+    const width = lastMeasure.startPixel + lastMeasure.measureWidth
+    
+    console.log('📏 TotalWidth calculé:', {
+      measuresCount: measures.length,
+      lastMeasureEnd: lastMeasure.endTime?.toFixed(3) + 's',
+      lastMeasureStart: lastMeasure.startPixel?.toFixed(0) + 'px',
+      lastMeasureWidth: lastMeasure.measureWidth?.toFixed(0) + 'px',
+      newWidth: width.toFixed(0) + 'px',
+      oldWidth: '2640px',
+      changed: width !== 2640 ? '✅ CHANGED' : '❌ SAME'
+    })
+    
+    return width
   })
 
   // Signature rythmique actuelle
@@ -486,6 +630,9 @@ export function useTimeSignature() {
     getTimeSignatureAtTime,
     
     // Accès aux sections de signatures
-    getTimeSignatureSections
+    getTimeSignatureSections,
+    
+    // Calcul de la vraie fin du morceau (tous événements MIDI)
+    getLastMidiEventTime
   }
 }
