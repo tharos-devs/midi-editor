@@ -124,6 +124,7 @@ import { useMidiStore } from '@/stores/midi'
 import { usePlaybackCursor } from '@/composables/usePlaybackCursor'
 import { useTimeSignature } from '@/composables/useTimeSignature'
 import { usePlaybackMarkerStore } from '@/stores/playbackMarker'
+import { usePlaybackCursorStore } from '@/stores/playbackCursor'
 
 // Props
 const props = defineProps({
@@ -156,6 +157,7 @@ const midiStore = useMidiStore()
 const cursor = usePlaybackCursor()
 const timeSignature = useTimeSignature()
 const markerStore = usePlaybackMarkerStore()
+const cursorStore = usePlaybackCursorStore()
 
 // Refs locales
 const localPlaybackRate = ref(1)
@@ -377,9 +379,14 @@ function handlePlaybackRateChange(newRate) {
 }
 
 function handlePlaybackMarker() {
-  // Utiliser la position du curseur store qui suit les clics timeline
-  const cursorTime = cursor.currentTime.value
+  // Utiliser la position du curseur store global qui suit les clics timeline
+  const cursorTime = cursorStore.currentTime
   console.log('🅿️ Touche P pressée à la position:', cursorTime.toFixed(2) + 's')
+  console.log('🅿️ Debug curseur:', {
+    composableCursor: cursor.currentTime.value.toFixed(2) + 's',
+    storeCursor: cursorStore.currentTime.toFixed(2) + 's', 
+    playerTime: currentTime.value.toFixed(2) + 's'
+  })
   markerStore.toggleMarker(cursorTime)
 }
 
