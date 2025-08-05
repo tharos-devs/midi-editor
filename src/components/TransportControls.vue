@@ -123,6 +123,7 @@ import { useMidiManager } from '@/composables/useMidiManager'
 import { useMidiStore } from '@/stores/midi'
 import { usePlaybackCursor } from '@/composables/usePlaybackCursor'
 import { useTimeSignature } from '@/composables/useTimeSignature'
+import { usePlaybackMarkerStore } from '@/stores/playbackMarker'
 
 // Props
 const props = defineProps({
@@ -154,6 +155,7 @@ const midiManager = useMidiManager()
 const midiStore = useMidiStore()
 const cursor = usePlaybackCursor()
 const timeSignature = useTimeSignature()
+const markerStore = usePlaybackMarkerStore()
 
 // Refs locales
 const localPlaybackRate = ref(1)
@@ -348,6 +350,13 @@ function handlePlayPause() {
       console.log('🔄 Reset stoppedAtEnd pour permettre le redémarrage')
       midiPlayer.stoppedAtEnd.value = false
     }
+    
+    // Si marqueur P présent, démarrer à cette position
+    if (markerStore.hasMarker) {
+      console.log('🅿️ Démarrage depuis le marqueur P à:', markerStore.markerTime.toFixed(2) + 's')
+      seekTo(markerStore.markerTime)
+    }
+    
     play()
   }
 }
@@ -365,6 +374,11 @@ function handleRewind() {
 
 function handlePlaybackRateChange(newRate) {
   playbackRate.value = newRate
+}
+
+function handlePlaybackMarker() {
+  console.log('🅿️ Touche P pressée à la position:', currentTime.value.toFixed(2) + 's')
+  markerStore.toggleMarker(currentTime.value)
 }
 
 // Gestion des raccourcis clavier
@@ -397,6 +411,12 @@ function handleKeyPress(event) {
       if (!event.ctrlKey && !event.metaKey) {
         event.preventDefault()
         toggleLoop()
+      }
+      break
+    case 'KeyP':
+      if (!event.ctrlKey && !event.metaKey) {
+        event.preventDefault()
+        handlePlaybackMarker()
       }
       break
     case 'ArrowLeft':

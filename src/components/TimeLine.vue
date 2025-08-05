@@ -27,6 +27,9 @@
         <template #default="{ measures }">
           <!-- Curseur de lecture -->
           <GlobalPlaybackCursor />
+          
+          <!-- Marqueur de position P -->
+          <PlaybackMarker />
 
           <div
             v-for="measure in measures"
@@ -55,6 +58,7 @@ import { useUIStore } from '@/stores/ui'
 import GridRenderer from '@/components/GridRenderer.vue'
 import { useMidiPlayer } from '@/composables/useMidiPlayer'
 import GlobalPlaybackCursor from '@/components/GlobalPlaybackCursor.vue'
+import PlaybackMarker from '@/components/PlaybackMarker.vue'
 import { usePlaybackCursorStore } from '@/stores/playbackCursor'
 
 // Utiliser le composable de signature rythmique et le store UI
