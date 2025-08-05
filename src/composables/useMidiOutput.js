@@ -72,7 +72,7 @@ function getMidiOutput(outputId) {
 }
 
 // CORRECTION: Jouer une note MIDI avec vérification préalable
-async function playNote({ midi, velocity = 64, channel = 0, outputId = 'default', duration = null }) {
+async function playNote({ midi, velocity = 100, channel = 0, outputId = 'default', duration = null }) {
   await initializeMidi()
   
   const output = getMidiOutput(outputId)

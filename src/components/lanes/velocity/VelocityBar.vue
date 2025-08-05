@@ -155,7 +155,7 @@ const lastVelocityValue = ref(null)
 
 // Style du fill avec optimisations et cache
 const fillStyle = computed(() => {
-  const midiVelocity = props.note.velocity !== undefined ? props.note.velocity : 64
+  const midiVelocity = props.note.velocity !== undefined ? props.note.velocity : 100
   const clampedVelocity = Math.max(0, Math.min(127, Math.round(midiVelocity)))
   
   // Utiliser le cache si la vélocité n'a pas changé

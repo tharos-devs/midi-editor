@@ -218,7 +218,7 @@ const onContainerDoubleClick = (event) => {
     midi: midiNumber,
     time: noteTime,
     duration: noteDuration,
-    velocity: 64, // Vélocité par défaut
+    velocity: 100, // Vélocité par défaut
     name: getNoteName(midiNumber),
     channel: selectedTrack?.channel || 0
   }

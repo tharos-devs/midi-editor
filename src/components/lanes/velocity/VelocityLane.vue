@@ -267,7 +267,7 @@ const findItemAtPosition = (clientX, clientY) => {
 }
 
 const calculateVelocityFromPosition = (clientY) => {
-  if (!velocityLaneRef.value) return 64
+  if (!velocityLaneRef.value) return 100
   const rect = velocityLaneRef.value.getBoundingClientRect()
   const relativeY = clientY - rect.top
   return yToVelocity(relativeY, usableVelocityHeight.value, VELOCITY_MARGIN_TOP)
@@ -361,7 +361,7 @@ const mouseInteractions = useMouseInteractions({
     
     // NOUVEAU: Jouer la note au début du drag
     if (item && !selection.length) { // Seulement si pas de sélection multiple
-      const midiVelocity = normalizeVelocityToMidi(item.velocity || 64)
+      const midiVelocity = normalizeVelocityToMidi(item.velocity || 100)
       playNoteWithVelocity(item, midiVelocity, 150)
     }
   },
@@ -410,7 +410,7 @@ const mouseInteractions = useMouseInteractions({
     if (selection.length > 0 && selection.length <= 5) { // Limite pour éviter le chaos
       selection.forEach((note, index) => {
         setTimeout(() => {
-          const midiVelocity = normalizeVelocityToMidi(note.velocity || 64)
+          const midiVelocity = normalizeVelocityToMidi(note.velocity || 100)
           playNoteWithVelocity(note, midiVelocity, 200)
         }, index * 80) // Décalage pour entendre les notes séparément
       })
