@@ -128,13 +128,13 @@ export function useKeyboardEvents() {
     keyboardListeners.set(listenerKey, config)
     localListeners.set(listenerKey, config)
     
-    console.log('⌨️  Raccourci enregistré:', keyCombo, config.description)
+    // console.log('⌨️  Raccourci enregistré:', keyCombo, config.description)
     
     // Retourner une fonction de nettoyage
     return () => {
       keyboardListeners.delete(listenerKey)
       localListeners.delete(listenerKey)
-      console.log('⌨️  Raccourci supprimé:', keyCombo)
+      // console.log('⌨️  Raccourci supprimé:', keyCombo)
     }
   }
   
@@ -174,12 +174,12 @@ export function useKeyboardEvents() {
   // Utilitaires
   function enable() {
     globalKeyboardState.value.isEnabled = true
-    console.log('⌨️  Événements clavier activés')
+    // console.log('⌨️  Événements clavier activés')
   }
   
   function disable() {
     globalKeyboardState.value.isEnabled = false
-    console.log('⌨️  Événements clavier désactivés')
+    // console.log('⌨️  Événements clavier désactivés')
   }
   
   function getActiveShortcuts() {
@@ -213,7 +213,7 @@ export function useKeyboardEvents() {
       keyboardListeners.delete(key)
     }
     localListeners.clear()
-    console.log('⌨️  Listeners locaux nettoyés')
+    // console.log('⌨️  Listeners locaux nettoyés')
   })
   
   return {

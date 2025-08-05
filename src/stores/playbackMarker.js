@@ -25,18 +25,10 @@ export const usePlaybackMarkerStore = defineStore('playbackMarker', () => {
   function setMarker(time) {
     markerTime.value = time
     console.log('🅿️ Marqueur P placé à:', time.toFixed(2) + 's', '→', markerPixelPosition.value?.toFixed(1) + 'px')
-    
-    // Debug: comparer avec le curseur de lecture
-    console.log('🅿️ Debug position:', {
-      markerTime: time,
-      markerPixels: markerPixelPosition.value,
-      hasTimeToPixels: !!timeToPixelsWithSignatures,
-      timeToPixelsFunction: timeToPixelsWithSignatures?.toString?.()?.substring(0, 50) + '...'
-    })
   }
   
   function clearMarker() {
-    console.log('🅿️ Marqueur P supprimé de:', markerTime.value?.toFixed(2) + 's')
+    console.log('🅿️ Marqueur P supprimé')
     markerTime.value = null
   }
   

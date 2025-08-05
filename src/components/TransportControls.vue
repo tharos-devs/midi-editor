@@ -357,7 +357,7 @@ function handlePlayPause() {
     
     // Si marqueur P présent, démarrer à cette position
     if (markerStore.hasMarker) {
-      console.log('🅿️ Démarrage depuis le marqueur P à:', markerStore.markerTime.toFixed(2) + 's')
+      // console.log('🅿️ Démarrage depuis le marqueur P à:', markerStore.markerTime.toFixed(2) + 's')
       seekTo(markerStore.markerTime)
     }
     
@@ -383,12 +383,7 @@ function handlePlaybackRateChange(newRate) {
 function handlePlaybackMarker() {
   // Utiliser la position du curseur store global qui suit les clics timeline
   const cursorTime = cursorStore.currentTime
-  console.log('🅿️ Touche P pressée à la position:', cursorTime.toFixed(2) + 's')
-  console.log('🅿️ Debug curseur:', {
-    composableCursor: cursor.currentTime.value.toFixed(2) + 's',
-    storeCursor: cursorStore.currentTime.toFixed(2) + 's', 
-    playerTime: currentTime.value.toFixed(2) + 's'
-  })
+  // console.log('🅿️ Touche P pressée à la position:', cursorTime.toFixed(2) + 's')
   markerStore.toggleMarker(cursorTime)
 }
 
@@ -461,7 +456,7 @@ onMounted(() => {
   
   // Configuration des raccourcis clavier
   setupKeyboardShortcuts()
-  console.log('⌨️  Raccourcis TransportControls configurés')
+  // console.log('⌨️  Raccourcis TransportControls configurés')
   
   localPlaybackRate.value = playbackRate.value
 })
