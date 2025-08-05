@@ -125,6 +125,7 @@ import { usePlaybackCursor } from '@/composables/usePlaybackCursor'
 import { useTimeSignature } from '@/composables/useTimeSignature'
 import { usePlaybackMarkerStore } from '@/stores/playbackMarker'
 import { usePlaybackCursorStore } from '@/stores/playbackCursor'
+import { useKeyboardEvents } from '@/composables/useKeyboardEvents'
 
 // Props
 const props = defineProps({
@@ -158,6 +159,7 @@ const cursor = usePlaybackCursor()
 const timeSignature = useTimeSignature()
 const markerStore = usePlaybackMarkerStore()
 const cursorStore = usePlaybackCursorStore()
+const keyboard = useKeyboardEvents()
 
 // Refs locales
 const localPlaybackRate = ref(1)
@@ -390,59 +392,61 @@ function handlePlaybackMarker() {
   markerStore.toggleMarker(cursorTime)
 }
 
-// Gestion des raccourcis clavier
-function handleKeyPress(event) {
-  if (!canPlay.value) return
+// Configuration des raccourcis clavier avec le nouveau système
+function setupKeyboardShortcuts() {
+  // Transport controls
+  keyboard.shortcuts.play(() => {
+    if (!canPlay.value) return false
+    handlePlayPause()
+    return true // Arrêter la propagation
+  })
   
-  // Éviter les conflits avec les champs de saisie
-  if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') {
-    return
-  }
+  keyboard.shortcuts.stop(() => {
+    if (!canPlay.value) return false
+    handleStop()
+    return true
+  }, {
+    condition: (event) => !event.ctrlKey && !event.metaKey // Éviter conflit avec Ctrl+S (save)
+  })
   
-  switch (event.code) {
-    case 'Space':
-      event.preventDefault()
-      handlePlayPause()
-      break
-    case 'KeyS':
-      if (!event.ctrlKey && !event.metaKey) {
-        event.preventDefault()
-        handleStop()
-      }
-      break
-    case 'KeyR':
-      if (!event.ctrlKey && !event.metaKey) {
-        event.preventDefault()
-        handleRewind()
-      }
-      break
-    case 'KeyL':
-      if (!event.ctrlKey && !event.metaKey) {
-        event.preventDefault()
-        toggleLoop()
-      }
-      break
-    case 'KeyP':
-      if (!event.ctrlKey && !event.metaKey) {
-        event.preventDefault()
-        handlePlaybackMarker()
-      }
-      break
-    case 'ArrowLeft':
-      if (event.shiftKey) {
-        event.preventDefault()
-        const newTime = Math.max(0, currentTime.value - 5)
-        seekTo(newTime)
-      }
-      break
-    case 'ArrowRight':
-      if (event.shiftKey) {
-        event.preventDefault()
-        const newTime = Math.min(totalDuration.value, currentTime.value + 5)
-        seekTo(newTime)
-      }
-      break
-    }
+  keyboard.shortcuts.rewind(() => {
+    if (!canPlay.value) return false
+    handleRewind()
+    return true
+  }, {
+    condition: (event) => !event.ctrlKey && !event.metaKey // Éviter conflit avec Ctrl+R (refresh)
+  })
+  
+  keyboard.shortcuts.loop(() => {
+    if (!canPlay.value) return false
+    toggleLoop()
+    return true
+  }, {
+    condition: (event) => !event.ctrlKey && !event.metaKey
+  })
+  
+  keyboard.shortcuts.marker(() => {
+    if (!canPlay.value) return false
+    handlePlaybackMarker()
+    return true
+  }, {
+    condition: (event) => !event.ctrlKey && !event.metaKey
+  })
+  
+  // Navigation temporelle
+  keyboard.shortcuts.seekLeft(() => {
+    if (!canPlay.value) return false
+    const newTime = Math.max(0, currentTime.value - 5)
+    seekTo(newTime)
+    return true
+  })
+  
+  keyboard.shortcuts.seekRight(() => {
+    if (!canPlay.value) return false
+    const newTime = Math.min(totalDuration.value, currentTime.value + 5)
+    seekTo(newTime)
+    return true
+  })
 }
 
 // Lifecycle
@@ -455,14 +459,16 @@ onMounted(() => {
     console.log('🔧 Curseur initialisé avec durée:', midiStore.midiInfo.duration)
   }
   
-  // Gestion des événements clavier
-  document.addEventListener('keydown', handleKeyPress)
+  // Configuration des raccourcis clavier
+  setupKeyboardShortcuts()
+  console.log('⌨️  Raccourcis TransportControls configurés')
+  
   localPlaybackRate.value = playbackRate.value
 })
 
 onUnmounted(() => {
-  document.removeEventListener('keydown', handleKeyPress)
   cursor.stopPlayback()
+  // Le nettoyage des listeners est automatique grâce au composable
 })
 </script>
 
