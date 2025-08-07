@@ -499,22 +499,30 @@ export function useTimeSignature() {
         const pixelsInMeasure = measureProgress * measure.measureWidth
         const result = measure.startPixel + pixelsInMeasure
         
-        // 🔍 DEBUG ALIGNEMENT NOTE vs CC: Analyser le problème signalé par l'utilisateur
-        if (Math.abs(timeInSeconds - 2.000) < 0.01 || Math.abs(timeInSeconds - 2.187812) < 0.01) {
-          const tempsNote = 2.000
-          const tempsCC = 2.187812
-          const isNote = Math.abs(timeInSeconds - tempsNote) < 0.01
-          const offsetTemporel = timeInSeconds - tempsNote // Offset depuis la note
-          const offsetPixelTheorique = (offsetTemporel / 0.5) * (PIXELS_PER_QUARTER.value) // Conversion théorique
-          
-          console.log(`🎯 ALIGNEMENT ${isNote ? 'NOTE D#6' : 'CC VAL0'}:`, {
+        // 🔍 DEBUG CRITIQUE: Analyser les temps exactement à 2.000s et autour
+        if (Math.abs(timeInSeconds - 2.000) < 0.001) {
+          console.log(`🎯 TEMPS EXACT 2.000s:`, {
             temps: timeInSeconds.toFixed(6) + 's',
-            offsetSecondes: offsetTemporel.toFixed(6) + 's',
-            pixelCalculé: result.toFixed(1) + 'px', 
-            pixelOffsetThéorique: isNote ? '0px' : `+${offsetPixelTheorique.toFixed(1)}px`,
-            measureProgress: (measureProgress * 100).toFixed(3) + '%',
+            pixelCalculé: result.toFixed(1) + 'px',
             mesure: i + 1,
-            problèmeAlignement: !isNote && Math.abs(offsetPixelTheorique) < 5 ? '🚨 OFFSET TROP FAIBLE' : '✅ OK'
+            startPixelMesure2: measure.startPixel.toFixed(1) + 'px',
+            measureWidth: measure.measureWidth.toFixed(1) + 'px',
+            thisIsFirstBeatMeasure2: '✅ PREMIER TEMPS MESURE 2'
+          })
+        }
+        
+        // DEBUG pour CC et notes autour de 2.187s
+        if (Math.abs(timeInSeconds - 2.187812) < 0.01) {
+          const offsetFromFirstBeat = timeInSeconds - 2.000 // Offset depuis le 1er temps
+          const offsetPixelTheorique = (offsetFromFirstBeat / 0.5) * (PIXELS_PER_QUARTER.value) // Théorique
+          
+          console.log(`🎯 ALIGNEMENT CC/NOTE @2.187s:`, {
+            temps: timeInSeconds.toFixed(6) + 's',
+            offsetSecondes: offsetFromFirstBeat.toFixed(6) + 's',
+            pixelCalculé: result.toFixed(1) + 'px', 
+            pixelOffsetThéorique: `+${offsetPixelTheorique.toFixed(1)}px`,
+            measureProgress: (measureProgress * 100).toFixed(3) + '%',
+            mesure: i + 1
           })
         }
         

@@ -102,6 +102,22 @@ const calculateLeftPosition = () => {
     // Arrondir à l'entier le plus proche pour éviter les décalages de sous-pixel
     position = Math.round(position) - 1
     
+    // 🎯 DEBUG NOTES MESURE 2: Capturer TOUTES les notes dans la plage de temps critique
+    if (noteTime > 1.9 && noteTime < 2.3) {
+      console.log(`🎵 NOTE ANALYSÉE:`, {
+        noteId: props.note.id,
+        noteName: props.note.name || props.note.pitch || 'N/A',
+        temps: noteTime.toFixed(6) + 's',
+        pixelBrut: (Math.round(position) + 1).toFixed(1) + 'px',  
+        pixelFinal: position + 'px',
+        // Vérifier si c'est exactement au 1er temps de mesure 2
+        estExactement2000s: Math.abs(noteTime - 2.0) < 0.001 ? '🎯 EXACTEMENT 2.000s' : '❌ PAS 2.000s',
+        offsetDepuis2000s: (noteTime - 2.0).toFixed(6) + 's',
+        // Calculer où devrait être le pixel pour un temps de 2.000s exactement
+        pixelPour2000s: timeToPixelsWithSignatures ? timeToPixelsWithSignatures(2.0).toFixed(1) + 'px' : 'N/A'
+      })
+    }
+    
     // Mettre à jour le cache
     cachedPosition.value = position
     lastNoteTime.value = noteTime
@@ -159,6 +175,7 @@ const fillStyle = computed(() => {
   const clampedVelocity = Math.max(0, Math.min(127, Math.round(midiVelocity)))
   
   // Debug temporaire
+  /*
   if (props.note.velocity !== 100) {
     console.log('🔊 VelocityBar debug:', {
       noteId: props.note.id,
@@ -168,7 +185,7 @@ const fillStyle = computed(() => {
       isUndefined: props.note.velocity === undefined
     })
   }
-  
+  */
   // Utiliser le cache si la vélocité n'a pas changé
   if (lastVelocityValue.value === clampedVelocity && cachedVelocityCalc.value) {
     return {

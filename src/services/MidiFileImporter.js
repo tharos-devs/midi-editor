@@ -1,5 +1,6 @@
 // services/MidiFileImporter.js - Service d'import MIDI extrait de midi.js
 import { Midi } from '@tonejs/midi'
+import { normalizeTime, normalizeCCTime, normalizeNoteTime, formatTime, debugTimeDifference, quantizeCCTime } from '@/utils/precision'
 
 export class MidiFileImporter {
   constructor() {
@@ -13,12 +14,14 @@ export class MidiFileImporter {
    * @returns {Object} Données MIDI formatées pour le store
    */
   async importFromFile(arrayBuffer, filename = '') {
+    console.log('🚨🚨🚨 DEBUT IMPORT MIDI FILE 🚨🚨🚨')
     try {
       // Charger avec Tone.js
       const toneMidi = new Midi(arrayBuffer)
       
       // Convertir au format interne
       const midiData = this.convertToInternalFormat(toneMidi, filename)
+      
       
       return {
         success: true,
@@ -45,8 +48,8 @@ export class MidiFileImporter {
     // Extraire les événements de contrôle globaux
     const controlEvents = this.extractControlEvents(toneMidi, midiInfo)
     
-    // Extraire et formater les pistes
-    const tracksData = this.extractTracks(toneMidi, midiInfo)
+    // Extraire et formater les pistes en passant les événements de contrôle
+    const tracksData = this.extractTracks(toneMidi, midiInfo, controlEvents.tempoEvents)
     
     // Calculer les tableaux globaux
     const allNotes = this.getAllNotes(tracksData.tracks)
@@ -171,7 +174,7 @@ export class MidiFileImporter {
   /**
    * Extraction et formatage des pistes
    */
-  extractTracks(toneMidi, midiInfo) {
+  extractTracks(toneMidi, midiInfo, tempoEvents = []) {
     const tracks = []
 
     toneMidi.tracks.forEach((track, trackIndex) => {
@@ -202,9 +205,46 @@ export class MidiFileImporter {
           const noteTicks = note.ticks || 0
           const noteDurationTicks = note.durationTicks || 0
 
-          const preciseTime = this.ticksToTimeAccurate(noteTicks, midiInfo)
-          const preciseEndTime = this.ticksToTimeAccurate(noteTicks + noteDurationTicks, midiInfo)
-          const preciseDuration = preciseEndTime - preciseTime
+          // PRÉCISION: Normaliser les temps à 6 décimales pour éviter les erreurs d'arrondi
+          const preciseTime = normalizeTime(note.time || 0)
+          const preciseEndTime = normalizeTime((note.time || 0) + (note.duration || 0))
+          const preciseDuration = normalizeTime(preciseEndTime - preciseTime)
+          
+          // 🎼 QUANTISATION TEMPORELLE: Aligner les notes sur la grille rythmique
+          const shouldQuantize = true // TODO: Option dans les settings
+          let finalTime = preciseTime
+          
+          if (shouldQuantize && trackIndex === 0) { // Quantifier seulement la piste principale pour test
+            // Quantifier sur 1/16èmes à 120 BPM (0.125s par 16ème)
+            const sixteenthNoteDuration = 0.125 // 60 / (120 * 4)
+            const quantizedTime = Math.round(preciseTime / sixteenthNoteDuration) * sixteenthNoteDuration
+            
+            // Log seulement si différence significative
+            if (Math.abs(quantizedTime - preciseTime) > 0.01) {
+              console.log(`🎼 QUANTISATION ${note.name || note.pitch}:`, {
+                tempsOriginal: preciseTime.toFixed(3) + 's',
+                tempsQuantifié: quantizedTime.toFixed(3) + 's',
+                différence: (quantizedTime - preciseTime).toFixed(3) + 's',
+                grille: '1/16 @ 120 BPM'
+              })
+            }
+            
+            finalTime = normalizeTime(quantizedTime)
+          }
+
+          // Debug des premières notes pour comparaison avec CC
+          if (trackIndex === 0 && noteIndex < 10) {
+            console.log(`🎵 Import Note #${noteIndex}:`, {
+              originalTime: note.time?.toFixed(3) + 's' || 'N/A',
+              originalTicks: note.ticks || 'N/A',
+              convertedTime: preciseTime.toFixed(3) + 's',
+              finalTime: finalTime.toFixed(3) + 's',
+              quantized: shouldQuantize && Math.abs(finalTime - preciseTime) > 0.01 ? '✅ OUI' : '❌ NON',
+              difference: ((finalTime - (note.time || 0)) * 1000).toFixed(1) + 'ms',
+              midi: note.midi,
+              name: note.name || note.pitch
+            })
+          }
 
           const noteData = {
             id: `${trackIndex}-${noteIndex}`,
@@ -216,8 +256,9 @@ export class MidiFileImporter {
             velocity: note.velocity || 0,
             duration: preciseDuration,
             durationTicks: note.durationTicks || 0,
-            time: preciseTime,
+            time: finalTime, // Utiliser le temps quantifié au lieu de preciseTime
             ticks: note.ticks || 0,
+            originalTime: preciseTime, // Conserver le temps original pour référence
             channel: track.channel !== undefined ? track.channel : 0,
             tempoAtStart: this.getTempoAtTicks(noteTicks, midiInfo),
             lastModified: Date.now()
@@ -236,17 +277,43 @@ export class MidiFileImporter {
 
           if (Array.isArray(ccEvents) && ccEvents.length > 0) {
             const processedCCEvents = ccEvents.map((cc, ccIndex) => {
-              const ccTime = cc.time || 0
               const ccTicks = cc.ticks || 0
+              
+              // PRÉCISION: Normaliser le temps CC à 6 décimales (pas de quantification)
+              const ccTime = normalizeTime(cc.time || 0)
               const ccValue = Math.max(0, Math.min(127, Math.round((cc.value || 0) * 127)))
+              
+              
+              // DEBUG SIMPLE: Temps bruts des premiers CC1 ET CC7
+              if (trackIndex === 0 && (ccNum === 1 || ccNum === 7) && ccIndex < 10) {
+                console.log(`🚨 CC${ccNum} RAW DATA #${ccIndex}:`, {
+                  time: cc.time,
+                  ticks: cc.ticks,
+                  value: cc.value,
+                  trackIndex,
+                  controller: ccNum
+                })
+              }
+
+              // Debug final avant stockage
+              if (trackIndex === 0 && ccNum === 1 && ccIndex < 3) {
+                console.log(`🔍 CC final object creation:`, {
+                  ccTime: ccTime,
+                  ccTicks: ccTicks,
+                  originalCcTime: cc.time,
+                  finalTime: ccTime
+                })
+              }
 
               return {
                 id: `cc-${trackIndex}-${ccNum}-${ccIndex}`,
                 trackId: trackIndex,
-                number: ccNum,
+                controller: ccNum, // Utiliser 'controller' au lieu de 'number'
+                number: ccNum, // Garder aussi 'number' pour compatibilité
                 value: ccValue,
                 time: ccTime,
                 ticks: ccTicks,
+                channel: track.channel !== undefined ? track.channel : 0,
                 lastModified: Date.now()
               }
             })
@@ -280,41 +347,8 @@ export class MidiFileImporter {
     return { tracks }
   }
 
-  /**
-   * Fonctions utilitaires pour les conversions temporelles
-   */
-  ticksToTimeAccurate(ticks, midiInfo, tempoEvents = []) {
-    if (tempoEvents.length === 0) {
-      const ppq = midiInfo.ppq || 480
-      const tempo = midiInfo.tempo || 120
-      return (ticks / ppq) * (60 / tempo)
-    }
 
-    let currentTime = 0
-    let currentTicks = 0
-    let currentTempo = midiInfo.tempo || 120
-    const ppq = midiInfo.ppq || 480
 
-    for (const tempoEvent of tempoEvents) {
-      const eventTicks = tempoEvent.ticks || 0
-
-      if (eventTicks > ticks) {
-        const ticksDiff = ticks - currentTicks
-        const timeDiff = (ticksDiff / ppq) * (60 / currentTempo)
-        return currentTime + timeDiff
-      } else {
-        const ticksDiff = eventTicks - currentTicks
-        const timeDiff = (ticksDiff / ppq) * (60 / currentTempo)
-        currentTime += timeDiff
-        currentTicks = eventTicks
-        currentTempo = tempoEvent.bpm
-      }
-    }
-
-    const remainingTicks = ticks - currentTicks
-    const remainingTime = (remainingTicks / ppq) * (60 / currentTempo)
-    return currentTime + remainingTime
-  }
 
   getTempoAtTicks(ticks, midiInfo, tempoEvents = []) {
     if (tempoEvents.length === 0) {
@@ -355,16 +389,21 @@ export class MidiFileImporter {
   getAllControlChanges(tracks) {
     const allCC = []
     
-    tracks.forEach(track => {
+    tracks.forEach((track, trackIndex) => {
       if (track.controlChanges && typeof track.controlChanges === 'object') {
+        const ccKeys = Object.keys(track.controlChanges)
+        // console.log(`🎛️ Piste ${trackIndex} (${track.name}): ${ccKeys.length} types de CC:`, ccKeys)
+        
         Object.values(track.controlChanges).forEach(ccArray => {
           if (Array.isArray(ccArray)) {
+            // console.log(`  → ${ccArray.length} événements CC pour ce type`)
             allCC.push(...ccArray)
           }
         })
       }
     })
 
+    // console.log(`🎛️ Total CC extraits du fichier MIDI: ${allCC.length}`)
     return allCC.sort((a, b) => a.time - b.time)
   }
 
