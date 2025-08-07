@@ -364,7 +364,6 @@ function onWheel(event) {
   } else {
     // Scroll vertical - PianoGrid gère sa propre navigation dans les notes
     // NE PAS faire event.preventDefault() pour laisser le scroll naturel
-    console.log('🎼 PianoGrid scroll vertical:', deltaY)
     
     // Le comportement de scroll vertical est naturel (pas besoin de code supplémentaire)
     // Le navigateur appliquera automatiquement le scroll sur le conteneur avec overflow-y

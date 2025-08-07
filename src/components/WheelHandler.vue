@@ -48,21 +48,21 @@ function handleWheel(event) {
       firstElement.dispatchEvent(syncEvent)
     }
     
-    console.log('🖱️ WheelHandler - Scroll horizontal global:', deltaX)
+    // console.log('🖱️ WheelHandler - Scroll horizontal global:', deltaX)
   } else {
     // ✅ SCROLL VERTICAL - Laisser les composants gérer eux-mêmes
     
     if (isPianoGrid) {
       // PianoGrid : Laisser passer le scroll vertical naturel (navigation notes)
-      console.log('🎼 WheelHandler - PianoGrid scroll vertical autorisé')
+      // console.log('🎼 WheelHandler - PianoGrid scroll vertical autorisé')
       return // NE PAS empêcher - laisser le scroll naturel
     } else if (isTimeLine) {
       // TimeLine : Laisser gérer son zoom focal
-      console.log('📏 WheelHandler - TimeLine zoom focal autorisé')
+      // console.log('📏 WheelHandler - TimeLine zoom focal autorisé')
       return // NE PAS empêcher - laisser TimeLine gérer
     } else {
       // Autres composants : Pas de comportement vertical spécial
-      console.log('🚫 WheelHandler - Scroll vertical bloqué sur autres composants')
+      // console.log('🚫 WheelHandler - Scroll vertical bloqué sur autres composants')
       event.preventDefault() // Empêcher le scroll sur les autres composants
     }
   }

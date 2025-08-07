@@ -81,9 +81,13 @@ export function useMidiPlayer() {
   const isLoaded = computed(() => midiStore.isLoaded)
 
   const canPlay = computed(() => {
-    return isLoaded.value &&
-      playbackEvents.value.length > 0 &&
-      canSendMidi.value
+    // Permettre la lecture si :
+    // - Il y a un fichier MIDI chargé ET des événements de playback, OU
+    // - Il y a des notes dans le store (même sans fichier chargé) ET MIDI est disponible
+    const hasLoadedFile = isLoaded.value && playbackEvents.value.length > 0
+    const hasManualNotes = midiStore.notes.length > 0
+    
+    return (hasLoadedFile || hasManualNotes) && canSendMidi.value
   })
 
   const currentTimeFormatted = computed(() => formatTime(currentTime.value))

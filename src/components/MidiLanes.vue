@@ -7,10 +7,13 @@
       :total-measures="totalMeasures"
       :visible-measures="visibleMeasures"
       :key="selectedLane.id || selectedLane.component"
+      @point-selected="(value) => emit('point-selected', value)"
+      @tempo-selected="(value) => emit('point-selected', value)"
     />
     <div v-else class="no-lane-selected">
       Sélectionnez une lane pour l'afficher
     </div>
+    
   </div>
 </template>
 
@@ -24,6 +27,8 @@ const props = defineProps({
     default: null
   }
 })
+
+const emit = defineEmits(['point-selected'])
 
 // Utiliser le composable useTimeSignature pour obtenir les données correctes
 const timeSignatureComposable = useTimeSignature()
@@ -47,6 +52,7 @@ const totalWidth = computed(() => {
     return 800
   }
 })
+
 
 // Générer la liste des mesures visibles
 const visibleMeasures = computed(() => {

@@ -46,21 +46,21 @@ export function usePlaybackCursor() {
   const injectedTimeToPixel = inject('timeToPixel', null)
   const injectedTotalWidth = inject('totalWidth', null)
   
-  console.log('💉 Injections reçues:', {
-    hasTimeToPixel: !!injectedTimeToPixel,
-    timeToPixelType: typeof injectedTimeToPixel?.value,
-    timeToPixelValue: injectedTimeToPixel?.value,
-    hasTotalWidth: !!injectedTotalWidth,
-    totalWidthValue: injectedTotalWidth?.value || injectedTotalWidth
-  })
+  // console.log('💉 Injections reçues:', {
+  //   hasTimeToPixel: !!injectedTimeToPixel,
+  //   timeToPixelType: typeof injectedTimeToPixel?.value,
+  //   timeToPixelValue: injectedTimeToPixel?.value,
+  //   hasTotalWidth: !!injectedTotalWidth,
+  //   totalWidthValue: injectedTotalWidth?.value || injectedTotalWidth
+  // })
 
   // ============ INITIALISATION DE LA DURÉE ============
   onMounted(() => {
-    console.log('🎯 PlaybackCursor monté')
+    // console.log('🎯 PlaybackCursor monté')
     
     // CORRECTION TEMPORAIRE: Augmenter le zoom si trop faible
     if (uiStore.horizontalZoom < 3) {
-      console.log('🔧 Zoom trop faible détecté:', uiStore.horizontalZoom, '→ Augmentation à 3x')
+      // console.log('🔧 Zoom trop faible détecté:', uiStore.horizontalZoom, '→ Augmentation à 3x')
       uiStore.setHorizontalZoom(3)
     }
     
@@ -69,14 +69,14 @@ export function usePlaybackCursor() {
     // Initialiser depuis le store MIDI
     if (midiStore.midiInfo?.duration) {
       totalDuration.value = midiStore.midiInfo.duration
-      console.log('📏 Durée initialisée:', totalDuration.value)
+      // console.log('📏 Durée initialisée:', totalDuration.value)
     }
     
     // Watcher pour mise à jour de la durée
     watch(() => midiStore.midiInfo?.duration, (newDuration) => {
       if (newDuration && newDuration > 0 && newDuration !== totalDuration.value) {
         totalDuration.value = newDuration
-        console.log('📏 Durée mise à jour:', newDuration)
+        // console.log('📏 Durée mise à jour:', newDuration)
       }
     }, { immediate: true })
   })

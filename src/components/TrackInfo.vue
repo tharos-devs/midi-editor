@@ -93,7 +93,6 @@
             @click="toggleMute"
             class="control-button"
           >
-            <el-icon><Mute /></el-icon>
             Mute
           </el-button>
           <el-button
@@ -102,7 +101,6 @@
             @click="toggleSolo"
             class="control-button"
           >
-            <el-icon><VideoPlay /></el-icon>
             Solo
           </el-button>
         </div>
@@ -131,6 +129,7 @@
             
             <!-- Slider vertical à droite avec labels alignés -->
             <div class="slider-container">
+            
               <el-slider
                 :model-value="selectedTrackInfo.volume"
                 :min="0"
@@ -141,30 +140,25 @@
                 @input="updateTrackVolume"
                 @change="updateTrackVolume"
               />
+            
+            <!--
+              <CustomSlider
+                :model-value="selectedTrackInfo.volume"
+                :min="0"
+                :max="127"
+                :show-tooltip="true"
+                vertical
+                height="120px"
+                @input="updateTrackVolume"
+                @change="updateTrackVolume"
+              />
+            -->
               <div class="volume-labels">
                 <span class="label-top">127</span>
                 <span class="label-middle">64</span>
                 <span class="label-bottom">0</span>
               </div>
             </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Statistiques de la piste -->
-      <div class="info-section stats-section">
-        <div class="track-stats">
-          <div class="stat">
-            <span class="label">Notes:</span>
-            <span class="value">{{ selectedTrackNotes.length }}</span>
-          </div>
-          <div class="stat">
-            <span class="label">CC Events:</span>
-            <span class="value">{{ selectedTrackCCCount }}</span>
-          </div>
-          <div class="stat">
-            <span class="label">Durée:</span>
-            <span class="value">{{ formatDuration(getTrackDuration()) }}</span>
           </div>
         </div>
       </div>
@@ -187,6 +181,7 @@ import { Mute, VideoPlay, Headset } from '@element-plus/icons-vue'
 import { useMidiStore } from '@/stores/midi'
 import { useMidiManager } from '@/composables/useMidiManager'
 import VuMeter from './VuMeter.vue'
+// import CustomSlider from './ui/CustomSlider.vue'
 
 // Store
 const midiStore = useMidiStore()
@@ -605,33 +600,6 @@ function toggleSolo() {
   position: absolute;
   bottom: 0;
   transform: translateY(50%);
-}
-
-.stats-section {
-  background: var(--lane-bg);
-  padding: 12px;
-  border-radius: 6px;
-}
-
-.track-stats {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.stat {
-  display: flex;
-  justify-content: space-between;
-  font-size: 12px;
-}
-
-.stat .label {
-  color: var(--track-instrument);
-}
-
-.stat .value {
-  font-weight: 500;
-  color: var(--panel-fg);
 }
 
 .no-track-selected {

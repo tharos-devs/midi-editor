@@ -159,10 +159,7 @@ export function useTimeSignature() {
 
   // NOUVEAU: Trouver le dernier événement MIDI (notes + control changes + tous événements)
   const getLastMidiEventTime = computed(() => {
-    // console.log('🔍 getLastMidiEventTime appelé - isLoaded:', midiStore.isLoaded)
-    
     if (!midiStore.isLoaded) {
-      // console.log('🔍 MIDI non chargé, retour durée par défaut:', midiStore.midiInfo.duration || 0)
       return midiStore.midiInfo.duration || 0
     }
     
@@ -214,19 +211,16 @@ export function useTimeSignature() {
       }
     }
     
-    const finalTime = Math.max(lastTime, midiStore.midiInfo.duration || 0)
+    // CORRECTION: Garantir une durée minimum pour nouveaux projets
+    const tempo = midiStore.getCurrentTempo || 120
+    const minimumDurationForDefaultMeasures = (DEFAULT_MEASURES * 4 * 60) / tempo // 32 mesures en secondes
     
-    // console.log('🎵 Calcul du dernier événement MIDI:', {
-    //   notes: midiStore.notes?.length || 0,
-    //   controlChanges: midiStore.midiCC?.length || 0,
-    //   tempoEvents: midiStore.tempoEvents?.length || 0,
-    //   timeSignatureEvents: midiStore.timeSignatureEvents?.length || 0,
-    //   keySignatureEvents: midiStore.keySignatureEvents?.length || 0,
-    //   lastEventTime: lastTime.toFixed(3) + 's',
-    //   midiFileDuration: (midiStore.midiInfo.duration || 0).toFixed(3) + 's',
-    //   finalResult: finalTime.toFixed(3) + 's'
-    // })
-    
+    const finalTime = Math.max(
+      lastTime, 
+      midiStore.midiInfo.duration || 0, 
+      minimumDurationForDefaultMeasures
+    )
+
     return finalTime
   })
 
@@ -248,30 +242,14 @@ export function useTimeSignature() {
         break
       }
     }
-    
-    // Debug pour voir les tempos utilisés
-    if (startTime < 2) {
-      console.log(`🎵 Mesure duration calc pour t=${startTime.toFixed(3)}s:`, {
-        tempoEventsCount: tempoEvents.length,
-        tempoTrouvé: currentTempo,
-        quarterNotes: quarterNotesPerMeasure,
-        durationSecondes: (quarterNotesPerMeasure * (60 / currentTempo)).toFixed(3)
-      })
-    }
-    
+       
     return quarterNotesPerMeasure * (60 / currentTempo)
   }
 
   // CORRIGÉ: Calculer les mesures jusqu'à la fin de la mesure contenant la dernière note
   const calculateTotalMeasures = computed(() => {
-    // console.log('📏 calculateTotalMeasures appelé:', {
-    //   isLoaded: midiStore.isLoaded,
-    //   midiInfoDuration: midiStore.midiInfo.duration || 0
-    // })
-    
     if (!midiStore.isLoaded) {
-      // console.log('📏 MIDI non chargé, utilisation default:', DEFAULT_MEASURES + ' mesures')
-      return DEFAULT_MEASURES
+       return DEFAULT_MEASURES
     }
     
     // Utiliser la fin du dernier événement MIDI au lieu de midiInfo.duration
@@ -279,8 +257,7 @@ export function useTimeSignature() {
     
     // CORRECTION: Si c'est un nouveau projet sans événements MIDI, utiliser une durée minimum
     const effectiveEventTime = lastEventTime > 0 ? lastEventTime : (DEFAULT_MEASURES * 4 * 60) / (midiStore.getCurrentTempo || 120)
-    console.log('📏 Durée effective calculée:', effectiveEventTime.toFixed(2) + 's', 'basée sur', lastEventTime > 0 ? 'événements MIDI' : 'durée par défaut')
-    
+
     const sections = getTimeSignatureSections.value
     const tempo = midiStore.getCurrentTempo || 120
     
@@ -301,22 +278,10 @@ export function useTimeSignature() {
         const measuresInSection = Math.ceil((sectionEnd - sectionStart) / measureDuration)
         totalMeasures += measuresInSection
         currentTime = sectionStart + (measuresInSection * measureDuration)
-        
-        console.log('📏 Section signature:', {
-          signature: `${section.signature.numerator}/${section.signature.denominator}`,
-          durée: (sectionEnd - sectionStart).toFixed(3) + 's',
-          mesuresCalculées: measuresInSection,
-          duréeCouverte: (measuresInSection * measureDuration).toFixed(3) + 's'
-        })
-      }
+       }
     }
     
     const result = Math.max(totalMeasures, 1)
-    console.log('📊 Calcul total mesures:', {
-      baseSur: 'Dernière note + mesures complètes',
-      totalMesures: result,
-      tempsCouvert: currentTime.toFixed(3) + 's'
-    })
     
     return result
   })
@@ -336,8 +301,7 @@ export function useTimeSignature() {
     // CORRECTION: Utiliser la durée basée sur le dernier événement MIDI au lieu de midiInfo.duration
     const lastEventTime = getLastMidiEventTime.value
     const totalDuration = lastEventTime > 0 ? lastEventTime : (DEFAULT_MEASURES * 4 * 60) / tempo
-    // console.log('📐 measuresWithSignatures utilise totalDuration =', totalDuration.toFixed(3) + 's (source: getLastMidiEventTime)')
-    
+
     // CORRECTION CRUCIALE: Étendre la dernière section jusqu'à la nouvelle durée
     if (sections.length > 0 && totalDuration > sections[sections.length - 1].endTime) {
       const oldEndTime = sections[sections.length - 1].endTime
@@ -346,21 +310,6 @@ export function useTimeSignature() {
         ...sections[sections.length - 1],
         endTime: totalDuration
       }
-      /*
-      console.log('🔧 Section finale étendue:', {
-        de: oldEndTime.toFixed(3) + 's',
-        à: totalDuration.toFixed(3) + 's',
-        extension: (totalDuration - oldEndTime).toFixed(3) + 's'
-      })
-      */
-    } else {
-      /*
-      console.log('🔧 Pas d\'extension nécessaire:', {
-        sectionsLength: sections.length,
-        totalDuration: totalDuration.toFixed(3) + 's',
-        lastSectionEnd: sections.length > 0 ? sections[sections.length - 1].endTime.toFixed(3) + 's' : 'N/A'
-      })
-      */
     }
     
     const measures = []
@@ -417,10 +366,7 @@ export function useTimeSignature() {
         measures.push(measure)
         measureNumber++
         cumulativePixels += measureWidth
-        
-        // Debug: log chaque mesure générée
-        // console.log(`📏 Mesure ${measure.number}: ${measure.startTime.toFixed(2)}s-${measure.endTime.toFixed(2)}s, largeur: ${measureWidth.toFixed(0)}px, cumul: ${cumulativePixels.toFixed(0)}px (section ${sectionIndex}, index ${i})`)
-      }
+       }
     }
     
     return measures
@@ -451,120 +397,15 @@ export function useTimeSignature() {
     
     const measures = measuresWithSignatures.value
     
-    // TEST DIAGNOSTIC FORCÉ: Vérifier quelques temps clés à chaque appel
-    if (window.diagCount === undefined && timeInSeconds > 0) {
-      window.diagCount = 1
-      console.log('🔍 DIAGNOSTIC FORCÉ - Structure des mesures:')
-      console.log(`🔍 ZOOM ACTUEL: ${uiStore.horizontalZoom || 'N/A'}, PIXELS_PER_QUARTER: ${PIXELS_PER_QUARTER.value}px`)
-      measures.slice(0, 5).forEach((m, i) => {
-        const quartesrNotesInMeasure = (m.endTime - m.startTime) / 0.5 // 0.5s = 1 noire à 120 BPM
-        const largeurThéorique = quartesrNotesInMeasure * PIXELS_PER_QUARTER.value // Correct: 4 * 120px = 480px
-        console.log(`  Mesure ${i+1}: ${m.startTime.toFixed(3)}s-${m.endTime.toFixed(3)}s, signature=${m.timeSignature?.numerator || m.beatsCount}/${m.timeSignature?.denominator || 4}, startPixel=${m.startPixel.toFixed(1)}px, width=${m.measureWidth.toFixed(1)}px, largeurThéo=${largeurThéorique.toFixed(1)}px`)
-      })
-    }
-    
-    // DEBUG SPÉCIAL: Détecter les temps importants ET le point mesure 3 
-    if (timeInSeconds > 10 || (timeInSeconds > 4.3 && timeInSeconds < 4.4)) {
-      const derniereMesure = measures[measures.length - 1]
-      console.log(`🔄 timeToPixelsWithSignatures - TEMPS IMPORTANT:`, {
-        temps: timeInSeconds.toFixed(6) + 's',
-        nbMesures: measures.length,
-        premiereMesure: measures[0] ? `${measures[0].startTime.toFixed(1)}s-${measures[0].endTime.toFixed(1)}s` : 'N/A',
-        derniereMesure: derniereMesure ? `${derniereMesure.startTime.toFixed(1)}s-${derniereMesure.endTime.toFixed(1)}s` : 'N/A',
-        mesureTheorique: (timeInSeconds / 2).toFixed(1), // 2s par mesure
-        horsLimites: timeInSeconds >= (derniereMesure?.endTime || 0) ? '🚨 HORS LIMITES' : '✅ OK'
-      })
-    }
-    
     for (let i = 0; i < measures.length; i++) {
       const measure = measures[i]
       
-      if (timeInSeconds >= measure.startTime && timeInSeconds < measure.endTime) {
-        // DEBUG: Analyser la mesure trouvée pour les temps critiques
-        if (timeInSeconds > 4.3 && timeInSeconds < 4.4) {
-          console.log(`🎯 MESURE TROUVÉE pour ${timeInSeconds.toFixed(6)}s:`, {
-            mesureIndex: i + 1,
-            signature: `${measure.timeSignature?.numerator || measure.beatsCount}/${measure.timeSignature?.denominator || 4}`,
-            timeSignature: measure.timeSignature,
-            beatsCount: measure.beatsCount,
-            startTime: measure.startTime.toFixed(3) + 's',
-            endTime: measure.endTime.toFixed(3) + 's',
-            duréeMesure: (measure.endTime - measure.startTime).toFixed(3) + 's',
-            measureStructure: Object.keys(measure)
-          })
-        }
-        
+      if (timeInSeconds >= measure.startTime && timeInSeconds < measure.endTime) {      
         const timeInMeasure = timeInSeconds - measure.startTime
         const measureProgress = timeInMeasure / (measure.endTime - measure.startTime)
         const pixelsInMeasure = measureProgress * measure.measureWidth
         const result = measure.startPixel + pixelsInMeasure
-        
-        // 🔍 DEBUG CRITIQUE: Analyser les temps exactement à 2.000s et autour
-        if (Math.abs(timeInSeconds - 2.000) < 0.001) {
-          console.log(`🎯 TEMPS EXACT 2.000s:`, {
-            temps: timeInSeconds.toFixed(6) + 's',
-            pixelCalculé: result.toFixed(1) + 'px',
-            mesure: i + 1,
-            startPixelMesure2: measure.startPixel.toFixed(1) + 'px',
-            measureWidth: measure.measureWidth.toFixed(1) + 'px',
-            thisIsFirstBeatMeasure2: '✅ PREMIER TEMPS MESURE 2'
-          })
-        }
-        
-        // DEBUG pour CC et notes autour de 2.187s
-        if (Math.abs(timeInSeconds - 2.187812) < 0.01) {
-          const offsetFromFirstBeat = timeInSeconds - 2.000 // Offset depuis le 1er temps
-          const offsetPixelTheorique = (offsetFromFirstBeat / 0.5) * (PIXELS_PER_QUARTER.value) // Théorique
-          
-          console.log(`🎯 ALIGNEMENT CC/NOTE @2.187s:`, {
-            temps: timeInSeconds.toFixed(6) + 's',
-            offsetSecondes: offsetFromFirstBeat.toFixed(6) + 's',
-            pixelCalculé: result.toFixed(1) + 'px', 
-            pixelOffsetThéorique: `+${offsetPixelTheorique.toFixed(1)}px`,
-            measureProgress: (measureProgress * 100).toFixed(3) + '%',
-            mesure: i + 1
-          })
-        }
-        
-        // TEST ALIGNEMENT: Diagnostic complet avec signatures  
-        if (timeInSeconds <= 5.0) {
-          console.log(`⚡ DIAGNOSTIC ${timeInSeconds.toFixed(6)}s:`, {
-            mesure: i + 1,
-            signature: `${measure.timeSignature?.numerator || measure.beatsCount}/${measure.timeSignature?.denominator || 4}`,
-            startTime: measure.startTime.toFixed(3) + 's',
-            endTime: measure.endTime.toFixed(3) + 's',
-            pixelCalculé: result.toFixed(1) + 'px',
-            startPixel: measure.startPixel.toFixed(1) + 'px',
-            measureWidth: measure.measureWidth.toFixed(1) + 'px'
-          })
-        }
-        
-        // TEST CRITIQUE: Comparer avec les pixels calculés pour les CC
-        if (timeInSeconds > 4.3 && timeInSeconds < 4.4) {
-          console.log(`🧪 TEST CALCUL POSITION pour ${timeInSeconds.toFixed(6)}s:`, {
-            mesure: i + 1,
-            signature: `${measure.timeSignature?.numerator || measure.beatsCount}/${measure.timeSignature?.denominator || 4}`,
-            timeInMeasure: timeInMeasure.toFixed(6) + 's',
-            measureProgress: (measureProgress * 100).toFixed(1) + '%',
-            measureWidth: measure.measureWidth.toFixed(1) + 'px',
-            pixelsInMeasure: pixelsInMeasure.toFixed(1) + 'px',
-            startPixel: measure.startPixel.toFixed(1) + 'px',
-            resultFinal: result.toFixed(1) + 'px'
-          })
-        }
-        
-        // Debug ZOOM et SIGNATURES - seulement pour temps critiques
-        if (timeInSeconds < 5) { // Test étendu
-          console.log(`🔄 MEASURE DEBUG ${timeInSeconds.toFixed(3)}s:`, {
-            mesure: measure.number,
-            startTime: measure.startTime.toFixed(3) + 's',
-            endTime: measure.endTime.toFixed(3) + 's',
-            measureDuration: (measure.endTime - measure.startTime).toFixed(3) + 's',
-            signature: `${measure.timeSignature.numerator}/${measure.timeSignature.denominator}`,
-            result: result.toFixed(1) + 'px'
-          })
-        }
-        
+
         return result
       }
     }
@@ -671,16 +512,6 @@ export function useTimeSignature() {
     if (measures.length === 0) return DEFAULT_MEASURES * PIXELS_PER_QUARTER.value * 4
     const lastMeasure = measures[measures.length - 1]
     const width = lastMeasure.startPixel + lastMeasure.measureWidth
-    
-    // console.log('📏 TotalWidth calculé:', {
-    //   measuresCount: measures.length,
-    //   lastMeasureEnd: lastMeasure.endTime?.toFixed(3) + 's',
-    //   lastMeasureStart: lastMeasure.startPixel?.toFixed(0) + 'px',
-    //   lastMeasureWidth: lastMeasure.measureWidth?.toFixed(0) + 'px',
-    //   newWidth: width.toFixed(0) + 'px',
-    //   oldWidth: '2640px',
-    //   changed: width !== 2640 ? '✅ CHANGED' : '❌ SAME'
-    // })
     
     return width
   })

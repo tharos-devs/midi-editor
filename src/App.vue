@@ -47,27 +47,45 @@
             </div>
           </div>
 
-          <!-- Horizontal Splitter -->
+          <!-- Horizontal Splitter - Conditionné par le bouton Edit -->
           <div
+            v-show="transportControlsRef?.showEditor"
             class="horizontal-splitter"
             @mousedown="startResizeMidiLanes"
           ></div>
 
-          <!-- MIDI Lanes -->
-          <div class="midi-lanes-container" :style="{ height: uiStore.midiLanesHeight + 'px' }">
+          <!-- MIDI Lanes - Conditionné par le bouton Edit -->
+          <div 
+            v-show="transportControlsRef?.showEditor" 
+            class="midi-lanes-container" 
+            :style="{ height: uiStore.midiLanesHeight + 'px' }">
             <div class="midi-lanes-content">
               <!-- Spacer gauche -->
               <div class="midi-lanes-spacer" :style="{ width: uiStore.pianoKeysWidth + 'px' }">
-                <MidiLaneInfos :selected-lane="selectedLane" />
+                <MidiLaneInfos 
+                  :selected-lane="selectedLane"
+                  :cc-number="selectedCCNumber"
+                  :cc-name="selectedCCName"
+                  :selected-point-value="selectedPointValue"
+                  :selected-point-id="selectedPointId"
+                  @update-point-value="handlePointValueUpdate"
+                />
               </div>
               
               <!-- Partie droite avec tabs et contenu -->
               <div class="midi-lanes-right">
                 <div class="midi-lanes-tabs">
-                  <MidiLaneTabs @tab-selected="handleLaneSelection" />
+                  <MidiLaneTabs 
+                    ref="midiLaneTabsRef" 
+                    @tab-selected="handleLaneSelection"
+                    @lanes-updated="handleLanesUpdated"
+                  />
                 </div>
                 <div class="midi-lanes-scroll sync-scroll-x">
-                  <MidiLanes :selected-lane="selectedLane" />
+                  <MidiLanes 
+                    :selected-lane="selectedLane" 
+                    @point-selected="handlePointSelection"
+                  />
                 </div>
               </div>
             </div>
@@ -91,7 +109,7 @@
 
       <!-- Transport Controls -->
       <TransportControls 
-        :show-debug="false"
+        ref="transportControlsRef"
         :show-progress-bar="true"
         :show-tempo="true"
       />
@@ -121,6 +139,11 @@ const uiStore = useUIStore()
 
 // Lane sélectionnée
 const selectedLane = ref(null)
+const selectedCCNumber = ref(null)
+const selectedCCName = ref('')
+const selectedPointValue = ref(null)
+const selectedPointId = ref(null)
+
 
 // Refs pour le scroll vertical piano/grid
 const pianoGridContainerRef = ref(null)
@@ -128,6 +151,12 @@ const pianoKeysContainerRef = ref(null)
 
 // Ref pour le ScrollController
 const scrollControllerRef = ref(null)
+
+// Ref pour MidiLaneTabs
+const midiLaneTabsRef = ref(null)
+
+// Ref pour TransportControls
+const transportControlsRef = ref(null)
 
 // Redimensionnement
 let isResizingTrackList = false
@@ -140,6 +169,60 @@ let startHeight = 0
 // Gestion de la sélection de lane
 const handleLaneSelection = (lane) => {
   selectedLane.value = lane
+  
+  // Extraire les informations CC si c'est une lane CC
+  if (lane.id && lane.id.startsWith('cc')) {
+    // S'assurer que ccNumber est bien un nombre
+    const ccNum = lane.props?.ccNumber
+    selectedCCNumber.value = typeof ccNum === 'number' ? ccNum : parseInt(ccNum) || null
+    selectedCCName.value = lane.props?.ccName
+  } else {
+    selectedCCNumber.value = null
+    selectedCCName.value = ''
+  }
+  
+  // Reset de la valeur du point
+  selectedPointValue.value = null
+  selectedPointId.value = null
+}
+
+// Gestion de la sélection de point CC
+const handlePointSelection = (pointData) => {
+  if (pointData === null) {
+    // Déselection
+    selectedPointValue.value = null
+    selectedPointId.value = null
+  } else if (typeof pointData === 'object' && pointData.value !== undefined) {
+    // Sélection avec objet complet
+    selectedPointValue.value = pointData.value
+    selectedPointId.value = pointData.id
+  } else {
+    // Compatibilité avec l'ancien format (juste la valeur)
+    selectedPointValue.value = pointData
+    selectedPointId.value = null
+  }
+}
+
+// Gestion de la mise à jour manuelle de la valeur d'un point CC
+const handlePointValueUpdate = (updateData) => {
+  console.log('🎛️ App.vue: Mise à jour manuelle point:', updateData)
+  
+  // Ici on peut émettre l'événement vers MidiLanes ou directement vers le store
+  // Pour l'instant, on peut passer par MidiLanes avec un événement personnalisé
+  const midiLanesDiv = document.querySelector('.midi-lanes-scroll')
+  if (midiLanesDiv) {
+    const customEvent = new CustomEvent('update-point-value', {
+      detail: updateData,
+      bubbles: true
+    })
+    midiLanesDiv.dispatchEvent(customEvent)
+  }
+}
+
+// Gestion de la mise à jour des lanes visibles depuis MidiLaneTabs  
+const handleLanesUpdated = (lanes) => {
+  // Cette fonction peut être utilisée pour d'autres logiques si nécessaire
+  console.log('🎛️ App.vue: Lanes mises à jour:', lanes.length)
 }
 
 // Synchronisation du scroll horizontal (générique via classe)
@@ -170,16 +253,9 @@ function handleScrollControllerChange(scrollData) {
   
   const scrollLeft = scrollData.scrollLeft
   
-  console.log('🔄 ScrollController sync:', {
-    newScrollLeft: scrollLeft.toFixed(1) + 'px',
-    source: scrollData.source,
-    syncElements: document.querySelectorAll('.sync-scroll-x').length
-  })
-  
   // Synchroniser tous les éléments avec la classe sync-scroll-x
-  document.querySelectorAll('.sync-scroll-x').forEach((div, index) => {
+  document.querySelectorAll('.sync-scroll-x').forEach((div) => {
     div.scrollLeft = scrollLeft
-    console.log(`✅ Sync élément ${index}: ${div.className} → ${scrollLeft.toFixed(1)}px`)
   })
   
   scrollSyncing = false
@@ -214,22 +290,17 @@ function handleGlobalWheel(event) {
       const syncEvent = new Event('scroll', { bubbles: true })
       firstElement.dispatchEvent(syncEvent)
     }
-    
-    console.log('🖱️ App.vue - Scroll horizontal global:', deltaX)
   } else {
     // ✅ SCROLL VERTICAL - Laisser les composants spécialisés gérer
     
     if (isPianoGrid) {
       // PianoGrid : Laisser passer le scroll vertical (il a sa propre gestion)
-      console.log('🎼 App.vue - PianoGrid scroll vertical autorisé')
       return // NE PAS empêcher
     } else if (isTimeLine) {
       // TimeLine : Laisser gérer son zoom focal
-      console.log('📏 App.vue - TimeLine zoom focal autorisé')
       return // NE PAS empêcher
     } else {
       // Autres composants : Pas de comportement vertical spécial
-      console.log('🚫 App.vue - Scroll vertical bloqué sur autres composants')
       event.preventDefault() // Empêcher le scroll sur les autres composants
     }
   }

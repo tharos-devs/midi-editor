@@ -39,6 +39,7 @@ export const useMidiStore = defineStore('midi', () => {
     ccVersion.value++
 
     console.log(`🔄 Réactivité déclenchée: ${reason} à ${new Date(timestamp).toLocaleTimeString()}`)
+    console.log(`🎛️ CC count après trigger: ${midiCC.value.length}`)
 
     // Forcer Vue à détecter le changement avec une nouvelle référence
     notes.value = [...notes.value]
@@ -57,7 +58,7 @@ export const useMidiStore = defineStore('midi', () => {
       // Remplacer la référence pour déclencher la réactivité
       tracks.value.splice(trackIndex, 1, updatedTrack)
       
-      console.log(`🎯 Mise à jour forcée piste ${trackId}: ${reason}`)
+      // console.log(`🎯 Mise à jour forcée piste ${trackId}: ${reason}`)
       triggerReactivity(`force-track-${trackId}-${reason}`)
     }
   }
@@ -81,7 +82,7 @@ export const useMidiStore = defineStore('midi', () => {
       
       tracks.value.splice(trackIndex, 1, updatedTrack)
       
-      console.log(`🔇 Mute piste ${trackId}: ${newMutedState}`)
+      // console.log(`🔇 Mute piste ${trackId}: ${newMutedState}`)
       triggerReactivity(`mute-${trackId}`)
       
       // NOUVEAU: Émettre un événement pour que le lecteur MIDI puisse réagir
@@ -112,7 +113,7 @@ export const useMidiStore = defineStore('midi', () => {
       
       tracks.value.splice(trackIndex, 1, updatedTrack)
       
-      console.log(`🎤 Solo piste ${trackId}: ${newSoloState}`)
+      // console.log(`🎤 Solo piste ${trackId}: ${newSoloState}`)
       triggerReactivity(`solo-${trackId}`)
       
       return true
@@ -139,7 +140,7 @@ export const useMidiStore = defineStore('midi', () => {
 
       tracks.value.splice(trackIndex, 1, updatedTrack)
       
-      console.log(`🔊 Volume piste ${trackId}: ${currentTrack.volume} → ${newVolume}`)
+      // console.log(`🔊 Volume piste ${trackId}: ${currentTrack.volume} → ${newVolume}`)
       triggerReactivity(`volume-${trackId}`)
       
       await nextTick()
@@ -161,7 +162,7 @@ export const useMidiStore = defineStore('midi', () => {
         return true
       }
 
-      console.log(`📝 Store: Mise à jour Pan piste ${trackId}: ${currentTrack.pan} → ${newPan}`)
+      // console.log(`📝 Store: Mise à jour Pan piste ${trackId}: ${currentTrack.pan} → ${newPan}`)
 
       const updatedTrack = {
         ...currentTrack,
@@ -171,7 +172,7 @@ export const useMidiStore = defineStore('midi', () => {
 
       tracks.value.splice(trackIndex, 1, updatedTrack)
       
-      console.log(`🎛️ Pan piste ${trackId}: ${currentTrack.pan} → ${newPan}`)
+      // console.log(`🎛️ Pan piste ${trackId}: ${currentTrack.pan} → ${newPan}`)
       triggerReactivity(`pan-${trackId}`)
       
       await nextTick()
@@ -269,7 +270,7 @@ export const useMidiStore = defineStore('midi', () => {
 
       tracks.value.splice(trackIndex, 1, updatedTrack)
       
-      console.log(`🎹 Program piste ${trackId}: ${currentTrack.program} → ${newProgram}`)
+      // console.log(`🎹 Program piste ${trackId}: ${currentTrack.program} → ${newProgram}`)
       triggerReactivity(`program-${trackId}`)
       
       await nextTick()
@@ -299,7 +300,7 @@ export const useMidiStore = defineStore('midi', () => {
 
       tracks.value.splice(trackIndex, 1, updatedTrack)
       
-      console.log(`🏦 Bank piste ${trackId}: ${currentTrack.bank} → ${newBank}`)
+      // console.log(`🏦 Bank piste ${trackId}: ${currentTrack.bank} → ${newBank}`)
       triggerReactivity(`bank-${trackId}`)
       
       await nextTick()
@@ -352,7 +353,7 @@ export const useMidiStore = defineStore('midi', () => {
     
     tracks.value = newTracks
     
-    console.log(`🔄 Piste ${trackId} déplacée de ${currentIndex} vers ${newIndex}`)
+    // console.log(`🔄 Piste ${trackId} déplacée de ${currentIndex} vers ${newIndex}`)
     triggerReactivity(`reorder-${trackId}`)
     
     return true
@@ -379,7 +380,7 @@ export const useMidiStore = defineStore('midi', () => {
     newTracks.splice(trackIndex + 1, 0, duplicatedTrack)
     tracks.value = newTracks
 
-    console.log(`📋 Piste ${trackId} dupliquée vers ${newTrackId}`)
+    // console.log(`📋 Piste ${trackId} dupliquée vers ${newTrackId}`)
     triggerReactivity(`duplicate-${trackId}`)
 
     return newTrackId
@@ -401,7 +402,7 @@ export const useMidiStore = defineStore('midi', () => {
     if (tracksToRemove.length > 0) {
       tracks.value = tracks.value.filter(track => !tracksToRemove.includes(track.id))
       
-      console.log(`🗑️ ${tracksToRemove.length} piste(s) vide(s) supprimée(s)`)
+      // console.log(`🗑️ ${tracksToRemove.length} piste(s) vide(s) supprimée(s)`)
       triggerReactivity(`remove-empty-tracks`)
     }
 
@@ -425,7 +426,7 @@ export const useMidiStore = defineStore('midi', () => {
 
     notes.value.splice(noteIndex, 1, updatedNote)
     
-    console.log(`🎵 Note ${noteId} mise à jour:`, updates)
+    // console.log(`🎵 Note ${noteId} mise à jour:`, updates)
     triggerReactivity(`note-update-${noteId}`)
     
     await nextTick()
@@ -440,7 +441,7 @@ export const useMidiStore = defineStore('midi', () => {
       if (success) updatedCount++
     }
 
-    console.log(`🎵 ${updatedCount}/${noteIds.length} notes mises à jour`)
+    // console.log(`🎵 ${updatedCount}/${noteIds.length} notes mises à jour`)
     return updatedCount
   }
 
@@ -453,7 +454,7 @@ export const useMidiStore = defineStore('midi', () => {
 
     notes.value.push(newNote)
     
-    console.log(`➕ Note ajoutée:`, newNote)
+    // console.log(`➕ Note ajoutée:`, newNote)
     triggerReactivity(`add-note-${newNote.id}`)
     
     return newNote.id
@@ -467,7 +468,7 @@ export const useMidiStore = defineStore('midi', () => {
 
     notes.value.splice(noteIndex, 1)
     
-    console.log(`❌ Note ${noteId} supprimée`)
+    // console.log(`❌ Note ${noteId} supprimée`)
     triggerReactivity(`delete-note-${noteId}`)
     
     return true
@@ -482,7 +483,7 @@ export const useMidiStore = defineStore('midi', () => {
       }
     }
 
-    console.log(`❌ ${deletedCount}/${noteIds.length} notes supprimées`)
+    // console.log(`❌ ${deletedCount}/${noteIds.length} notes supprimées`)
     return deletedCount
   }
 
@@ -497,7 +498,7 @@ export const useMidiStore = defineStore('midi', () => {
       time: note.time + 0.1 // Décaler légèrement pour éviter la superposition
     })
 
-    console.log(`📋 Note ${noteId} dupliquée vers ${newNoteId}`)
+    // console.log(`📋 Note ${noteId} dupliquée vers ${newNoteId}`)
     return newNoteId
   }
 
@@ -512,10 +513,15 @@ export const useMidiStore = defineStore('midi', () => {
 
     midiCC.value.push(newCC)
     
-    console.log(`➕ Control Change ajouté:`, newCC)
+    // console.log(`➕ Control Change ajouté:`, newCC)
     triggerReactivity(`add-cc-${newCC.id}`)
     
     return newCC.id
+  }
+
+  // Alias pour compatibilité avec CCLane
+  function addCC(ccData) {
+    return addControlChange(ccData)
   }
 
   async function updateControlChange(ccId, updates) {
@@ -533,11 +539,16 @@ export const useMidiStore = defineStore('midi', () => {
 
     midiCC.value.splice(ccIndex, 1, updatedCC)
     
-    console.log(`🎛️ Control Change ${ccId} mis à jour:`, updates)
+    // console.log(`🎛️ Control Change ${ccId} mis à jour:`, updates)
     triggerReactivity(`cc-update-${ccId}`)
     
     await nextTick()
     return true
+  }
+
+  // Alias pour compatibilité avec CCLane
+  function updateCC(ccId, updates) {
+    return updateControlChange(ccId, updates)
   }
 
   function deleteControlChange(ccId) {
@@ -548,10 +559,172 @@ export const useMidiStore = defineStore('midi', () => {
 
     midiCC.value.splice(ccIndex, 1)
     
-    console.log(`❌ Control Change ${ccId} supprimé`)
+    // console.log(`❌ Control Change ${ccId} supprimé`)
     triggerReactivity(`delete-cc-${ccId}`)
     
     return true
+  }
+
+  // ==========================================
+  // TEMPO EVENTS CRUD FUNCTIONS
+  // ==========================================
+
+  function addTempoEvent(tempoData) {
+    const tempoEvent = {
+      id: tempoData.id || `tempo-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      bpm: Math.max(20, Math.min(300, tempoData.bpm || 120)), // Limiter entre 20 et 300 BPM
+      time: tempoData.time || 0,
+      ticks: tempoData.ticks || 0,
+      lastModified: Date.now()
+    }
+
+    tempoEvents.value.push(tempoEvent)
+    tempoEvents.value.sort((a, b) => a.time - b.time) // Maintenir l'ordre chronologique
+
+    triggerReactivity(`add-tempo-${tempoEvent.id}`)
+    return tempoEvent.id
+  }
+
+  function updateTempoEvent(tempoId, updates) {
+    const tempoIndex = tempoEvents.value.findIndex(tempo => tempo.id === tempoId)
+    if (tempoIndex === -1) {
+      return false
+    }
+
+    const currentTempo = tempoEvents.value[tempoIndex]
+    const updatedTempo = {
+      ...currentTempo,
+      ...updates,
+      bpm: updates.bpm ? Math.max(20, Math.min(300, updates.bpm)) : currentTempo.bpm,
+      lastModified: Date.now()
+    }
+
+    tempoEvents.value.splice(tempoIndex, 1, updatedTempo)
+    tempoEvents.value.sort((a, b) => a.time - b.time) // Re-trier après modification
+
+    triggerReactivity(`tempo-update-${tempoId}`)
+    return true
+  }
+
+  function deleteTempoEvent(tempoId) {
+    const tempoIndex = tempoEvents.value.findIndex(tempo => tempo.id === tempoId)
+    if (tempoIndex === -1) {
+      return false
+    }
+
+    tempoEvents.value.splice(tempoIndex, 1)
+    
+    triggerReactivity(`delete-tempo-${tempoId}`)
+    return true
+  }
+
+  // 🚀 NETTOYAGE DÉFINITIF DES CC REDONDANTS
+  function optimizeMidiCC() {
+    const originalCount = midiCC.value.length
+    
+    if (originalCount === 0) return { removed: 0, remaining: 0 }
+    
+    // Grouper par piste et contrôleur
+    const ccByTrackAndController = {}
+    
+    midiCC.value.forEach(cc => {
+      const key = `${cc.trackId}-${cc.controller}`
+      if (!ccByTrackAndController[key]) {
+        ccByTrackAndController[key] = []
+      }
+      ccByTrackAndController[key].push(cc)
+    })
+    
+    // Optimiser chaque groupe séparément
+    const optimizedCC = []
+    
+    Object.values(ccByTrackAndController).forEach(ccGroup => {
+      // DEBUG: Analyser CC7 spécifiquement
+      const isCC7 = ccGroup.length > 0 && ccGroup[0].controller === 7
+      if (isCC7) {
+        console.log(`🎛️ AVANT FILTRAGE CC7: ${ccGroup.length} points`)
+        ccGroup.forEach((cc, i) => {
+          if (i < 10 || cc.time > 12) { // Premiers points + points proches de la mesure 7
+            console.log(`  CC7 #${i}: time=${cc.time.toFixed(6)}s, value=${cc.value}, ticks=${cc.ticks}`)
+          }
+        })
+      }
+      
+      if (ccGroup.length <= 2) {
+        // Moins de 3 points : garder tous
+        optimizedCC.push(...ccGroup)
+        return
+      }
+      
+      // Trier par temps
+      ccGroup.sort((a, b) => a.time - b.time)
+      
+      // Algorithme radical de simplification
+      const simplified = []
+      let i = 0
+      
+      while (i < ccGroup.length) {
+        simplified.push(ccGroup[i]) // Garder ce point
+        
+        // Chercher la plus longue ligne droite
+        if (i < ccGroup.length - 1) {
+          let j = i + 1
+          let lastValidJ = i + 1 // Garder le dernier point valide trouvé
+          
+          while (j < ccGroup.length - 1) {
+            const startPoint = ccGroup[i]
+            const midPoint = ccGroup[j]
+            const endPoint = ccGroup[j + 1]
+            
+            // Calculer valeur attendue sur ligne droite
+            const expectedValue = startPoint.value + 
+              (endPoint.value - startPoint.value) * 
+              (midPoint.time - startPoint.time) / (endPoint.time - startPoint.time)
+            
+            // Tolérance TRÈS stricte pour ligne droite (réduite de 1.0 à 0.1)
+            if (Math.abs(midPoint.value - expectedValue) <= 0.1) {
+              lastValidJ = j + 1 // Mettre à jour le dernier point valide (endPoint)
+              j++ // Point aligné, continuer
+            } else {
+              break // Plus aligné, arrêter
+            }
+          }
+          
+          // CORRECTION: Ajouter le dernier point de la ligne droite si on en a trouvé une
+          if (lastValidJ > i + 1) {
+            simplified.push(ccGroup[lastValidJ - 1]) // Ajouter le point final de la ligne droite
+          }
+          
+          i = j // Sauter tous les points intermédiaires
+        } else {
+          i++
+        }
+      }
+      
+      // DEBUG: Analyser CC7 après filtrage
+      if (isCC7) {
+        console.log(`🎛️ APRÈS FILTRAGE CC7: ${simplified.length} points gardés`)
+        simplified.forEach((cc, i) => {
+          console.log(`  CC7 gardé #${i}: time=${cc.time.toFixed(6)}s, value=${cc.value}`)
+        })
+      }
+      
+      optimizedCC.push(...simplified)
+    })
+    
+    // Remplacer les données
+    midiCC.value = optimizedCC
+    
+    const removedCount = originalCount - optimizedCC.length
+    console.log(`🚀 OPTIMISATION MIDI CC: ${removedCount} points supprimés (${originalCount} → ${optimizedCC.length})`)
+    
+    triggerReactivity('optimize-midi-cc')
+    
+    return {
+      removed: removedCount,
+      remaining: optimizedCC.length,
+      percentage: ((removedCount / originalCount) * 100).toFixed(1)
+    }
   }
 
   async function updateMultipleControlChanges(ccIds, updates) {
@@ -562,7 +735,7 @@ export const useMidiStore = defineStore('midi', () => {
       if (success) updatedCount++
     }
 
-    console.log(`🎛️ ${updatedCount}/${ccIds.length} Control Changes mis à jour`)
+    // console.log(`🎛️ ${updatedCount}/${ccIds.length} Control Changes mis à jour`)
     return updatedCount
   }
 
@@ -677,10 +850,12 @@ export const useMidiStore = defineStore('midi', () => {
   // ==========================================
 
   function resetStore() {
+    console.log('🔄 🚨 RESET STORE MIDI 🚨 - CC avant reset:', midiCC.value.length)
     notes.value = []
     tracks.value = []
     midiInfo.value = {}
     midiCC.value = []
+    console.log('🔄 Après reset - CC count:', midiCC.value.length)
     tempoEvents.value = []
     timeSignatureEvents.value = []
     keySignatureEvents.value = []
@@ -698,6 +873,13 @@ export const useMidiStore = defineStore('midi', () => {
     console.log('🔄 Store réinitialisé')
   }
 
+  function forceCCUpdate() {
+    console.log('🎛️ Force CC update - CC count:', midiCC.value.length)
+    ccVersion.value++
+    midiCC.value = [...midiCC.value]
+    triggerReactivity('force-cc-update')
+  }
+
   // ==========================================
   // ACTIONS DE SÉLECTION
   // ==========================================
@@ -706,7 +888,7 @@ export const useMidiStore = defineStore('midi', () => {
     if (selectedTrack.value !== trackId) {
       selectedTrack.value = trackId
       selectedNote.value = null
-      console.log(`🎯 Piste sélectionnée: ${trackId}`)
+      // console.log(`🎯 Piste sélectionnée: ${trackId}`)
     }
   }
 
@@ -715,14 +897,14 @@ export const useMidiStore = defineStore('midi', () => {
     if (note) {
       selectedNote.value = noteId
       selectedTrack.value = note.trackId
-      console.log(`🎵 Note sélectionnée: ${noteId}`)
+      // console.log(`🎵 Note sélectionnée: ${noteId}`)
     }
   }
 
   function clearSelection() {
     selectedTrack.value = null
     selectedNote.value = null
-    console.log('🚫 Sélection effacée')
+    // console.log('🚫 Sélection effacée')
   }
 
   // ==========================================
@@ -914,6 +1096,37 @@ export const useMidiStore = defineStore('midi', () => {
     })
   }
 
+  function debugCCLanes() {
+    console.log('\n🎛️ === DEBUG CC LANES ===')
+    console.log(`Total CC dans le store: ${midiCC.value.length}`)
+    console.log(`Piste sélectionnée: ${selectedTrack.value}`)
+    
+    if (midiCC.value.length > 0) {
+      console.log('Premier CC:', midiCC.value[0])
+      console.log('Structure du premier CC:', Object.keys(midiCC.value[0]))
+      
+      // Grouper par piste
+      const ccByTrack = {}
+      midiCC.value.forEach(cc => {
+        if (!ccByTrack[cc.trackId]) ccByTrack[cc.trackId] = []
+        ccByTrack[cc.trackId].push(cc)
+      })
+      
+      console.log('CC par piste:')
+      Object.entries(ccByTrack).forEach(([trackId, ccs]) => {
+        const controllers = [...new Set(ccs.map(cc => cc.controller))].sort((a,b) => a-b)
+        console.log(`  Piste ${trackId}: ${ccs.length} CC, controllers: [${controllers.join(', ')}]`)
+      })
+    }
+    
+    if (selectedTrack.value !== null) {
+      const trackCC = midiCC.value.filter(cc => cc.trackId === selectedTrack.value)
+      const controllers = [...new Set(trackCC.map(cc => cc.controller))].sort((a,b) => a-b)
+      console.log(`\nPiste sélectionnée ${selectedTrack.value}: ${trackCC.length} CC, controllers: [${controllers.join(', ')}]`)
+    }
+    console.log('=== FIN DEBUG CC ===\n')
+  }
+
   // ==========================================
   // FONCTION DEPRECATED (pour compatibilité)
   // ==========================================
@@ -986,9 +1199,17 @@ export const useMidiStore = defineStore('midi', () => {
 
     // Actions de modification des Control Changes
     addControlChange,
+    addCC, // Alias
     updateControlChange,
+    updateCC, // Alias
     deleteControlChange,
     updateMultipleControlChanges,
+    optimizeMidiCC, // Nettoyage définitif des CC redondants
+
+    // Actions de modification des Tempo Events
+    addTempoEvent,
+    updateTempoEvent,
+    deleteTempoEvent,
 
     // Getters
     getTrackById,
@@ -1020,6 +1241,8 @@ export const useMidiStore = defineStore('midi', () => {
     getUpdatedNote,
     debugTrackState,
     debugStoreState,
+    debugCCLanes, // Debug CC lanes
+    forceCCUpdate, // Force CC reactivity
     exportToToneMidi // Deprecated
   }
 })

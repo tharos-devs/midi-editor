@@ -221,16 +221,6 @@ export function useGridRenderer(options = {}) {
           }
         }
         
-        // DEBUG: Comparer l'ancienne vs nouvelle méthode pour mesure 1
-        if (measure.number === 1 && beatIndex === 1) {
-          const oldPosition = measure.startPixel + beatIndex * measure.beatWidth
-          console.log(`🔧 CORRECTION BEAT POSITION - Beat ${beatIndex + 1} mesure ${measure.number}:`, {
-            beatTime: beatTime.toFixed(3) + 's',
-            anciennePosition: oldPosition.toFixed(1) + 'px',
-            nouvellePosition: beatPosition.toFixed(1) + 'px',
-            correction: (beatPosition - oldPosition).toFixed(1) + 'px'
-          })
-        }
         beats.push({
           id: `beat-${measure.number}-${beatIndex + 1}`,
           type: 'beat',

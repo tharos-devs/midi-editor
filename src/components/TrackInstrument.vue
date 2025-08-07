@@ -9,13 +9,19 @@
     @dragover.prevent="onDragOver"
     @drop.prevent="onDrop"
   >
-    <!-- Bande de couleur cliquable -->
-    <div 
-      class="color-band" 
-      :style="{ backgroundColor: track.color }"
-      @click.stop="showColorPicker = true"
-      title="Cliquer pour changer la couleur"
-    ></div>
+    <!-- Composant ColorPicker avec slot personnalisé -->
+    <ColorPicker
+      v-model="trackColor"
+      @change="onColorChange"
+      trigger-tooltip="Cliquer pour changer la couleur"
+    >
+      <template #trigger>
+        <div 
+          class="color-band" 
+          :style="{ backgroundColor: track.color }"
+        ></div>
+      </template>
+    </ColorPicker>
 
     <!-- Contenu principal -->
     <div class="track-content">
@@ -135,38 +141,6 @@
         </div>
       </div>
     </div>
-
-    <!-- Sélecteur de couleur -->
-    <el-dialog
-      v-model="showColorPicker"
-      title="Choisir une couleur"
-      width="300px"
-      align-center
-      append-to-body
-      :z-index="3000"
-      destroy-on-close
-    >
-      <div class="color-picker">
-        <div class="color-grid">
-          <div
-            v-for="color in colorPresets"
-            :key="color"
-            class="color-option"
-            :style="{ backgroundColor: color }"
-            @click="changeTrackColor(color)"
-            :class="{ selected: track.color === color }"
-          ></div>
-        </div>
-        <div class="custom-color">
-          <label>Couleur personnalisée:</label>
-          <input
-            type="color"
-            :value="track.color"
-            @change="changeTrackColor($event.target.value)"
-          />
-        </div>
-      </div>
-    </el-dialog>
   </div>
 </template>
 
@@ -174,6 +148,7 @@
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { Plus } from '@element-plus/icons-vue'
 import { useMidiStore } from '@/stores/midi'
+import ColorPicker from '@/components/ui/ColorPicker.vue'
 
 // Props
 const props = defineProps({
@@ -205,7 +180,6 @@ const midiStore = useMidiStore()
 
 // État local
 const showExtendedControls = ref(false)
-const showColorPicker = ref(false)
 const editingName = ref(false)
 const tempTrackName = ref('')
 const nameInput = ref(null)
@@ -228,13 +202,13 @@ const midiSupported = ref(false)
 const isDragging = ref(false)
 const dragOverClass = ref('')
 
-// Couleurs prédefinies
-const colorPresets = [
-  '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7',
-  '#DDA0DD', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E9',
-  '#F39C12', '#E74C3C', '#9B59B6', '#3498DB', '#2ECC71',
-  '#1ABC9C', '#34495E', '#95A5A6', '#E67E22', '#C0392B'
-]
+// Computed pour la couleur de la piste
+const trackColor = computed({
+  get: () => props.track.color,
+  set: (value) => {
+    // Cette fonction ne sera pas appelée directement car on utilise @change
+  }
+})
 
 // Computed
 const isSelected = computed(() => midiStore.selectedTrack === props.track.id)
@@ -336,6 +310,11 @@ function getTrackNumber() {
   return index + 1
 }
 
+// Gestionnaire de changement de couleur
+async function onColorChange(color) {
+  await midiStore.updateTrackColor(props.track.id, color)
+}
+
 // Gestionnaires d'événements
 function selectTrack() {
   midiStore.selectTrack(props.track.id)
@@ -384,11 +363,6 @@ async function saveTrackName() {
 function cancelEditName() {
   editingName.value = false
   tempTrackName.value = props.track.name
-}
-
-async function changeTrackColor(color) {
-  await midiStore.updateTrackColor(props.track.id, color)
-  showColorPicker.value = false
 }
 
 // Gestionnaires avec débounce pour le volume
@@ -597,14 +571,11 @@ function onDrop(event) {
 }
 
 .color-band {
+  position: absolute;
   width: 6px;
+  height: 100%;
   min-width: 6px;
-  cursor: pointer;
   transition: width 0.2s ease;
-}
-
-.color-band:hover {
-  width: 8px;
 }
 
 .track-content {
@@ -789,7 +760,6 @@ function onDrop(event) {
 .channel-select,
 .output-select {
   flex: 1;
- 
 }
 
 .pan-control {
@@ -814,57 +784,6 @@ function onDrop(event) {
   color: var(--track-details);
   min-width: 24px;
   text-align: right;
-}
-
-.color-picker {
-  padding: 16px 0;
-}
-
-.color-grid {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 8px;
-  margin-bottom: 16px;
-}
-
-.color-option {
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
-  cursor: pointer;
-  border: 2px solid transparent;
-  transition: all 0.2s ease;
-}
-
-.color-option:hover {
-  transform: scale(1.1);
-  border-color: var(--menu-active-fg);
-}
-
-.color-option.selected {
-  border-color: var(--menu-active-fg);
-  box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.3);
-}
-
-.custom-color {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border-color);
-}
-
-.custom-color label {
-  font-size: 12px;
-  color: var(--track-instrument);
-}
-
-.custom-color input[type="color"] {
-  width: 32px;
-  height: 32px;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
 }
 
 /* Styles pour les composants Element Plus */

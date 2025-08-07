@@ -55,8 +55,8 @@ function updateOutputs() {
 
   midiOutputs.value = outputs
   
-  console.log(`🎹 ${outputs.size} sortie(s) MIDI disponible(s):`, 
-    Array.from(outputs.values()).map(o => o.name))
+  // console.log(`🎹 ${outputs.size} sortie(s) MIDI disponible(s):`, 
+  //   Array.from(outputs.values()).map(o => o.name))
 }
 
 // Obtenir une sortie MIDI par ID
@@ -87,7 +87,7 @@ async function playNote({ midi, velocity = 100, channel = 0, outputId = 'default
     
     // CORRECTION: Vérifier si une note identique joue déjà
     if (activeNotes.has(noteKey)) {
-      console.log(`⚠️ Note déjà active: ${getMidiNoteName(midi)}, arrêt de la précédente`)
+      // console.log(`⚠️ Note déjà active: ${getMidiNoteName(midi)}, arrêt de la précédente`)
       // Arrêter la note précédente
       const noteOffMessage = [
         0x80 | (channel & 0x0F),
@@ -107,7 +107,7 @@ async function playNote({ midi, velocity = 100, channel = 0, outputId = 'default
 
     // CORRECTION: Envoyer le message Note On
     output.send(noteOnMessage)
-    console.log(`🎵 Note ON envoyée: ${getMidiNoteName(midi)} (${midi}) - Canal ${channel} - Vélocité ${velocity}`)
+    // console.log(`🎵 Note ON envoyée: ${getMidiNoteName(midi)} (${midi}) - Canal ${channel} - Vélocité ${velocity}`)
     
     // Tracker la note active
     const noteInfo = {
@@ -151,7 +151,7 @@ async function stopNote({ midi, channel = 0, outputId = 'default' }) {
     
     // CORRECTION: Vérifier si la note est vraiment active avant d'envoyer Note Off
     if (!activeNotes.has(noteKey)) {
-      console.log(`⚠️ Tentative d'arrêt d'une note non active: ${getMidiNoteName(midi)} (${midi})`)
+      // console.log(`⚠️ Tentative d'arrêt d'une note non active: ${getMidiNoteName(midi)} (${midi})`)
       // On envoie quand même le Note Off au cas où
     }
 
@@ -164,7 +164,7 @@ async function stopNote({ midi, channel = 0, outputId = 'default' }) {
 
     // Envoyer le message Note Off
     output.send(noteOffMessage)
-    console.log(`🎵 Note OFF envoyée: ${getMidiNoteName(midi)} (${midi}) - Canal ${channel}`)
+    // console.log(`🎵 Note OFF envoyée: ${getMidiNoteName(midi)} (${midi}) - Canal ${channel}`)
     
     // Nettoyer les données de la note active
     const noteInfo = activeNotes.get(noteKey)
@@ -206,7 +206,7 @@ async function stopAllNotesOnChannel(channel = 0, outputId = 'default') {
       }
     }
     
-    console.log(`🔇 Toutes les notes arrêtées sur le canal ${channel}`)
+    // console.log(`🔇 Toutes les notes arrêtées sur le canal ${channel}`)
     return true
 
   } catch (error) {
@@ -230,7 +230,7 @@ async function sendControlChange({ cc, value, channel = 0, outputId = 'default' 
     ]
 
     output.send(ccMessage)
-    console.log(`🎛️ CC envoyé: CC${cc} = ${value} sur canal ${channel}`)
+    // console.log(`🎛️ CC envoyé: CC${cc} = ${value} sur canal ${channel}`)
     return true
 
   } catch (error) {

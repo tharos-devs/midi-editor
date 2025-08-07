@@ -158,12 +158,12 @@ const onTrackSizeChanged = (sizeInfo) => {
 const onTrackReorder = async (reorderData) => {
   const { draggedTrackId, targetIndex, position } = reorderData
   
-  console.log(`🎯 Réorganisation demandée:`, {
-    draggedTrackId,
-    targetIndex,
-    position,
-    currentTracks: tracks.value.map(t => `${t.id}:${t.name}`)
-  })
+  // console.log(`🎯 Réorganisation demandée:`, {
+  //   draggedTrackId,
+  //   targetIndex,
+  //   position,
+  //   currentTracks: tracks.value.map(t => `${t.id}:${t.name}`)
+  // })
 
   // Mettre à jour l'état du drag
   dragState.isDragging = true
@@ -208,8 +208,8 @@ const onTrackReorder = async (reorderData) => {
         showClose: true
       })
       /*
-      console.log(`✅ Piste ${draggedTrackId} déplacée avec succès`)
-      console.log(`📋 Nouvel ordre:`, tracks.value.map(t => `${t.id}:${t.name}`))
+      // console.log(`✅ Piste ${draggedTrackId} déplacée avec succès`)
+      // console.log(`📋 Nouvel ordre:`, tracks.value.map(t => `${t.id}:${t.name}`))
       */
 
       // Déclencher une animation de feedback
@@ -328,9 +328,9 @@ if (process.env.NODE_ENV === 'development') {
       const newOrder = newTracks.map(t => t.id).join(',')
       /*
       if (oldOrder !== newOrder) {
-        console.log('🔄 Ordre des pistes changé:')
-        console.log('Ancien:', oldTracks.map((t, i) => `${i + 1}.${t.name}`))
-        console.log('Nouveau:', newTracks.map((t, i) => `${i + 1}.${t.name}`))
+        // console.log('🔄 Ordre des pistes changé:')
+        // console.log('Ancien:', oldTracks.map((t, i) => `${i + 1}.${t.name}`))
+        // console.log('Nouveau:', newTracks.map((t, i) => `${i + 1}.${t.name}`)
       }
       */
     }

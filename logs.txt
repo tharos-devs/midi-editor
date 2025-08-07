@@ -1,34 +1,10 @@
-TimeLine.vue:239 📏 Sources de scroll: {clickXInViewport: '1486.0', timelineLeft: '587.0', relativeX: '899.0', timelineParent: 0, timeline: 0, …}
-TimeLine.vue:263 🔧 CALCUL POSITION (AVEC scrollLeft): {clickViewport: '1486.0px', timelineLeft: '587.0px', relativeX: '899.0px', scrollLeft: '0.0px', absolute: '899.0px', …}
-TimeLine.vue:275 🔍 DIAGNOSTIC calcul pixels: {relativeX: '899.0', scrollLeft: '0.0', somme: '899.0', largeurTotale: 4080, dépassement: '✅ OK', …}
-TimeLine.vue:309 🔬 Test cohérence conversion: {clicPixels: '899.0', calculatedTime: '3.746s', backToPixels: '899.0', difference: '0.0px', coherent: '✅'}
-TimeLine.vue:321 🔍 Temps calculé (SANS LIMITATION): {tempsCalculé: '3.745964s', duréeMIDI: '16.560061s', différence: '-12.814s', status: 'AUCUNE LIMITATION APPLIQUÉE'}
-TimeLine.vue:329 🔍 AVANT seekTo: {totalWidth: 4080, targetTime: '3.745964s', expectedPixels: '899.0px'}
-useTimeSignature.js:162 🔍 getLastMidiEventTime appelé - isLoaded: true
-useTimeSignature.js:219 🎵 Calcul du dernier événement MIDI: {notes: 31, controlChanges: 848, tempoEvents: 35, timeSignatureEvents: 4, keySignatureEvents: 1, …}
-useTimeSignature.js:162 🔍 getLastMidiEventTime appelé - isLoaded: true
-useTimeSignature.js:219 🎵 Calcul du dernier événement MIDI: {notes: 31, controlChanges: 848, tempoEvents: 35, timeSignatureEvents: 4, keySignatureEvents: 1, …}
-useTimeSignature.js:299 📐 measuresWithSignatures utilise totalDuration = 16.560s (source: getLastMidiEventTime)
-useTimeSignature.js:315 🔧 Pas d'extension nécessaire: {sectionsLength: 4, totalDuration: '16.560s', lastSectionEnd: '16.560s'}
-useTimeSignature.js:343 🔢 Section 0: 4/4, durée: 4.00s, mesureDuration: 2.00s, mesuresCalculées: 2
-useTimeSignature.js:378 📏 Mesure 1: 0.00s-2.00s, largeur: 480px, cumul: 480px (section 0, index 0)
-useTimeSignature.js:378 📏 Mesure 2: 2.00s-4.00s, largeur: 480px, cumul: 960px (section 0, index 1)
-useTimeSignature.js:343 🔢 Section 1: 3/4, durée: 1.50s, mesureDuration: 1.50s, mesuresCalculées: 1
-useTimeSignature.js:378 📏 Mesure 3: 4.00s-5.50s, largeur: 360px, cumul: 1320px (section 1, index 0)
-useTimeSignature.js:343 🔢 Section 2: 6/8, durée: 1.50s, mesureDuration: 1.50s, mesuresCalculées: 1
-useTimeSignature.js:378 📏 Mesure 4: 5.50s-7.00s, largeur: 360px, cumul: 1680px (section 2, index 0)
-useTimeSignature.js:343 🔢 Section 3: 4/4, durée: 9.56s, mesureDuration: 2.00s, mesuresCalculées: 5
-useTimeSignature.js:378 📏 Mesure 5: 7.00s-9.00s, largeur: 480px, cumul: 2160px (section 3, index 0)
-useTimeSignature.js:378 📏 Mesure 6: 9.00s-11.00s, largeur: 480px, cumul: 2640px (section 3, index 1)
-useTimeSignature.js:378 📏 Mesure 7: 11.00s-13.00s, largeur: 480px, cumul: 3120px (section 3, index 2)
-useTimeSignature.js:378 📏 Mesure 8: 13.00s-15.00s, largeur: 480px, cumul: 3600px (section 3, index 3)
-useTimeSignature.js:378 📏 Mesure 9: 15.00s-16.56s, largeur: 480px, cumul: 4080px (section 3, index 4)
-useTimeSignature.js:524 📏 TotalWidth calculé: {measuresCount: 9, lastMeasureEnd: '16.560s', lastMeasureStart: '3600px', lastMeasureWidth: '480px', newWidth: '4080px', …}
-playbackCursor.js:114 🎯 Seek (Timeline Click): 3.745964s → 899.0px {storeTotalWidth: 4080, pixelPos: '899.0', tempsOriginal: '3.745964s', durée: '16.560061s', limité: '✅ DANS LIMITES', …}
-playbackCursor.js:332 📍 Curseur: 899.0px (3.75s)
-TimeLine.vue:344 🔍 APRÈS seekTo (+50ms): {totalWidth: 4080, changed: '✅ STABLE'}
-playbackCursor.js:140 🔍 Vérification visibilité curseur: {curseur: '899.0px', scroll: '0.0px', zoneVisible: '0.0-1099.0px', visible: '✅ VISIBLE'}
-TransportControls.vue:382 🅿️ Touche P pressée à la position: 0.00s
-playbackMarker.js:27 🅿️ Marqueur P placé à: 0.00s → 0.0px
-playbackMarker.js:30 🅿️ Debug position: {markerTime: 0, markerPixels: 0, hasTimeToPixels: true, timeToPixelsFunction: '(timeInSeconds) => {\n    if (timeInSeconds <= 0) r...'}
-PlaybackMarker.vue:32 🅿️ PlaybackMarker position mise à jour: {ancienne: null, nouvelle: 0, temps: 0}
+AddCCLane.vue:96 ➕ AddCCLaneButton: Sélection CC1
+MidiLaneTabs.vue:206 🎛️ Création point CC initial: {trackId: 1754580901796, controller: Array(1), time: 0, value: 64, channel: 0}
+midi.js:41 🔄 Réactivité déclenchée: add-cc-1754580906196.088 à 17:35:06
+midi.js:42 🎛️ CC count après trigger: 1
+MidiLaneTabs.vue:222 🎛️ CC créé avec ID: 1754580906196.088
+App.vue:217 🎛️ App.vue: Lanes mises à jour: 2
+CCLane.vue:153 🎛️ 🚨 CCLane-1-wamy5wwwx computed ccPoints appelé @ 1754580906250 🚨
+CCLane.vue:162 🎛️ CCLane - Store CC count: 1
+CCLane.vue:170 🎛️ CCLane-1-wamy5wwwx - CC1 trouvés: 0 @ 1754580906250
+CCLane.vue:241 🎯 MODE NORMAL - Points du store: 0

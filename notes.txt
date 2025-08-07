@@ -1,3 +1,0 @@
-le composant TrackSize ne permet plus de redimensionner toutes les pistes car des modifications ont été faites dans TrackInstruements créant des effets de bords. peux tu apporter des modifications en phase. L'icone + permet de redimentionner une piste, TrackSize toutes les pistes. donc ne me propose pas une solution en supprimant quelque chose. Je veux une correction
-
-TrackInstrument et TrackSize

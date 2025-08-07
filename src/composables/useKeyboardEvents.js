@@ -202,7 +202,7 @@ export function useKeyboardEvents() {
       document.addEventListener('keydown', handleGlobalKeyDown, true)
       document.addEventListener('keyup', handleGlobalKeyUp, true)
       document._keyboardEventsInstalled = true
-      console.log('⌨️  Gestionnaire global des événements clavier installé')
+      // console.log('⌨️  Gestionnaire global des événements clavier installé')
     }
   })
   

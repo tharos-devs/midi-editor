@@ -103,6 +103,13 @@ export function useMidiFileImport() {
     midiStore.tempoEvents = midiData.tempoEvents
     midiStore.timeSignatureEvents = midiData.timeSignatureEvents
     midiStore.keySignatureEvents = midiData.keySignatureEvents
+
+    // DEBUG: Vérifier combien de CC ont été stockés
+    // console.log(`🎛️ CC stockés dans midiStore.midiCC: ${midiStore.midiCC.length}`)
+    if (midiStore.midiCC.length > 0) {
+      // console.log('🎛️ Premier CC:', midiStore.midiCC[0])
+      // console.log('🎛️ Structure CC:', Object.keys(midiStore.midiCC[0]))
+    }
     
     // Configurer l'état du store
     midiStore.filename = filename
@@ -110,11 +117,23 @@ export function useMidiFileImport() {
     
     // Sélectionner la première piste par défaut
     if (midiData.tracks.length > 0) {
+      console.log('🎯 Sélection piste par défaut:', midiData.tracks[0].id)
+      console.log('🎯 Pistes disponibles:', midiData.tracks.map(t => ({ id: t.id, name: t.name })))
       midiStore.selectedTrack = midiData.tracks[0].id
+      console.log('🎯 selectedTrack après sélection:', midiStore.selectedTrack)
     }
 
     // Forcer la réactivité
-    midiStore.triggerReactivity()
+    midiStore.triggerReactivity('midi-file-load')
+    
+    // Forcer spécifiquement la réactivité des CC
+    console.log('🎛️ Forcing CC reactivity after load...')
+    midiStore.forceCCUpdate()
+    
+    // Debug des CC lanes
+    setTimeout(() => {
+      midiStore.debugCCLanes()
+    }, 200)
     /*
     console.log(`✅ Nouveau projet créé à partir de "${filename}"`)
     console.log(`📊 Pistes: ${midiData.tracks.length}, Notes: ${midiData.notes.length}, CC: ${midiData.midiCC.length}`)

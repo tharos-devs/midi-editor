@@ -32,21 +32,6 @@
     >
       ♪ {{ Math.round(currentTempo) }} BPM
     </div>
-    
-    <!-- Debug info -->
-    <div 
-      v-if="showDebugInfo"
-      class="debug-info"
-      :style="debugInfoStyle"
-    >
-      <div>Time: {{ currentTime.toFixed(2) }}s</div>
-      <div>Pos: {{ pixelPosition.toFixed(1) }}px</div>
-      <div>Tempo: {{ Math.round(currentTempo) }} BPM</div>
-      <div>Width: {{ totalWidthValue }}px</div>
-      <div>Synced: {{ isSyncedWithPlayer ? '✓' : '✗' }}</div>
-      <div>Player: {{ midiPlayer.isPlaying.value ? 'Playing' : 'Stopped' }}</div>
-      <div>Player Time: {{ midiPlayer.currentTime.value.toFixed(2) }}s</div>
-    </div>
   </div>
 </template>
 
@@ -69,9 +54,6 @@ const props = defineProps({
   showHead: { type: Boolean, default: true },
   showTimeIndicator: { type: Boolean, default: false },
   showTempoIndicator: { type: Boolean, default: false },
-  
-  // Debug
-  showDebugInfo: { type: Boolean, default: false },
   
   // Styles du curseur
   cursorColor: { type: String, default: '#ff4444' },
@@ -365,22 +347,6 @@ const tempoIndicatorStyle = computed(() => ({
   border: '1px solid rgba(255, 255, 255, 0.3)'
 }))
 
-// Style des infos de debug
-const debugInfoStyle = computed(() => ({
-  position: 'absolute',
-  top: '-120px',
-  left: '0',
-  background: 'rgba(0, 0, 0, 0.9)',
-  color: '#00ff00',
-  padding: '6px',
-  fontSize: '9px',
-  fontFamily: 'monospace',
-  borderRadius: '3px',
-  whiteSpace: 'nowrap',
-  border: '1px solid rgba(0, 255, 0, 0.3)',
-  minWidth: '140px'
-}))
-
 // ============ GETTERS POUR EXPOSITION ============
 const currentTime = computed(() => cursor.currentTime.value)
 const pixelPosition = computed(() => cursor.pixelPosition.value)
@@ -459,10 +425,7 @@ defineExpose({
   updateCursorConfig,
   
   // Accès au composable complet
-  cursor,
-  
-  // Debug
-  debugInfo: cursor.debugInfo
+  cursor
 })
 </script>
 
@@ -562,11 +525,6 @@ defineExpose({
   .tempo-indicator {
     font-size: 9px;
     padding: 2px 4px;
-  }
-  
-  .debug-info {
-    font-size: 8px;
-    padding: 4px;
   }
 }
 

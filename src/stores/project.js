@@ -1,6 +1,6 @@
 // stores/project.js - Store principal du projet avec sauvegarde/chargement
 import { defineStore } from 'pinia'
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import ProjectFileManager from '@/services/ProjectFileManager'
 import MidiImporter from '@/services/MidiFileImporter'
 import { useMidiStore } from '@/stores/midi'
@@ -179,6 +179,56 @@ export const useProjectStore = defineStore('project', () => {
       currentFilename.value = ''
       lastSavedDate.value = null
       
+      // S'assurer qu'il y a un point tempo par défaut
+      if (midiStore.tempoEvents.length === 0) {
+        console.log('🎵 Ajout point tempo par défaut lors création projet')
+        midiStore.addTempoEvent({
+          time: 0.0,
+          bpm: 120,
+          ticks: 0
+        })
+      }
+      
+      // S'assurer qu'il y a les CC par défaut (CC1, CC7, CC11) pour la piste 0
+      if (midiStore.tracks.length > 0) {
+        const trackId = midiStore.tracks[0].id
+        const defaultCCs = [
+          { controller: 1, name: 'Modulation' },
+          { controller: 7, name: 'Volume' }, 
+          { controller: 11, name: 'Expression' }
+        ]
+        
+        defaultCCs.forEach(({ controller, name }) => {
+          const existingCC = midiStore.midiCC.find(cc => 
+            parseInt(cc.trackId) === parseInt(trackId) && cc.controller === controller
+          )
+          
+          if (!existingCC) {
+            console.log(`🎛️ Ajout CC${controller} (${name}) par défaut pour piste ${trackId}`)
+            midiStore.addCC({
+              trackId: trackId,
+              controller: controller,
+              time: 0.0,
+              value: 64,
+              channel: midiStore.tracks[0].channel || 0
+            })
+          }
+        })
+      }
+      
+      // Debug: Vérifier l'état final
+      await nextTick() // Attendre que la réactivité se propage
+      console.log('🚨 DEBUG Après nouveau projet:', {
+        projectIsLoaded: isLoaded.value,
+        midiStoreIsLoaded: midiStore.isLoaded,
+        tracksCount: midiStore.tracks?.length || 0,
+        hasTimeSignatureEvents: midiStore.timeSignatureEvents?.length || 0,
+        hasTempoEvents: midiStore.tempoEvents?.length || 0,
+        canSave: canSave.value,
+        canSaveAs: canSaveAs.value,
+        midiInfo: midiStore.midiInfo
+      })
+      
       console.log(`✅ Nouveau projet "${name}" créé`)
       
       return {
@@ -206,6 +256,15 @@ export const useProjectStore = defineStore('project', () => {
         throw new Error(importResult.message)
       }
 
+      // Debug: vérifier les CC directement après l'import
+      console.log('📊 APRÈS IMPORT MIDI - CC count:', importResult.data.midiCC?.length || 0)
+      if (importResult.data.midiCC?.length > 0) {
+        console.log('📊 Premiers CC de l\'import:')
+        importResult.data.midiCC.slice(0, 3).forEach((cc, i) => {
+          console.log(`  CC #${i}: controller=${cc.controller}, time=${cc.time}s, value=${cc.value}`)
+        })
+      }
+
       // Créer un projet basé sur les données MIDI
       const projectName = filename.replace(/\.(mid|midi)$/i, '')
       const projectData = {
@@ -224,8 +283,8 @@ export const useProjectStore = defineStore('project', () => {
         audioSettings: projectFileManager.getDefaultAudioSettings()
       }
 
-      // Charger le projet
-      await loadProjectData(projectData)
+      // Charger le projet (indiquer que c'est un import MIDI)
+      await loadProjectData(projectData, true)
       
       // Marquer comme non sauvegardé
       hasUnsavedChanges.value = true
@@ -343,8 +402,10 @@ export const useProjectStore = defineStore('project', () => {
 
   /**
    * Charge les données d'un projet dans les stores
+   * @param {Object} projectData - Données du projet
+   * @param {boolean} isFromMidiImport - True si c'est un import MIDI direct (pas .myproject)
    */
-  async function loadProjectData(projectData) {
+  async function loadProjectData(projectData, isFromMidiImport = false) {
     // Réinitialiser le store MIDI
     midiStore.resetStore()
     
@@ -368,6 +429,35 @@ export const useProjectStore = defineStore('project', () => {
       midiStore.tracks = projectData.midiData.tracks || []
       midiStore.notes = projectData.midiData.notes || []
       midiStore.midiCC = projectData.midiData.midiCC || projectData.midiData.controlChanges || []
+      
+      // Debug: Analyser les CC chargés
+      if (midiStore.midiCC.length > 0) {
+        if (isFromMidiImport) {
+          console.log('🎵 🚨 CC chargés depuis IMPORT MIDI 🚨')
+        } else {
+          console.log('🎛️ 🚨 CC chargés depuis .myproject 🚨')
+        }
+        console.log(`Total CC: ${midiStore.midiCC.length}`)
+        console.log('Premiers CC:')
+        midiStore.midiCC.slice(0, 5).forEach((cc, i) => {
+          console.log(`  CC #${i}: controller=${cc.controller || cc.number}, time=${cc.time}s, value=${cc.value}, trackId=${cc.trackId}`)
+        })
+        
+        // Debug spécifique pour les CC à 127 (mesure 2)
+        const highValueCC = midiStore.midiCC.filter(cc => cc.value >= 120)
+        if (highValueCC.length > 0) {
+          console.log('🎯 CC proches de 127 (mesure 2):')
+          highValueCC.slice(0, 5).forEach((cc, i) => {
+            console.log(`  CC127 #${i}: time=${cc.time}s, value=${cc.value}, expectedTime=1.000s, diff=${((cc.time - 1.0) * 1000).toFixed(1)}ms`)
+          })
+        }
+        
+        if (!isFromMidiImport) {
+          console.log('⚠️ Correction temporelle DÉSACTIVÉE - utilisation des temps bruts (.myproject)')
+        } else {
+          console.log('✅ Import MIDI - pas de correction temporelle nécessaire')
+        }
+      }
       midiStore.tempoEvents = projectData.midiData.tempoEvents || []
       midiStore.timeSignatureEvents = projectData.midiData.timeSignatureEvents || []
       midiStore.keySignatureEvents = projectData.midiData.keySignatureEvents || []
@@ -378,7 +468,20 @@ export const useProjectStore = defineStore('project', () => {
       
       // Sélectionner la première piste si disponible
       if (midiStore.tracks.length > 0) {
-        midiStore.selectedTrack = midiStore.tracks[0].id
+        const trackId = midiStore.tracks[0].id
+        midiStore.selectTrack(trackId)
+        console.log('🎵 Piste sélectionnée automatiquement:', {
+          trackId: trackId,
+          trackName: midiStore.tracks[0].name,
+          selectedTrackAfter: midiStore.selectedTrack,
+          tracksArray: midiStore.tracks.map(t => ({ id: t.id, name: t.name }))
+        })
+        
+        // Attendre le prochain tick pour s'assurer que la réactivité s'est propagée
+        await nextTick()
+        console.log('🔄 Après nextTick - selectedTrack:', midiStore.selectedTrack)
+      } else {
+        console.warn('⚠️ Aucune piste disponible pour la sélection automatique')
       }
       
       // Forcer la réactivité
@@ -666,11 +769,13 @@ export const useProjectStore = defineStore('project', () => {
   // ==========================================
 
   const canSave = computed(() => {
-    return isLoaded.value && hasUnsavedChanges.value
+    // Permettre la sauvegarde si il y a du contenu MIDI (même pour un nouveau projet avec pistes vides)
+    return midiStore.isLoaded || (midiStore.tracks && midiStore.tracks.length > 0)
   })
 
   const canSaveAs = computed(() => {
-    return isLoaded.value
+    // Permettre "Sauvegarder sous" dès qu'il y a du contenu
+    return midiStore.isLoaded || (midiStore.tracks && midiStore.tracks.length > 0)
   })
 
   const projectInfo = computed(() => {

@@ -1,7 +1,7 @@
 <template>
   <div class="lane-content">
     <!-- Grille de fond avec GridRenderer -->
-    <div class="cc-grid-background">
+    <div class="tempo-grid-background">
       <GridRenderer 
         :show-measure-lines="true"
         :show-beat-lines="true"
@@ -13,7 +13,7 @@
       />
     </div>
 
-    <div class="cc-curve-container" 
+    <div class="tempo-curve-container" 
          @dblclick="addPoint" 
          @mousedown="startLassoOrDrag"
          @mousemove="updateLasso"
@@ -22,12 +22,12 @@
       <!-- Rectangle de sélection lasso -->
       <div v-if="isLassoMode" class="lasso-selection" :style="lassoStyle"></div>
 
-      <!-- Points de contrôle CC - Optimisés avec suppression lignes droites -->
+      <!-- Points tempo - Optimisés avec suppression lignes droites -->
       <div
-        v-for="point in ccPointsDisplayed"
-        :key="`cc-${ccNumber}-${point.id}`"
-        class="cc-point"
-        :style="ccPointStyle(point)"
+        v-for="point in tempoPointsDisplayed"
+        :key="`tempo-${point.id}`"
+        class="tempo-point"
+        :style="tempoPointStyle(point)"
         @mousedown="startDrag(point, $event)"
         @dblclick="deletePoint(point, $event)"
         :class="{ 
@@ -37,13 +37,13 @@
       ></div>
 
 
-      <!-- Courbe CC optimisée avec polyline -->
-      <svg class="cc-curve-svg" :viewBox="`0 0 ${totalWidth} 100`" preserveAspectRatio="none">
+      <!-- Courbe Tempo optimisée avec polyline -->
+      <svg class="tempo-curve-svg" :viewBox="`0 0 ${totalWidth} 100`" preserveAspectRatio="none">
         <polyline
-          v-if="ccPolylinePoints"
-          :points="ccPolylinePoints"
+          v-if="tempoPolylinePoints"
+          :points="tempoPolylinePoints"
           fill="none"
-          :stroke="ccColor"
+          :stroke="tempoColor"
           stroke-width="2"
           opacity="0.8"
           stroke-linejoin="round"
@@ -54,21 +54,21 @@
 
     </div>
 
-    <!-- Lignes de référence CC uniquement (labels déplacés vers MidiLaneInfos) -->
-    <div class="cc-reference-lines">
+    <!-- Lignes de référence Tempo (BPM 80, 120, 160) -->
+    <div class="tempo-reference-lines">
       <div
-        v-for="level in [32, 64, 96]"
-        :key="level"
-        class="cc-reference-line"
-        :style="{ bottom: (level / 127) * 100 + '%' }"
+        v-for="bpm in [80, 120, 160]"
+        :key="bpm"
+        class="tempo-reference-line"
+        :style="{ bottom: ((bpm - 60) / (200 - 60)) * 100 + '%' }"
       >
       </div>
     </div>
 
     <!-- Affichage de la valeur actuelle -->
-    <div class="cc-info">
-      <span>CC{{ ccNumber }} - {{ ccName }}</span>
-      <span v-if="selectedPoint" class="cc-value">Value: {{ selectedPoint.value }}</span>
+    <div class="tempo-info">
+      <span>Tempo</span>
+      <span v-if="selectedPoint" class="tempo-value">{{ selectedPoint.bpm || selectedPoint.value }} BPM</span>
     </div>
   </div>
 </template>
@@ -82,14 +82,6 @@ import { useSnapLogic } from '@/composables/useSnapLogic'
 import GridRenderer from '@/components/GridRenderer.vue'
 
 const props = defineProps({
-  ccNumber: {
-    type: Number,
-    required: true
-  },
-  ccName: {
-    type: String,
-    default: ''
-  },
   totalMeasures: Number,
   visibleMeasures: Array,
   measureToPixels: Function,
@@ -98,7 +90,7 @@ const props = defineProps({
   pixelsToTimeWithSignatures: Function
 })
 
-const emit = defineEmits(['point-selected'])
+const emit = defineEmits(['tempo-selected'])
 
 const uiStore = useUIStore()
 const midiStore = useMidiStore()
@@ -118,15 +110,8 @@ const isGroupDragging = ref(false)
 
 
 
-// Couleurs spécifiques selon le CC
-const ccColors = {
-  1: '#2196F3',   // Modulation - Bleu
-  7: '#4CAF50',   // Volume - Vert
-  10: '#FF9800',  // Pan - Orange
-  11: '#9C27B0', // Expression - Violet
-}
-
-const ccColor = computed(() => ccColors[props.ccNumber] || '#607D8B')
+// Couleur spécifique pour les points tempo
+const tempoColor = '#FF5722' // Rouge-orange pour le tempo
 
 // Style pour le rectangle de sélection lasso
 const lassoStyle = computed(() => {
@@ -144,26 +129,19 @@ const lassoStyle = computed(() => {
   }
 })
 
-// Points de contrôle CC depuis les données réelles
-// Identifiant unique pour cette instance de CCLane  
-const instanceId = `CCLane-${props.ccNumber}-${Math.random().toString(36).substring(2, 11)}`
+// Points tempo depuis les données réelles
+// Identifiant unique pour cette instance de TempoLane  
+const instanceId = `TempoLane-${Math.random().toString(36).substring(2, 11)}`
 
-const ccPoints = computed(() => {
-  if (midiStore.selectedTrack === null || midiStore.selectedTrack === undefined) return []
-  
-  const selectedTrackId = parseInt(midiStore.selectedTrack)
-  
-  const trackCC = midiStore.midiCC.filter(cc => {
-    const ccTrackId = parseInt(cc.trackId)
-    return ccTrackId === selectedTrackId && cc.controller === props.ccNumber
-  })
-  
-  const points = trackCC.map(cc => ({
-    id: cc.id,
-    time: cc.time,
-    value: cc.value,
-    trackId: cc.trackId,
-    lastModified: cc.lastModified
+const tempoPoints = computed(() => {
+  // Les événements tempo sont globaux, pas liés à une piste
+  const points = midiStore.tempoEvents.map(tempo => ({
+    id: tempo.id,
+    time: tempo.time,
+    value: tempo.bpm, // BPM au lieu de value
+    bpm: tempo.bpm,
+    ticks: tempo.ticks,
+    lastModified: tempo.lastModified
   })).sort((a, b) => a.time - b.time)
   
   return points
@@ -172,8 +150,8 @@ const ccPoints = computed(() => {
 
 
 // Points optimisés : supprimer les points redondants pour les lignes droites
-const ccPointsOptimized = computed(() => {
-  const points = ccPoints.value
+const tempoPointsOptimized = computed(() => {
+  const points = tempoPoints.value
   if (points.length <= 2) return points
 
   // Optimisation: supprimer les points qui forment des lignes droites
@@ -185,11 +163,11 @@ const ccPointsOptimized = computed(() => {
     const nextPoint = points[i + 1]
     
     // Calculer si les 3 points forment une ligne droite
-    const slope1 = (currentPoint.value - prevPoint.value) / (currentPoint.time - prevPoint.time)
-    const slope2 = (nextPoint.value - currentPoint.value) / (nextPoint.time - currentPoint.time)
+    const slope1 = (currentPoint.bpm - prevPoint.bpm) / (currentPoint.time - prevPoint.time)
+    const slope2 = (nextPoint.bpm - currentPoint.bpm) / (nextPoint.time - currentPoint.time)
     
     // Si les pentes sont différentes ou si c'est un point important, le garder
-    if (Math.abs(slope1 - slope2) > 0.01 || currentPoint.value === 0 || currentPoint.value === 127) {
+    if (Math.abs(slope1 - slope2) > 0.01 || currentPoint.bpm === 60 || currentPoint.bpm === 200) {
       optimizedPoints.push(currentPoint)
     }
   }
@@ -203,38 +181,46 @@ const ccPointsOptimized = computed(() => {
 })
 
 // Points affichés : logique simplifiée et claire
-const ccPointsDisplayed = computed(() => {
+const tempoPointsDisplayed = computed(() => {
   // MODE DRAG: Utiliser les points temporaires
   if (isDragging.value && dragTempPoints.value) {
     return dragTempPoints.value.sort((a, b) => a.time - b.time)
   }
   
   // MODE NORMAL: Utiliser les points optimisés du store
-  return ccPointsOptimized.value
+  return tempoPointsOptimized.value
 })
 
 const totalWidth = computed(() => {
   return timeSignature.totalWidth?.value || 800
 })
 
-const ccPointStyle = (point) => {
+const tempoPointStyle = (point) => {
   const pixelX = timeSignature.timeToPixelsWithSignatures(point.time)
   const adjustedPosition = Math.round(pixelX) - 1
+  
+  // Adapter l'affichage pour les BPM (plage typique 60-200)
+  const normalizedBPM = Math.max(0, Math.min(300, point.bpm || point.value))
+  const percentage = ((normalizedBPM - 60) / (200 - 60)) * 100 // Normaliser 60-200 BPM sur 0-100%
+  const clampedPercentage = Math.max(0, Math.min(100, percentage))
     
   return {
     left: adjustedPosition + 'px',
-    bottom: (point.value / 127) * 100 + '%'
+    bottom: clampedPercentage + '%'
   }
 }
 
 // Génération optimisée de la polyline pour performance maximale
-const ccPolylinePoints = computed(() => {
-  const displayedPoints = ccPointsDisplayed.value
+const tempoPolylinePoints = computed(() => {
+  const displayedPoints = tempoPointsDisplayed.value
   if (displayedPoints.length < 2) return null
   
   const points = displayedPoints.map(point => {
     const x = timeSignature.timeToPixelsWithSignatures(point.time)
-    const y = 100 - (point.value / 127) * 100
+    // Adapter pour les BPM
+    const normalizedBPM = Math.max(0, Math.min(300, point.bpm || point.value))
+    const percentage = ((normalizedBPM - 60) / (200 - 60)) * 100
+    const y = 100 - Math.max(0, Math.min(100, percentage)) // Inversion Y pour SVG
     return `${x.toFixed(1)},${y.toFixed(1)}`
   }).join(' ')
   
@@ -273,13 +259,13 @@ const startDrag = (point, event) => {
   isDragging.value = true
   
   // Ajouter la classe dragging pour forcer le curseur
-  const container = document.querySelector('.cc-curve-container')
+  const container = document.querySelector('.tempo-curve-container')
   if (container) {
     container.classList.add('dragging')
   }
   
   // Émettre la sélection du point vers le parent avec l'ID et la valeur
-  emit('point-selected', { id: String(point.id), value: point.value })
+  emit('tempo-selected', { id: String(point.id), value: point.bpm || point.value })
   
   dragStartX = event.clientX
   dragStartY = event.clientY
@@ -287,7 +273,7 @@ const startDrag = (point, event) => {
   originalValue = point.value
 
   // Créer une copie des points OPTIMISÉS pour la manipulation temporaire
-  const basePoints = ccPointsOptimized.value
+  const basePoints = tempoPointsOptimized.value
   dragTempPoints.value = [...basePoints]
   
   console.log('🎯 START DRAG - Copie créée:', {
@@ -308,7 +294,7 @@ const onDrag = (event) => {
   if (!isDragging.value || !selectedPoint.value || !dragTempPoints.value) return
 
   // SOLUTION RADICALE: Calculer la position EXACTE sous la souris
-  const container = document.querySelector('.cc-curve-container')
+  const container = document.querySelector('.tempo-curve-container')
   if (!container) return
   
   const rect = container.getBoundingClientRect()
@@ -331,10 +317,12 @@ const onDrag = (event) => {
     newTime = snapTimeToGrid(newTime)
   }
   
-  // Conversion Y: 0 en haut = 127, height en bas = 0
+  // Conversion Y: 0 en haut = 200 BPM, height en bas = 60 BPM
   const containerHeight = rect.height
   const relativeY = mouseY / containerHeight
-  const newValue = Math.max(0, Math.min(127, Math.round((1 - relativeY) * 127)))
+  const percentage = (1 - relativeY) * 100
+  const newBPM = Math.round(60 + (percentage / 100) * (200 - 60))
+  const newValue = Math.max(60, Math.min(200, newBPM))
   
   // Calculer les deltas par rapport à la position initiale
   const deltaTime = newTime - originalTime
@@ -347,14 +335,14 @@ const onDrag = (event) => {
     selectedPoints.value.forEach(selectedP => {
       const tempPointIndex = dragTempPoints.value.findIndex(p => p.id === selectedP.id)
       if (tempPointIndex !== -1) {
-        const originalPoint = ccPointsOptimized.value.find(p => p.id === selectedP.id)
+        const originalPoint = tempoPointsOptimized.value.find(p => p.id === selectedP.id)
         if (originalPoint) {
           let newPointTime = originalPoint.time + deltaTime
           let newPointValue = originalPoint.value + deltaValue
           
           // Contraintes
           newPointTime = Math.max(0, newPointTime)
-          newPointValue = Math.max(0, Math.min(127, newPointValue))
+          newPointValue = Math.max(60, Math.min(200, newPointValue))
           
           dragTempPoints.value[tempPointIndex] = {
             ...dragTempPoints.value[tempPointIndex],
@@ -378,7 +366,7 @@ const onDrag = (event) => {
   
   // Émettre la nouvelle valeur avec l'ID du point
   if (selectedPoint.value) {
-    emit('point-selected', { id: String(selectedPoint.value.id), value: newValue })
+    emit('tempo-selected', { id: String(selectedPoint.value.id), value: newValue })
   }
 }
 
@@ -405,10 +393,10 @@ const stopDrag = async () => {
       const updatePromises = selectedPoints.value.map(async (selectedP) => {
         const tempPoint = dragTempPoints.value.find(p => p.id === selectedP.id)
         if (tempPoint) {
-          console.log(`🔄 Mise à jour point groupe ${tempPoint.id}: temps=${tempPoint.time}, valeur=${tempPoint.value}`)
-          return midiStore.updateCC(tempPoint.id, {
+          console.log(`🔄 Mise à jour point groupe ${tempPoint.id}: temps=${tempPoint.time}, bpm=${tempPoint.value}`)
+          return midiStore.updateTempoEvent(tempPoint.id, {
             time: tempPoint.time,
-            value: tempPoint.value
+            bpm: tempPoint.value
           })
         }
       })
@@ -425,12 +413,12 @@ const stopDrag = async () => {
         console.log('🔄 STOP DRAG - Mise à jour store:', {
           pointId: tempPoint.id,
           newTime: tempPoint.time,
-          newValue: tempPoint.value
+          newBPM: tempPoint.value
         })
         
-        await midiStore.updateCC(draggedPointId, {
+        await midiStore.updateTempoEvent(draggedPointId, {
           time: tempPoint.time,
-          value: tempPoint.value
+          bpm: tempPoint.value
         })
         
         console.log('🔄 STOP DRAG - Store mis à jour')
@@ -446,7 +434,7 @@ const stopDrag = async () => {
   dragTempPoints.value = null
   
   // Supprimer la classe dragging
-  const container = document.querySelector('.cc-curve-container')
+  const container = document.querySelector('.tempo-curve-container')
   if (container) {
     container.classList.remove('dragging')
   }
@@ -464,18 +452,15 @@ const addPoint = (event) => {
   event.preventDefault()
   event.stopPropagation()
   
-  console.log('🎛️ Double-clic sur CC lane - selectedTrack:', midiStore.selectedTrack)
+  console.log('🎵 Double-clic sur Tempo lane')
   
-  if (midiStore.selectedTrack === null || midiStore.selectedTrack === undefined) {
-    console.warn('⚠️ Pas de piste sélectionnée pour ajouter CC')
-    return
-  }
+  // Les événements tempo sont globaux, pas besoin de piste sélectionnée
   
   const rect = event.currentTarget.getBoundingClientRect()
   const x = event.clientX - rect.left
   const y = event.clientY - rect.top
 
-  // Conversion en temps et valeur
+  // Conversion en temps et BPM
   let time = timeSignature.pixelsToTimeWithSignatures 
     ? timeSignature.pixelsToTimeWithSignatures(x)
     : x / 240 // fallback
@@ -484,29 +469,26 @@ const addPoint = (event) => {
   if (uiStore.snapToGrid) {
     time = snapTimeToGrid(time)
   }
-    
-  const value = Math.round((1 - y / rect.height) * 127)
+  
+  // Convertir Y en BPM (plage 60-200)
+  const percentage = (1 - y / rect.height) * 100 // 0-100%
+  const bpm = Math.round(60 + (percentage / 100) * (200 - 60)) // Convertir en BPM 60-200
+  const clampedBPM = Math.max(60, Math.min(200, bpm))
 
-  // Obtenir les informations de la piste pour le canal
-  const selectedTrack = midiStore.getTrackById(midiStore.selectedTrack)
-
-  // Créer le nouveau CC dans le store
-  console.log(`🎛️ Ajout CC${props.ccNumber}:`, { 
-    trackId: midiStore.selectedTrack, 
+  // Créer le nouveau tempo dans le store
+  console.log(`🎵 Ajout Tempo:`, { 
     time: Math.max(0, time), 
-    value: Math.max(0, Math.min(127, value)),
+    bpm: clampedBPM,
     x, y 
   })
   
-  const newCCId = midiStore.addCC({
-    trackId: midiStore.selectedTrack,
-    controller: props.ccNumber,
+  const newTempoId = midiStore.addTempoEvent({
     time: Math.max(0, time),
-    value: Math.max(0, Math.min(127, value)),
-    channel: selectedTrack?.channel || 0
+    bpm: clampedBPM,
+    ticks: 0 // Sera recalculé si nécessaire
   })
   
-  console.log(`🎛️ CC${props.ccNumber} ajouté avec ID:`, newCCId)
+  console.log(`🎵 Tempo ajouté avec ID:`, newTempoId)
 }
 
 // Supprimer un point existant avec double-clic
@@ -514,25 +496,25 @@ const deletePoint = (point, event) => {
   event.preventDefault()
   event.stopPropagation()
   
-  console.log(`🗑️ Double-clic pour supprimer CC${props.ccNumber} point:`, {
+  console.log(`🗑️ Double-clic pour supprimer Tempo point:`, {
     pointId: point.id,
     time: point.time,
-    value: point.value
+    bpm: point.bpm
   })
   
   if (point.id) {
     // Supprimer du store
-    const success = midiStore.deleteControlChange(point.id)
+    const success = midiStore.deleteTempoEvent(point.id)
     if (success) {
-      console.log(`✅ Point CC${props.ccNumber} supprimé:`, point.id)
+      console.log(`✅ Point Tempo supprimé:`, point.id)
       
       // Désélectionner si c'était le point sélectionné
       if (selectedPoint.value?.id === point.id) {
         selectedPoint.value = null
-        emit('point-selected', null)
+        emit('tempo-selected', null)
       }
     } else {
-      console.error(`❌ Échec suppression CC${props.ccNumber}:`, point.id)
+      console.error(`❌ Échec suppression Tempo:`, point.id)
     }
   }
 }
@@ -544,14 +526,14 @@ const deletePoint = (point, event) => {
 // Démarrer le lasso ou le drag selon ce qui est cliqué
 const startLassoOrDrag = (event) => {
   // Si on clique sur un point, ne pas faire de lasso
-  if (event.target.classList.contains('cc-point')) {
+  if (event.target.classList.contains('tempo-point')) {
     return // Laisser le point gérer son propre drag
   }
   
   // Si on clique sur une zone vide, déselectionner le point actuel
   if (selectedPoint.value) {
     selectedPoint.value = null
-    emit('point-selected', null)
+    emit('tempo-selected', null)
     console.log('🎯 Déselection point par clic zone vide')
   }
   
@@ -581,7 +563,7 @@ const startLassoOrDrag = (event) => {
 const updateLasso = (event) => {
   if (!isLassoMode.value) return
   
-  const container = document.querySelector('.cc-curve-container')
+  const container = document.querySelector('.tempo-curve-container')
   if (!container) return
   
   const rect = container.getBoundingClientRect()
@@ -605,12 +587,12 @@ const endLassoOrDrag = () => {
   
   // Sélectionner tous les points dans le rectangle
   const pointsInSelection = []
-  ccPointsDisplayed.value.forEach(point => {
+  tempoPointsDisplayed.value.forEach(point => {
     const pointPixelX = timeSignature.timeToPixelsWithSignatures(point.time)
-    const pointPixelY = (1 - point.value / 127) * 100 // Conversion Y inverse pour l'affichage
+    const pointPixelY = (1 - (point.bpm - 60) / (200 - 60)) * 100 // Conversion Y inverse pour l'affichage tempo
     
     // Convertir les coordonnées du point en pixels absolus dans le container
-    const containerRect = document.querySelector('.cc-curve-container').getBoundingClientRect()
+    const containerRect = document.querySelector('.tempo-curve-container').getBoundingClientRect()
     const adjustedX = Math.round(pointPixelX) - 1 // Même calcul que ccPointStyle
     const adjustedY = pointPixelY / 100 * containerRect.height
     
@@ -635,12 +617,12 @@ const deleteSelectedPoints = () => {
   console.log(`🗑️ Suppression de ${selectedPoints.value.length} points sélectionnés`)
   
   selectedPoints.value.forEach(point => {
-    midiStore.deleteControlChange(point.id)
+    midiStore.deleteTempoEvent(point.id)
   })
   
   selectedPoints.value = []
   selectedPoint.value = null
-  emit('point-selected', null)
+  emit('tempo-selected', null)
 }
 
 // Gérer les touches clavier pour la sélection multiple
@@ -653,59 +635,68 @@ const handleKeydown = (event) => {
   if (event.key === 'Escape') {
     selectedPoints.value = []
     selectedPoint.value = null
-    emit('point-selected', null)
+    emit('tempo-selected', null)
   }
 }
 
 // WATCH pour traquer les changements du store après drag
-watch(() => midiStore.midiCC, (newCC, oldCC) => {
-  console.log('🎛️ STORE CHANGE détecté:', {
-    oldLength: oldCC?.length || 0,
-    newLength: newCC?.length || 0,
+watch(() => midiStore.tempoEvents, (newTempo, oldTempo) => {
+  console.log('🎵 STORE CHANGE détecté:', {
+    oldLength: oldTempo?.length || 0,
+    newLength: newTempo?.length || 0,
     timestamp: Date.now()
   })
   
-  // Vérifier si notre CC specifique a changé
-  const ourTrackId = parseInt(midiStore.selectedTrack)
-  const ourCC = newCC.filter(cc => 
-    parseInt(cc.trackId) === ourTrackId && cc.controller === props.ccNumber
-  )
-  
-  if (ourCC.length > 0) {
-    console.log('🎛️ CC' + props.ccNumber + ' updated in store:', 
-      ourCC.slice(0, 2).map(cc => ({ id: cc.id, time: cc.time, value: cc.value })))
+  if (newTempo.length > 0) {
+    console.log('🎵 Tempo events updated in store:', 
+      newTempo.slice(0, 2).map(tempo => ({ id: tempo.id, time: tempo.time, bpm: tempo.bpm })))
   }
 }, { deep: true })
 
 // Gérer la mise à jour manuelle de la valeur d'un point depuis l'interface
 const handleManualPointValueUpdate = async (event) => {
   const updateData = event.detail
-  console.log(`📝 CCLane: Réception mise à jour manuelle:`, updateData)
+  console.log(`📝 TempoLane: Réception mise à jour manuelle:`, updateData)
   
   if (updateData.pointId) {
     try {
       // Mettre à jour directement dans le store
-      await midiStore.updateCC(updateData.pointId, {
-        value: updateData.newValue
+      await midiStore.updateTempoEvent(updateData.pointId, {
+        bpm: updateData.newValue
       })
       
       // Mettre à jour la sélection actuelle si c'est le point sélectionné
       if (selectedPoint.value && selectedPoint.value.id === updateData.pointId) {
-        emit('point-selected', { id: String(updateData.pointId), value: updateData.newValue })
+        emit('tempo-selected', { id: String(updateData.pointId), bpm: updateData.newValue })
       }
       
-      console.log(`✅ Point CC${props.ccNumber} ${updateData.pointId} mis à jour: ${updateData.newValue}`)
+      console.log(`✅ Point Tempo ${updateData.pointId} mis à jour: ${updateData.newValue} BPM`)
     } catch (error) {
-      console.error(`❌ Erreur mise à jour CC${props.ccNumber}:`, error)
+      console.error(`❌ Erreur mise à jour Tempo:`, error)
     }
   }
 }
 
 onMounted(() => {
+  // Créer un point par défaut à 0s avec 120 BPM s'il n'y en a pas
+  // Attendre que le store soit complètement chargé avant de vérifier
+  setTimeout(() => {
+    if (tempoPoints.value.length === 0) {
+      console.log('🎵 Création point tempo par défaut: 0s, 120 BPM')
+      midiStore.addTempoEvent({
+        time: 0.0,
+        bpm: 120,
+        ticks: 0
+      })
+    } else {
+      console.log('🎵 Points tempo existants détectés:', tempoPoints.value.length)
+    }
+  }, 100) // Attendre 100ms pour que le store soit chargé
+  
   // Nettoyer automatiquement le store au premier chargement
-  if (ccPoints.value.length > 20) { // Seulement si beaucoup de points
-    console.log(`🧹 Auto-nettoyage du store CC${props.ccNumber}: ${ccPoints.value.length} points`)
-    midiStore.optimizeMidiCC()
+  if (tempoPoints.value.length > 20) { // Seulement si beaucoup de points
+    console.log(`🧹 Auto-nettoyage du store Tempo: ${tempoPoints.value.length} points`)
+    // midiStore.optimizeTempoEvents() // À implémenter si nécessaire
   }
   
   // Ajouter les listeners clavier pour le lasso
@@ -735,7 +726,7 @@ onUnmounted(() => {
   background: #fafafa;
 }
 
-.cc-grid-background {
+.tempo-grid-background {
   position: absolute;
   top: 0;
   left: 0;
@@ -745,7 +736,7 @@ onUnmounted(() => {
   opacity: 0.3;
 }
 
-.cc-curve-container {
+.tempo-curve-container {
   position: relative;
   height: 100%;
   cursor: crosshair;
@@ -753,49 +744,49 @@ onUnmounted(() => {
 }
 
 /* Empêcher le changement de curseur pendant le drag */
-.cc-curve-container.dragging {
+.tempo-curve-container.dragging {
   cursor: pointer !important;
 }
 
-.cc-curve-container.dragging .cc-point {
+.tempo-curve-container.dragging .tempo-point {
   cursor: pointer !important;
 }
 
-.cc-curve-container.dragging .cc-point:hover {
+.tempo-curve-container.dragging .tempo-point:hover {
   cursor: pointer !important;
 }
 
-.cc-point {
+.tempo-point {
   position: absolute;
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: v-bind(ccColor);
+  background: v-bind(tempoColor);
   border: 2px solid white;
   transform: translate(-50%, 50%);
-  cursor: pointer; /* CORRECTION: pointer au lieu de grab */
+  cursor: pointer;
   box-shadow: 0 2px 4px rgba(0,0,0,0.4);
   z-index: 15;
   opacity: 1.0;
 }
 
-.cc-point:hover {
+.tempo-point:hover {
   transform: translate(-50%, 50%) scale(1.2);
 }
 
-.cc-point.selected {
+.tempo-point.selected {
   border-color: #FF5722;
   box-shadow: 0 0 8px rgba(255, 87, 34, 0.5);
 }
 
-.cc-point.multi-selected {
+.tempo-point.multi-selected {
   border-color: #2196F3;
   box-shadow: 0 0 8px rgba(33, 150, 243, 0.5);
   background: #2196F3;
 }
 
-.cc-point:active {
-  cursor: pointer; /* Garder pointer même en actif */
+.tempo-point:active {
+  cursor: pointer;
 }
 
 .lasso-selection {
@@ -805,7 +796,7 @@ onUnmounted(() => {
   z-index: 20;
 }
 
-.cc-curve-svg {
+.tempo-curve-svg {
   position: absolute;
   top: 0;
   left: 0;
@@ -814,7 +805,7 @@ onUnmounted(() => {
   pointer-events: none;
 }
 
-.cc-reference-lines {
+.tempo-reference-lines {
   position: absolute;
   top: 0;
   left: 0;
@@ -822,19 +813,19 @@ onUnmounted(() => {
   height: 100%;
   pointer-events: none;
   overflow: visible;
-  /* Créer un contexte de positionnement pour sticky */
   contain: layout;
 }
 
-.cc-reference-line {
+.tempo-reference-line {
   position: absolute;
   left: 0;
   width: 100%;
-  border-top: 1px dashed #ccc;
+  border-top: 1px dashed #ff9800;
+  opacity: 0.5;
 }
 
 
-.cc-info {
+.tempo-info {
   position: absolute;
   top: 4px;
   right: 4px;
@@ -843,12 +834,12 @@ onUnmounted(() => {
   border-radius: 4px;
   font-size: 11px;
   color: #666;
-  pointer-events: auto; /* Permettre les clics pour le bouton */
+  pointer-events: auto;
 }
 
-.cc-value {
+.tempo-value {
   margin-left: 12px;
-  color: v-bind(ccColor);
+  color: v-bind(tempoColor);
   font-weight: 500;
 }
 

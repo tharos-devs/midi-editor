@@ -205,44 +205,29 @@ export class MidiFileImporter {
           const noteTicks = note.ticks || 0
           const noteDurationTicks = note.durationTicks || 0
 
-          // PRÉCISION: Normaliser les temps à 6 décimales pour éviter les erreurs d'arrondi
-          const preciseTime = normalizeTime(note.time || 0)
-          const preciseEndTime = normalizeTime((note.time || 0) + (note.duration || 0))
-          const preciseDuration = normalizeTime(preciseEndTime - preciseTime)
+          // ✅ CORRECTION: Utiliser les ticks pour un calcul précis du temps
+          const ppq = midiInfo.ppq || 480
+          const tempo = midiInfo.tempo || 120  // BPM
           
-          // 🎼 QUANTISATION TEMPORELLE: Aligner les notes sur la grille rythmique
-          const shouldQuantize = true // TODO: Option dans les settings
-          let finalTime = preciseTime
+          // Conversion ticks → temps PRÉCISE
+          const preciseTimeFromTicks = (noteTicks / ppq) * (60 / tempo)  // secondes
+          const preciseDurationFromTicks = (noteDurationTicks / ppq) * (60 / tempo)  // secondes
           
-          if (shouldQuantize && trackIndex === 0) { // Quantifier seulement la piste principale pour test
-            // Quantifier sur 1/16èmes à 120 BPM (0.125s par 16ème)
-            const sixteenthNoteDuration = 0.125 // 60 / (120 * 4)
-            const quantizedTime = Math.round(preciseTime / sixteenthNoteDuration) * sixteenthNoteDuration
-            
-            // Log seulement si différence significative
-            if (Math.abs(quantizedTime - preciseTime) > 0.01) {
-              console.log(`🎼 QUANTISATION ${note.name || note.pitch}:`, {
-                tempsOriginal: preciseTime.toFixed(3) + 's',
-                tempsQuantifié: quantizedTime.toFixed(3) + 's',
-                différence: (quantizedTime - preciseTime).toFixed(3) + 's',
-                grille: '1/16 @ 120 BPM'
-              })
-            }
-            
-            finalTime = normalizeTime(quantizedTime)
-          }
+          // Normaliser pour éviter les erreurs d'arrondi flottant
+          const preciseTime = normalizeTime(preciseTimeFromTicks)
+          const preciseDuration = normalizeTime(preciseDurationFromTicks)
 
           // Debug des premières notes pour comparaison avec CC
           if (trackIndex === 0 && noteIndex < 10) {
             console.log(`🎵 Import Note #${noteIndex}:`, {
-              originalTime: note.time?.toFixed(3) + 's' || 'N/A',
+              originalTime: note.time?.toFixed(6) + 's' || 'N/A',
               originalTicks: note.ticks || 'N/A',
-              convertedTime: preciseTime.toFixed(3) + 's',
-              finalTime: finalTime.toFixed(3) + 's',
-              quantized: shouldQuantize && Math.abs(finalTime - preciseTime) > 0.01 ? '✅ OUI' : '❌ NON',
-              difference: ((finalTime - (note.time || 0)) * 1000).toFixed(1) + 'ms',
+              tempsDepuisTicks: preciseTimeFromTicks.toFixed(6) + 's',
+              tempsNormalise: preciseTime.toFixed(6) + 's',
+              diffToneJS: ((preciseTime - (note.time || 0)) * 1000).toFixed(1) + 'ms',
               midi: note.midi,
-              name: note.name || note.pitch
+              name: note.name || note.pitch,
+              '🎯CRITICAL': noteTicks === 480 ? '🎯 DEVRAIT ETRE SUR 2EME TEMPS' : noteTicks === 360 ? '⚠️ ENTRE TEMPS 1 ET 2' : ''
             })
           }
 
@@ -256,9 +241,8 @@ export class MidiFileImporter {
             velocity: note.velocity || 0,
             duration: preciseDuration,
             durationTicks: note.durationTicks || 0,
-            time: finalTime, // Utiliser le temps quantifié au lieu de preciseTime
+            time: preciseTime,
             ticks: note.ticks || 0,
-            originalTime: preciseTime, // Conserver le temps original pour référence
             channel: track.channel !== undefined ? track.channel : 0,
             tempoAtStart: this.getTempoAtTicks(noteTicks, midiInfo),
             lastModified: Date.now()
@@ -276,45 +260,56 @@ export class MidiFileImporter {
           const ccNum = parseInt(ccNumber)
 
           if (Array.isArray(ccEvents) && ccEvents.length > 0) {
-            const processedCCEvents = ccEvents.map((cc, ccIndex) => {
+            // ✅ ÉTAPE 1: Convertir tous les CC avec des temps précis
+            const preciseCC = ccEvents.map((cc, ccIndex) => {
               const ccTicks = cc.ticks || 0
               
-              // PRÉCISION: Normaliser le temps CC à 6 décimales (pas de quantification)
-              const ccTime = normalizeTime(cc.time || 0)
+              // Calcul précis du temps basé sur les ticks
+              const ppq = midiInfo.ppq || 480
+              const tempo = midiInfo.tempo || 120  
+              const preciseTimeFromTicks = (ccTicks / ppq) * (60 / tempo)  
+              const ccTime = normalizeTime(preciseTimeFromTicks)
               const ccValue = Math.max(0, Math.min(127, Math.round((cc.value || 0) * 127)))
               
-              
-              // DEBUG SIMPLE: Temps bruts des premiers CC1 ET CC7
-              if (trackIndex === 0 && (ccNum === 1 || ccNum === 7) && ccIndex < 10) {
-                console.log(`🚨 CC${ccNum} RAW DATA #${ccIndex}:`, {
-                  time: cc.time,
-                  ticks: cc.ticks,
-                  value: cc.value,
-                  trackIndex,
-                  controller: ccNum
-                })
+              return {
+                originalIndex: ccIndex,
+                time: ccTime,
+                ticks: ccTicks,
+                value: ccValue,
+                originalCc: cc
               }
+            })
 
-              // Debug final avant stockage
-              if (trackIndex === 0 && ccNum === 1 && ccIndex < 3) {
-                console.log(`🔍 CC final object creation:`, {
-                  ccTime: ccTime,
-                  ccTicks: ccTicks,
-                  originalCcTime: cc.time,
-                  finalTime: ccTime
+            // ✅ ÉTAPE 2: Filtrer les points significatifs
+            console.log(`🔧 AVANT FILTRAGE CC${ccNum}:`, preciseCC.length, 'points')
+            const filteredCC = this.filterSignificantCCPoints(preciseCC, ccNum, trackIndex)
+            console.log(`🔧 APRÈS FILTRAGE CC${ccNum}:`, filteredCC.length, 'points')
+
+            // ✅ ÉTAPE 3: Créer les objets finaux
+            const processedCCEvents = filteredCC.map((cc, finalIndex) => {
+              // DEBUG: Logs des CC filtrés
+              if (trackIndex === 0 && (ccNum === 1 || ccNum === 7) && finalIndex < 10) {
+                console.log(`🎯 CC${ccNum} FINAL FILTERED #${finalIndex}:`, {
+                  finalTime: cc.time.toFixed(6) + 's',
+                  value: cc.value,
+                  originalIndex: cc.originalIndex,
+                  reason: cc.reason || 'significant'
                 })
               }
 
               return {
-                id: `cc-${trackIndex}-${ccNum}-${ccIndex}`,
+                id: `cc-${trackIndex}-${ccNum}-${finalIndex}`,
                 trackId: trackIndex,
-                controller: ccNum, // Utiliser 'controller' au lieu de 'number'
-                number: ccNum, // Garder aussi 'number' pour compatibilité
-                value: ccValue,
-                time: ccTime,
-                ticks: ccTicks,
+                controller: ccNum,
+                number: ccNum,
+                value: cc.value,
+                time: cc.time,
+                ticks: cc.ticks,
                 channel: track.channel !== undefined ? track.channel : 0,
-                lastModified: Date.now()
+                lastModified: Date.now(),
+                // Méta-données pour le debug
+                _originalIndex: cc.originalIndex,
+                _filterReason: cc.reason
               }
             })
 
@@ -349,6 +344,323 @@ export class MidiFileImporter {
 
 
 
+
+  /**
+   * Filtre les points CC significatifs en préservant les segments horizontaux
+   * @param {Array} ccArray - Array des CC avec temps précis
+   * @param {number} ccNum - Numéro du contrôleur
+   * @param {number} trackIndex - Index de la piste
+   * @returns {Array} CC filtrés
+   */
+  filterSignificantCCPoints(ccArray, ccNum, trackIndex) {
+    if (ccArray.length <= 3) return ccArray
+    
+    console.log(`🔧 DÉBUT FILTRAGE CC${ccNum} avec ${ccArray.length} points`)
+    
+    // ✅ NOUVELLE STRATÉGIE: Identifier et préserver les segments horizontaux d'abord
+    const segments = this.identifyHorizontalSegments(ccArray, ccNum)
+    console.log(`🔧 CC${ccNum}: ${segments.length} segments horizontaux identifiés`)
+    
+    // ✅ Sélectionner les points représentatifs de chaque segment
+    const filtered = []
+    const HORIZONTAL_TOLERANCE = 3 // Tolérance pour considérer les valeurs "horizontales"
+    
+    for (let i = 0; i < segments.length; i++) {
+      const segment = segments[i]
+      
+      if (segment.isHorizontal) {
+        // Pour segment horizontal: garder début, milieu (si long), et fin
+        if (segment.points.length >= 2) {
+          const startPoint = segment.points[0]
+          const endPoint = segment.points[segment.points.length - 1]
+          const segmentDuration = endPoint.time - startPoint.time
+          
+          // Toujours garder le point de début
+          filtered.push({ 
+            ...startPoint, 
+            reason: `horizontal_start_${segment.avgValue.toFixed(0)}` 
+          })
+          
+          // Pour les segments longs, garder aussi un point au milieu
+          if (segmentDuration > 2.0 && segment.points.length > 4) {
+            const midIndex = Math.floor(segment.points.length / 2)
+            const midPoint = segment.points[midIndex]
+            filtered.push({ 
+              ...midPoint, 
+              reason: `horizontal_mid_${segment.avgValue.toFixed(0)}` 
+            })
+          }
+          
+          // Garder le point de fin si assez éloigné temporellement
+          if (segmentDuration > 0.3) {
+            filtered.push({ 
+              ...endPoint, 
+              reason: `horizontal_end_${segment.avgValue.toFixed(0)}` 
+            })
+          }
+        }
+      } else {
+        // Pour segment non-horizontal: garder les points de changement significatif
+        const significantPoints = this.selectSignificantPointsInSegment(segment.points, ccNum)
+        for (const point of significantPoints) {
+          filtered.push({ ...point, reason: 'significant_change' })
+        }
+      }
+    }
+    
+    // ✅ Trier par temps et éliminer les doublons proches
+    const sortedFiltered = filtered
+      .sort((a, b) => a.time - b.time)
+      .filter((point, index, array) => {
+        if (index === 0) return true
+        const prevPoint = array[index - 1]
+        const timeDiff = point.time - prevPoint.time
+        const valueDiff = Math.abs(point.value - prevPoint.value)
+        
+        // Garder si assez éloigné en temps OU différent en valeur (plus permissif)
+        return timeDiff > 0.2 || valueDiff > 2
+      })
+    
+    console.log(`🔧 FIN FILTRAGE CC${ccNum}: ${sortedFiltered.length} points gardés sur ${ccArray.length}`)
+    
+    // ✅ ÉTAPE 2: Supprimer les points colinéaires restants
+    const finalFiltered = this.removeCollinearPoints(sortedFiltered, ccNum, trackIndex)
+    
+    console.log(`🎯 CC${ccNum} FINAL: ${finalFiltered.length} points (objectif: ${ccNum === 1 ? '6' : '5'})`)
+    
+    return finalFiltered
+  }
+
+  /**
+   * Identifie les segments horizontaux dans une séquence de points CC
+   * @param {Array} ccArray - Points CC triés par temps
+   * @param {number} ccNum - Numéro du contrôleur
+   * @returns {Array} Segments identifiés avec leurs propriétés
+   */
+  identifyHorizontalSegments(ccArray, ccNum) {
+    const segments = []
+    const HORIZONTAL_TOLERANCE = 5 // Tolérance de valeur pour considérer "horizontal" (plus permissif)
+    const MIN_SEGMENT_DURATION = 0.3 // Durée minimum pour un segment horizontal (plus court)
+    
+    let currentSegment = {
+      points: [ccArray[0]],
+      startValue: ccArray[0].value,
+      isHorizontal: true,
+      avgValue: ccArray[0].value
+    }
+    
+    for (let i = 1; i < ccArray.length; i++) {
+      const currentPoint = ccArray[i]
+      const prevPoint = ccArray[i - 1]
+      const valueDiff = Math.abs(currentPoint.value - currentSegment.startValue)
+      
+      if (valueDiff <= HORIZONTAL_TOLERANCE) {
+        // Point appartient au segment horizontal actuel
+        currentSegment.points.push(currentPoint)
+        
+        // Recalculer la valeur moyenne
+        const valueSum = currentSegment.points.reduce((sum, p) => sum + p.value, 0)
+        currentSegment.avgValue = valueSum / currentSegment.points.length
+      } else {
+        // Fin du segment horizontal, démarrer un nouveau segment
+        
+        // Vérifier si le segment actuel est assez long pour être considéré horizontal
+        const segmentDuration = currentSegment.points[currentSegment.points.length - 1].time - currentSegment.points[0].time
+        currentSegment.isHorizontal = segmentDuration >= MIN_SEGMENT_DURATION
+        
+        segments.push(currentSegment)
+        
+        // Démarrer nouveau segment
+        currentSegment = {
+          points: [currentPoint],
+          startValue: currentPoint.value,
+          isHorizontal: true, // Par défaut, sera réévalué
+          avgValue: currentPoint.value
+        }
+      }
+    }
+    
+    // Ajouter le dernier segment
+    if (currentSegment.points.length > 0) {
+      const segmentDuration = currentSegment.points[currentSegment.points.length - 1].time - currentSegment.points[0].time
+      currentSegment.isHorizontal = segmentDuration >= MIN_SEGMENT_DURATION
+      segments.push(currentSegment)
+    }
+    
+    // Debug des segments identifiés
+    segments.forEach((segment, index) => {
+      const duration = segment.points[segment.points.length - 1].time - segment.points[0].time
+      console.log(`🔧 CC${ccNum} Segment ${index + 1}: ${segment.isHorizontal ? 'HORIZONTAL' : 'vertical'}, valeur=${segment.avgValue.toFixed(1)}, durée=${duration.toFixed(2)}s, points=${segment.points.length}`)
+    })
+    
+    return segments
+  }
+
+  /**
+   * Sélectionne les points significatifs dans un segment non-horizontal
+   * @param {Array} points - Points du segment
+   * @param {number} ccNum - Numéro du contrôleur
+   * @returns {Array} Points significatifs
+   */
+  selectSignificantPointsInSegment(points, ccNum) {
+    if (points.length <= 2) return points
+    
+    const significant = []
+    const MIN_VALUE_CHANGE = 5 // Changement minimum pour être significatif (plus permissif)
+    
+    // Toujours garder le premier point
+    significant.push(points[0])
+    
+    for (let i = 1; i < points.length - 1; i++) {
+      const prev = points[i - 1]
+      const current = points[i]
+      const next = points[i + 1]
+      
+      const changeFromPrev = Math.abs(current.value - prev.value)
+      const changeToNext = Math.abs(next.value - current.value)
+      
+      // Garder si changement significatif ou point de direction
+      if (changeFromPrev >= MIN_VALUE_CHANGE || changeToNext >= MIN_VALUE_CHANGE) {
+        significant.push(current)
+      } else {
+        // Détecter les points de direction (peak ou valley)
+        const isPeak = current.value > prev.value && current.value > next.value
+        const isValley = current.value < prev.value && current.value < next.value
+        
+        if ((isPeak || isValley) && Math.max(changeFromPrev, changeToNext) >= 3) {
+          significant.push(current)
+        }
+      }
+    }
+    
+    // Toujours garder le dernier point
+    if (points.length > 1) {
+      significant.push(points[points.length - 1])
+    }
+    
+    return significant
+  }
+
+  /**
+   * Supprime les points colinéaires en préservant les transitions importantes
+   * @param {Array} points - Points déjà filtrés
+   * @param {number} ccNum - Numéro du contrôleur  
+   * @param {number} trackIndex - Index de la piste
+   * @returns {Array} Points sans les colinéaires
+   */
+  removeCollinearPoints(points, ccNum, trackIndex) {
+    if (points.length <= 3) return points
+    
+    console.log(`🔍 COLINÉARITÉ CC${ccNum}: Test de ${points.length} points`)
+    
+    const result = []
+    const COLLINEARITY_TOLERANCE = 3.5  // Encore plus permissif pour supprimer plus de points
+    
+    // Toujours garder le premier point
+    result.push({ ...points[0], reason: points[0].reason || 'first_point' })
+    
+    // Examiner tous les triplets consécutifs
+    for (let i = 1; i < points.length - 1; i++) {
+      const prevPoint = result[result.length - 1]
+      const currentPoint = points[i]
+      const nextPoint = points[i + 1]
+      
+      // ✅ PRÉSERVER les points de transition entre segments différents
+      const isTransitionPoint = this.isTransitionBetweenSegments(prevPoint, currentPoint, nextPoint, ccNum)
+      
+      // ✅ LOGIQUE SPÉCIALE: Être plus agressif dans les premières mesures (0-4s)
+      let adjustedTolerance = COLLINEARITY_TOLERANCE
+      if (currentPoint.time < 4.0) {
+        adjustedTolerance = COLLINEARITY_TOLERANCE * 2.0 // Beaucoup plus permissif pour supprimer plus de points
+      }
+      
+      // Calculer si currentPoint est sur la droite entre prevPoint et nextPoint
+      const isCollinear = this.isPointOnLine(
+        prevPoint.time, prevPoint.value,
+        currentPoint.time, currentPoint.value, 
+        nextPoint.time, nextPoint.value,
+        adjustedTolerance
+      )
+      
+      if (isCollinear && !isTransitionPoint) {
+        console.log(`🗑️ CC${ccNum} SUPPRESSION COLINÉAIRE: Point ${i} (t=${currentPoint.time.toFixed(3)}s, v=${currentPoint.value}) sur droite entre ${prevPoint.time.toFixed(3)}s et ${nextPoint.time.toFixed(3)}s`)
+      } else {
+        if (isTransitionPoint) {
+          console.log(`🔒 CC${ccNum} PRÉSERVÉ TRANSITION: Point ${i} (t=${currentPoint.time.toFixed(3)}s, v=${currentPoint.value}) - transition importante`)
+        }
+        result.push({ ...currentPoint, reason: currentPoint.reason || 'significant' })
+      }
+    }
+    
+    // Toujours garder le dernier point
+    if (points.length > 1) {
+      result.push({ ...points[points.length - 1], reason: points[points.length - 1].reason || 'last_point' })
+    }
+    
+    console.log(`🔍 COLINÉARITÉ CC${ccNum}: ${points.length} → ${result.length} points (${points.length - result.length} supprimés)`)
+    
+    return result
+  }
+
+  /**
+   * Détermine si un point est une transition importante entre segments
+   * @param {Object} prevPoint - Point précédent
+   * @param {Object} currentPoint - Point actuel
+   * @param {Object} nextPoint - Point suivant
+   * @param {number} ccNum - Numéro du contrôleur
+   * @returns {boolean} True si c'est une transition importante
+   */
+  isTransitionBetweenSegments(prevPoint, currentPoint, nextPoint, ccNum) {
+    // Calculer les pentes avant et après le point actuel
+    const slopeBefore = (currentPoint.value - prevPoint.value) / (currentPoint.time - prevPoint.time)
+    const slopeAfter = (nextPoint.value - currentPoint.value) / (nextPoint.time - currentPoint.time)
+    
+    // Différence significative de pente (changement de direction)
+    const slopeDifference = Math.abs(slopeAfter - slopeBefore)
+    const SLOPE_THRESHOLD = 12 // Seuil encore plus élevé pour être plus sélectif
+    
+    // Changement de valeur significatif
+    const valueDifference = Math.abs(nextPoint.value - prevPoint.value)
+    const VALUE_THRESHOLD = 25 // Seuil encore plus élevé pour être plus sélectif
+    
+    // Points de fin/début de segments horizontaux (basé sur les reasons)
+    const isHorizontalTransition = (
+      (prevPoint.reason && prevPoint.reason.includes('horizontal')) ||
+      (currentPoint.reason && currentPoint.reason.includes('horizontal')) ||
+      (nextPoint.reason && nextPoint.reason.includes('horizontal'))
+    )
+    
+    // Transition temporelle importante (plus de 4 secondes entre prev et next)
+    const timeSpan = nextPoint.time - prevPoint.time
+    const LONG_SEGMENT_THRESHOLD = 4.0
+    
+    return slopeDifference > SLOPE_THRESHOLD || 
+           valueDifference > VALUE_THRESHOLD || 
+           (isHorizontalTransition && timeSpan > LONG_SEGMENT_THRESHOLD)
+  }
+
+  /**
+   * Teste si un point B est sur la droite AC (avec tolérance)
+   * @param {number} x1 - Temps du point A
+   * @param {number} y1 - Valeur du point A  
+   * @param {number} x2 - Temps du point B
+   * @param {number} y2 - Valeur du point B
+   * @param {number} x3 - Temps du point C
+   * @param {number} y3 - Valeur du point C
+   * @param {number} tolerance - Tolérance en unités de valeur
+   * @returns {boolean} True si B est sur la droite AC
+   */
+  isPointOnLine(x1, y1, x2, y2, x3, y3, tolerance) {
+    // Calculer l'aire du triangle ABC
+    // Si l'aire est proche de 0, les points sont colinéaires
+    const area = Math.abs((x1 * (y2 - y3) + x2 * (y3 - y1) + x3 * (y1 - y2)) / 2)
+    
+    // Normaliser par la distance temporelle pour avoir une tolérance cohérente
+    const timeSpan = Math.abs(x3 - x1)
+    const normalizedArea = timeSpan > 0 ? area / timeSpan : area
+    
+    return normalizedArea <= tolerance
+  }
 
   getTempoAtTicks(ticks, midiInfo, tempoEvents = []) {
     if (tempoEvents.length === 0) {

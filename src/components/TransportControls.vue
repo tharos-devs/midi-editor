@@ -1,6 +1,9 @@
 <!-- components/TransportControls.vue - VERSION SIMPLIFIÉE -->
 <template>
-  <div class="transport-controls" :class="{ compact, playing: isPlaying, paused: isPaused }">
+  <el-row>
+    <el-col :span="2">
+    </el-col>
+    <el-col :span="20" class="transport-controls" :class="{ compact, playing: isPlaying, paused: isPaused }">
     <!-- Affichage de la position (mesure.temps.subdivision) -->
     <div class="position-display">
       <el-icon><Location /></el-icon>
@@ -90,18 +93,11 @@
         <component :is="midiStatusIcon" />
       </el-icon>
     </div>
-
-    <!-- DEBUG: Affichage temporaire pour diagnostic -->
-    <div v-if="showDebug" class="debug-transport">
-      <div>Player: {{ isPlaying ? 'Playing' : 'Stopped' }}</div>
-      <div>Cursor: {{ cursor.isPlaying.value ? 'Playing' : 'Stopped' }}</div>
-      <div>Time: {{ currentTime.toFixed(2) }}s</div>
-      <div>CursorTime: {{ cursor.currentTime.value.toFixed(2) }}s</div>
-      <div>Position: {{ cursor.pixelPosition.value.toFixed(1) }}px</div>
-      <div>Duration: {{ totalDuration.toFixed(2) }}s</div>
-      <div>CanPlay: {{ canPlay ? 'Yes' : 'No' }}</div>
-    </div>
-  </div>
+    </el-col>
+    <el-col :span="2" align="right">
+      <el-button type="primary" @click="handleShowEditor">Edit</el-button>
+    </el-col>
+  </el-row>
 </template>
 
 <script setup>
@@ -144,10 +140,6 @@ const props = defineProps({
   compact: {
     type: Boolean,
     default: true
-  },
-  showDebug: {
-    type: Boolean,
-    default: false
   }
 })
 
@@ -160,6 +152,7 @@ const timeSignature = useTimeSignature()
 const markerStore = usePlaybackMarkerStore()
 const cursorStore = usePlaybackCursorStore()
 const keyboard = useKeyboardEvents()
+const showEditor = ref(true)
 
 // Refs locales
 const localPlaybackRate = ref(1)
@@ -167,8 +160,6 @@ const localPlaybackRate = ref(1)
 // ============ SYNCHRONISATION SIMPLIFIÉE ============
 // Synchroniser uniquement le curseur avec le lecteur MIDI
 watch(() => midiPlayer.isPlaying.value, (playing) => {
-  console.log('🎵 MidiPlayer.isPlaying changé:', playing, 'stoppedAtEnd:', midiPlayer.stoppedAtEnd?.value)
-  
   if (playing) {
     // Démarrer le curseur avec synchronisation initiale
     cursor.syncWithPlayer(midiPlayer.currentTime.value)
@@ -176,10 +167,8 @@ watch(() => midiPlayer.isPlaying.value, (playing) => {
   } else {
     // CORRECTION: Ne pas réinitialiser le curseur si c'est un arrêt de fin de morceau
     if (midiPlayer.stoppedAtEnd?.value) {
-      console.log('🏁 TransportControls: Arrêt de fin de morceau - pas de reset du curseur')
       cursor.unsyncFromPlayer() // Juste arrêter la sync, pas le curseur
     } else {
-      console.log('⏹️ TransportControls: Arrêt normal - reset du curseur')
       cursor.pausePlayback()
       cursor.unsyncFromPlayer()
     }
@@ -198,7 +187,6 @@ watch(() => midiPlayer.currentTime.value, (newTime) => {
 watch(() => midiPlayer.totalDuration.value, (newDuration) => {
   if (newDuration && newDuration > 0) {
     cursor.totalDuration.value = newDuration
-    console.log('📏 Durée synchronisée:', newDuration)
   }
 }, { immediate: true })
 
@@ -335,14 +323,7 @@ const currentPositionFormatted = computed(() => {
 
 // ============ MÉTHODES SIMPLIFIÉES ============
 function handlePlayPause() {
-  console.log('🎮 PlayPause clicked:', {
-    canPlay: canPlay.value,
-    isPlaying: isPlaying.value,
-    stoppedAtEnd: midiPlayer.stoppedAtEnd?.value
-  })
-  
   if (!canPlay.value) {
-    console.warn('❌ Impossible de jouer')
     return
   }
   
@@ -351,13 +332,11 @@ function handlePlayPause() {
   } else {
     // CORRECTION: Reset stoppedAtEnd quand on relance manuellement
     if (midiPlayer.stoppedAtEnd?.value) {
-      console.log('🔄 Reset stoppedAtEnd pour permettre le redémarrage')
       midiPlayer.stoppedAtEnd.value = false
     }
     
     // Si marqueur P présent, démarrer à cette position
     if (markerStore.hasMarker) {
-      // console.log('🅿️ Démarrage depuis le marqueur P à:', markerStore.markerTime.toFixed(2) + 's')
       seekTo(markerStore.markerTime)
     }
     
@@ -366,12 +345,10 @@ function handlePlayPause() {
 }
 
 function handleStop() {
-  console.log('⏹️ Stop clicked')
   stop()
 }
 
 function handleRewind() {
-  console.log('⏪ Rewind clicked')
   rewind()
 }
 
@@ -444,6 +421,16 @@ function setupKeyboardShortcuts() {
   })
 }
 
+function handleShowEditor() {
+  showEditor.value = !showEditor.value
+  console.log('🎛️ Editor mode:', showEditor.value)
+}
+
+// Exposer showEditor pour le parent
+defineExpose({
+  showEditor
+})
+
 // Lifecycle
 onMounted(() => {
   console.log('🚀 TransportControls monté')
@@ -469,13 +456,16 @@ onUnmounted(() => {
 
 <style scoped>
 .transport-controls {
+  margin: 0 auto;
+}
+
+.transport-controls {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 12px;
   padding: 8px 12px;
   background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color);
   border-radius: 6px;
   user-select: none;
   box-sizing: border-box;
@@ -612,21 +602,6 @@ onUnmounted(() => {
 
 .status-unknown {
   color: var(--el-text-color-secondary);
-}
-
-/* DEBUG */
-.debug-transport {
-  position: fixed;
-  top: 10px;
-  right: 10px;
-  background: rgba(0, 0, 0, 0.9);
-  color: #00ff00;
-  padding: 8px;
-  border-radius: 4px;
-  font-family: monospace;
-  font-size: 10px;
-  z-index: 9999;
-  border: 1px solid #00ff00;
 }
 
 /* Mode compact */

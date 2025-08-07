@@ -497,9 +497,54 @@ export class ProjectFileManager {
           keySignature: "C",
           tempo: 120
         },
-        tracks: [],
+        tracks: [{
+          id: 0,
+          name: "Piste 1",
+          channel: 0,
+          instrument: { name: "Piano", number: 0 },
+          notes: [],
+          controlChanges: {},
+          pitchBends: [],
+          volume: 100,
+          pan: 64,
+          bank: 0,
+          midiOutput: "default",
+          muted: false,
+          solo: false,
+          color: "#FF6B6B",
+          lastModified: Date.now()
+        }],
         notes: [],
-        controlChanges: [],
+        midiCC: [
+          // CC par défaut créés automatiquement pour nouveaux projets
+          {
+            id: `cc1-default-${Date.now()}-1`,
+            trackId: 0,
+            controller: 1,
+            time: 0.0,
+            value: 64,
+            channel: 0,
+            lastModified: Date.now()
+          },
+          {
+            id: `cc7-default-${Date.now()}-2`,
+            trackId: 0,
+            controller: 7,
+            time: 0.0,
+            value: 64,
+            channel: 0,
+            lastModified: Date.now()
+          },
+          {
+            id: `cc11-default-${Date.now()}-3`,
+            trackId: 0,
+            controller: 11,
+            time: 0.0,
+            value: 64,
+            channel: 0,
+            lastModified: Date.now()
+          }
+        ], // CC par défaut: CC1 (Modulation), CC7 (Volume), CC11 (Expression)
         tempoEvents: [{
           id: 'tempo-default',
           bpm: 120,

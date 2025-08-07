@@ -1,0 +1,1 @@
+pour des intervalles réguliers il vaut mieux utiliser 0, 50, 100, 150, 200. l'affichage des labels n'est pas bon. l'espace entre chaque label n'est pas identique. il faudra adapter l'affichage des lignes
