@@ -203,6 +203,34 @@ export function useGridRenderer(options = {}) {
     measures.value.forEach(measure => {
       // Créer les beats (en excluant le premier beat puisqu'il coïncide avec la ligne de mesure)
       for (let beatIndex = 1; beatIndex < measure.beatsCount; beatIndex++) {
+        // ✅ CORRECTION: Utiliser la même logique que getAllBeatLines dans useTimeSignature
+        const measureDuration = measure.endTime - measure.startTime
+        const beatRatio = beatIndex / measure.beatsCount  // beatIndex + 1 - 1 = beatIndex
+        const beatTime = measure.startTime + (beatRatio * measureDuration)
+        
+        // ✅ Calculer la position avec timeToPixelsWithSignatures comme les notes
+        const { timeToPixelsWithSignatures } = timeSignatureComposable || {}
+        let beatPosition = measure.startPixel + beatIndex * measure.beatWidth // fallback géométrique
+        
+        if (timeToPixelsWithSignatures) {
+          try {
+            beatPosition = timeToPixelsWithSignatures(beatTime)
+          } catch (e) {
+            console.warn('Erreur timeToPixelsWithSignatures pour beat:', e)
+            // Garder la position géométrique comme fallback
+          }
+        }
+        
+        // DEBUG: Comparer l'ancienne vs nouvelle méthode pour mesure 1
+        if (measure.number === 1 && beatIndex === 1) {
+          const oldPosition = measure.startPixel + beatIndex * measure.beatWidth
+          console.log(`🔧 CORRECTION BEAT POSITION - Beat ${beatIndex + 1} mesure ${measure.number}:`, {
+            beatTime: beatTime.toFixed(3) + 's',
+            anciennePosition: oldPosition.toFixed(1) + 'px',
+            nouvellePosition: beatPosition.toFixed(1) + 'px',
+            correction: (beatPosition - oldPosition).toFixed(1) + 'px'
+          })
+        }
         beats.push({
           id: `beat-${measure.number}-${beatIndex + 1}`,
           type: 'beat',
@@ -210,7 +238,7 @@ export function useGridRenderer(options = {}) {
           beat: beatIndex + 1,
           style: {
             position: 'absolute',
-            left: (measure.startPixel + beatIndex * measure.beatWidth) + 'px',
+            left: beatPosition + 'px', // ✅ CORRECTION: Utiliser beatPosition calculé avec timeToPixelsWithSignatures
             top: '0px',
             height: containerHeight ? containerHeight + 'px' : '100%',
             minHeight: containerHeight ? containerHeight + 'px' : '100vh',
@@ -221,7 +249,8 @@ export function useGridRenderer(options = {}) {
           data: {
             measure,
             beatIndex: beatIndex + 1,
-            absolutePixel: measure.startPixel + beatIndex * measure.beatWidth
+            absolutePixel: beatPosition, // ✅ CORRECTION: Position corrigée
+            beatTime: beatTime // Ajouter le temps du beat pour référence
           }
         })
       }
