@@ -1,1 +1,11 @@
 pour des intervalles réguliers il vaut mieux utiliser 0, 50, 100, 150, 200. l'affichage des labels n'est pas bon. l'espace entre chaque label n'est pas identique. il faudra adapter l'affichage des lignes
+
+gridrender ligne des divisions entre les temps des mesures en fonction du snap
+
+deplacement horizontal des points tempo ne suit pas la souris
+
+vecocité VelocityInfo label 32, 64, 96, champ input pour saisir manuellement une velocité
+
+bouton pour ajouter des mesures
+
+ruler pour les marqeurs

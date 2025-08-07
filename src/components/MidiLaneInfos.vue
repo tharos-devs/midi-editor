@@ -4,13 +4,13 @@
     <div class="midi-lane-tabs-spacer">
       <!-- Zone de saisie pour éditer la valeur du point sélectionné -->
       <div v-if="isTempoLane && selectedPointValue !== null && selectedPointValue !== undefined" class="cc-value-editor">
-        <el-input
+        <el-input-number
           v-model="editableValue"
-          type="number"
-          :min="60"
+          :min="0"
           :max="200"
+          :controls="false"
           size="small"
-          class="cc-value-input"
+          class="cc-value-input no-spinner"
           @change="handleTempoValueChange"
           @keyup.enter="handleTempoValueChange"
           @blur="handleTempoValueChange"
@@ -18,11 +18,11 @@
       </div>
       
       <div v-else-if="isMidiCCLane && selectedPointValue !== null && selectedPointValue !== undefined" class="cc-value-editor">
-        <el-input
+        <el-input-number
           v-model="editableValue"
-          type="number"
           :min="0"
           :max="127"
+          :controls="false"
           size="small"
           class="cc-value-input"
           @change="handleValueChange"
@@ -218,7 +218,7 @@ const isMidiCCLane = computed(() => {
 }
 
 .cc-value-input {
-  width: 50px;
+  width: 60px;
 }
 
 :deep(.cc-value-input .el-input__wrapper) {
@@ -227,7 +227,7 @@ const isMidiCCLane = computed(() => {
 }
 
 :deep(.cc-value-input .el-input__inner) {
-  font-size: 10px;
+  font-size: 13px;
   height: 24px;
   line-height: 24px;
   padding: 0 4px;
@@ -272,4 +272,5 @@ const isMidiCCLane = computed(() => {
     --midi-lane-info-fg: #ccc;
   }
 }
+
 </style>

@@ -24,7 +24,26 @@
         <div class="right-column" @wheel="handleGlobalWheel">
             <!-- Timeline -->
             <div class="timeline-container">
-            <div class="timeline-spacer" :style="{ width: uiStore.pianoKeysWidth + 'px' }"></div>
+            <div class="timeline-spacer" :style="{ width: uiStore.pianoKeysWidth + 'px' }">
+              <el-button 
+                :type="showSignatureRuler ? 'primary' : 'default'" 
+                :link="true"
+                style="width: 30px; margin: 5px 2px 2px 5px;"
+                size="small"
+                @click="handleShowSignatureRuler"
+              >
+                4/4
+              </el-button>
+              <el-button 
+                :type="showMarkerRuler ? 'primary' : 'default'" 
+                :link="true"
+                style="width: 30px; margin: 5px 5px 2px 2px;"
+                size="small"
+                @click="handleShowMarkerRuler"
+              >
+                Mrk
+              </el-button>              
+            </div>
             <div class="timeline-scroll sync-scroll-x">
               <TimeLine />
             </div>
@@ -137,13 +156,15 @@ import WheelHandler from './components/WheelHandler.vue'
 
 const uiStore = useUIStore()
 
+const showSignatureRuler = ref(true)
+const showMarkerRuler = ref(false)
+
 // Lane sélectionnée
 const selectedLane = ref(null)
 const selectedCCNumber = ref(null)
 const selectedCCName = ref('')
 const selectedPointValue = ref(null)
 const selectedPointId = ref(null)
-
 
 // Refs pour le scroll vertical piano/grid
 const pianoGridContainerRef = ref(null)
@@ -165,6 +186,16 @@ let startX = 0
 let startY = 0
 let startWidth = 0
 let startHeight = 0
+
+function handleShowSignatureRuler() {
+  showSignatureRuler.value = !showSignatureRuler.value
+  console.log('showSignatureRuler', showSignatureRuler.value)
+}
+
+function handleShowMarkerRuler() {
+  showMarkerRuler.value = !showMarkerRuler.value
+  console.log('showMarkerRuler', showMarkerRuler.value)
+}
 
 // Gestion de la sélection de lane
 const handleLaneSelection = (lane) => {

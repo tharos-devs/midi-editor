@@ -94,8 +94,8 @@
       </el-icon>
     </div>
     </el-col>
-    <el-col :span="2" align="right">
-      <el-button type="primary" @click="handleShowEditor">Edit</el-button>
+    <el-col :span="2" align="right" style="padding-right: 20px">
+      <el-button :type="showEditor ? 'primary' : 'default'" @click="handleShowEditor">Edit</el-button>
     </el-col>
   </el-row>
 </template>

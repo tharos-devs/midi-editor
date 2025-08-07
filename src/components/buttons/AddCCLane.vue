@@ -147,8 +147,8 @@ const handleCCSelection = (ccNumbers) => {
 }
 
 .add-icon {
-  font-size: 18px !important;
-  margin-right: 2px;
+  font-size: 24px !important;
+  margin-right: -1px;
 }
 
 .cc-option-content {
