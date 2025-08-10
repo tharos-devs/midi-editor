@@ -35,20 +35,20 @@ const props = defineProps({
 // Couleur spécifique pour le tempo (rouge-orange comme dans TempoLane)
 const tempoColor = computed(() => '#FF5722')
 
-// Valeurs de référence à afficher - alignées avec les lignes du TempoLane (80, 120, 160) + 0
-const referenceValues = [0, 80, 120, 160, 200]
+// Valeurs de référence à afficher - intervalles avec minimum 10 BPM
+const referenceValues = [10, 50, 100, 150, 200]
 
 // Fonction pour calculer la position en pourcentage
 function getPositionPercent(bpm) {
-  // Cas spécial pour 0 : le placer à 2% du bas pour qu'il soit visible
-  if (bpm === 0) {
-    return 2
+  // Cas spécial pour 10 : le placer à 5% du bas pour qu'il soit visible
+  if (bpm === 10) {
+    return 5
   }
   
-  // Normaliser par rapport à la plage 60-200 pour les autres valeurs
-  const normalized = (bpm - 60) / (200 - 60)
-  // Clamper entre 3 et 98% pour laisser de l'espace pour les labels extrêmes
-  return Math.max(3, Math.min(98, normalized * 100))
+  // Pour un espacement régulier, utiliser la plage complète 0-200
+  // Même logique que les points et lignes
+  const normalized = bpm / 200
+  return normalized * 100
 }
 
 // Déterminer si c'est une valeur haute (proche du top)
@@ -58,7 +58,7 @@ function isTopValue(bpm) {
 
 // Déterminer si c'est une valeur basse (proche du bottom)
 function isBottomValue(bpm) {
-  return bpm === 0 || bpm <= 60 // 0 BPM ou valeurs très basses
+  return bpm === 10 || bpm <= 60 // 10 BPM (minimum) ou valeurs très basses
 }
 </script>
 

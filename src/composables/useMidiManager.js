@@ -253,6 +253,28 @@ export function useMidiManager() {
     }
   }
 
+  // ✅ CORRECTION: Fonction pour envoyer Note On
+  function sendNoteOn(outputId, channel, note, velocity) {
+    const clampedChannel = Math.max(0, Math.min(15, channel))
+    const clampedNote = Math.max(0, Math.min(127, note))
+    const clampedVelocity = Math.max(1, Math.min(127, velocity))
+    
+    // 0x90 = Note On
+    const message = [0x90 + clampedChannel, clampedNote, clampedVelocity]
+    return sendMidiMessage(outputId, message)
+  }
+
+  // ✅ CORRECTION: Fonction pour envoyer Note Off
+  function sendNoteOff(outputId, channel, note, velocity = 0) {
+    const clampedChannel = Math.max(0, Math.min(15, channel))
+    const clampedNote = Math.max(0, Math.min(127, note))
+    const clampedVelocity = Math.max(0, Math.min(127, velocity))
+    
+    // 0x80 = Note Off
+    const message = [0x80 + clampedChannel, clampedNote, clampedVelocity]
+    return sendMidiMessage(outputId, message)
+  }
+
   // Fonction de test MIDI
   function testMidiOutput(outputId, channel = 0, note = 60, velocity = 100, duration = 500) {
     if (!isInitialized.value) {
@@ -412,6 +434,8 @@ export function useMidiManager() {
     sendControlChange,
     sendProgramChange,
     sendBankSelect,
+    sendNoteOn,
+    sendNoteOff,
     testMidiOutput,
     getAllNotesOff,
     resetAllControllers,

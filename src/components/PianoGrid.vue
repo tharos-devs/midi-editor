@@ -32,19 +32,23 @@
     </div>
 
     <!-- GridRenderer pour les lignes verticales -->
-    <GridRenderer
-      :showMeasureLines="true"
-      :showBeatLines="true"
-      :showSignatureIndicators="false"
-      :showMeasureNumbers="false"
-    >
-      <!-- Curseur de lecture GLOBAL -->
-      <GlobalPlaybackCursor
-        :container-height="calculatedPianoHeight"
-        :show-debug-info="false"
-      />
+    <div class="piano-grid-background">
+      <GridRenderer
+        :show-measure-lines="true"
+        :show-beat-lines="true"
+        :show-subdivision-lines="uiStore.snapToGrid"
+        :show-signature-indicators="false"
+        :show-measure-numbers="false"
+      >
+        <!-- Curseur de lecture GLOBAL -->
+        <GlobalPlaybackCursor
+          :container-height="calculatedPianoHeight"
+          :total-width="totalWidth"
+          :show-debug-info="false"
+        />
 
-    </GridRenderer>
+      </GridRenderer>
+    </div>
 
     <!-- Notes MIDI -->
     <div class="notes-layer">
@@ -62,27 +66,6 @@
       class="lasso-rectangle"
       :style="multiSelection.lassoStyle.value"
     />
-
-    <!-- Informations de sélection -->
-    <div 
-      v-if="multiSelection.hasMultipleSelection.value" 
-      class="selection-info"
-    >
-      {{ multiSelection.selectedNotes.value.size }} notes sélectionnées
-      <button @click="clearSelection" class="clear-selection-btn">×</button>
-    </div>
-
-    <!-- Raccourcis clavier (info) -->
-    <div v-if="multiSelection.selectedNotes.value.size > 0" class="keyboard-shortcuts">
-      <small>
-        Ctrl+clic: sélection multiple • Shift+clic: étendre sélection • Clic+glisser: lasso • Double-clic: ajouter note
-      </small>
-    </div>
-
-    <!-- Debug info (conservé) -->
-    <div v-if="showDebug" class="debug-info" style="position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.8); color: white; padding: 10px; z-index: 1000;">
-      <div>GridRenderer utilisé pour les lignes verticales</div>
-    </div>
   </div>
 </template>
 
@@ -478,11 +461,15 @@ provide('totalWidth', totalWidth)
   pointer-events: auto;
 }
 
-.debug-info {
-  font-family: monospace;
-  font-size: 12px;
-  max-width: 400px;
-  border-radius: 4px;
+.piano-grid-background {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+  opacity: 0.6;
+  pointer-events: none;
 }
 
 .lasso-rectangle {
@@ -492,57 +479,6 @@ provide('totalWidth', totalWidth)
   pointer-events: none;
   z-index: 1000;
   border-radius: 2px;
-}
-
-.selection-info {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  background: rgba(33, 150, 243, 0.9);
-  color: white;
-  padding: 6px 12px;
-  border-radius: 4px;
-  font-size: 12px;
-  font-weight: bold;
-  z-index: 1001;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-}
-
-.clear-selection-btn {
-  background: none;
-  border: none;
-  color: white;
-  font-size: 16px;
-  font-weight: bold;
-  cursor: pointer;
-  padding: 0;
-  width: 20px;
-  height: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  transition: background-color 0.2s;
-}
-
-.clear-selection-btn:hover {
-  background: rgba(255,255,255,0.2);
-}
-
-.keyboard-shortcuts {
-  position: absolute;
-  bottom: 10px;
-  left: 10px;
-  background: rgba(0,0,0,0.7);
-  color: white;
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 10px;
-  z-index: 1001;
-  max-width: 400px;
 }
 
 .piano-grid.lasso-active {

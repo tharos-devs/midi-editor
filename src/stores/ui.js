@@ -47,6 +47,9 @@ export const useUIStore = defineStore('ui', () => {
   const snapToGrid = ref(true) // Snap activé/désactivé
   const snapDivision = ref("4")
 
+  // CURSOR SPEED SETTINGS
+  const cursorSpeedRatio = ref(1.0) // Ratio de vitesse du curseur (0.1 à 2.0)
+
   // Piano settings
   const totalKeys = ref(128) // MIDI keys 0-127
   const keyHeight = computed(() => 16 * verticalZoom.value)
@@ -165,6 +168,11 @@ export const useUIStore = defineStore('ui', () => {
     snapDivision.value = Math.max(1, division)
   }
 
+  // CURSOR SPEED ACTIONS
+  const setCursorSpeedRatio = (ratio) => {
+    cursorSpeedRatio.value = Math.max(0.1, Math.min(2.0, ratio))
+  }
+
   const setSyncFunctions = (functions) => {
     syncFunctions.value = functions
   }
@@ -244,6 +252,9 @@ export const useUIStore = defineStore('ui', () => {
     snapToGrid,
     snapDivision,
 
+    // CURSOR SPEED STATE
+    cursorSpeedRatio,
+
     // Computed
     pixelsPerBeat,
     pixelsPerMeasure,
@@ -271,6 +282,9 @@ export const useUIStore = defineStore('ui', () => {
     toggleSnapToGrid,
     setSnapToGrid,
     setSnapDivision,
+
+    // CURSOR SPEED ACTIONS
+    setCursorSpeedRatio,
 
     setSyncFunctions,
     setHorizontalScrollPosition,

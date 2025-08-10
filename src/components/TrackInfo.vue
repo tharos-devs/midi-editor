@@ -14,12 +14,27 @@
         
         <div class="track-name-edit">
           <label>Nom:</label>
-          <el-input
-            :model-value="selectedTrackInfo.name"
-            size="small"
-            @change="updateTrackName"
-            placeholder="Nom de la piste"
-          />
+          <div class="track-name-container">
+            <input
+              v-if="editingName"
+              v-model="tempTrackName"
+              @blur="saveTrackName"
+              @keyup.enter="saveTrackName"
+              @keyup.escape="cancelEditName"
+              @keydown="handleInputKeyDown"
+              class="track-name-input"
+              placeholder="Nom de la piste"
+              ref="nameInput"
+            />
+            <div 
+              v-else
+              class="track-name-display"
+              @dblclick="startEditName"
+              title="Double-cliquer pour modifier"
+            >
+              {{ selectedTrackInfo.name }}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -61,6 +76,31 @@
             />
           </el-select>
         </div>
+
+        <div class="control-group">
+          <label>Entrée MIDI:</label>
+          <el-select
+            :model-value="selectedTrackInfo.midiInput || 'none'"
+            size="small"
+            @change="onInputChange"
+            :disabled="!midiManager.midiSupported?.value || midiManager.availableInputs?.value?.length === 0"
+          >
+            <el-option
+              label="Aucune entrée"
+              value="none"
+            />
+            <el-option
+              label="Tous les inputs"
+              value="all"
+            />
+            <el-option
+              v-for="input in midiManager.availableInputs?.value || []"
+              :key="input.id"
+              :label="input.name"
+              :value="input.id"
+            />
+          </el-select>
+        </div>
       </div>
 
       <!-- Panoramique -->
@@ -93,7 +133,7 @@
             @click="toggleMute"
             class="control-button"
           >
-            Mute
+            M
           </el-button>
           <el-button
             :type="selectedTrackInfo.solo ? 'warning' : 'default'"
@@ -101,7 +141,25 @@
             @click="toggleSolo"
             class="control-button"
           >
-            Solo
+            S
+          </el-button>
+          <el-button
+            :type="selectedTrackInfo.record ? 'danger' : 'default'"
+            size="small"
+            @click="toggleRecord"
+            class="control-button"
+            title="Enregistrement"
+          >
+            R
+          </el-button>
+          <el-button
+            :type="selectedTrackInfo.monitor ? 'info' : 'default'"
+            size="small"
+            @click="toggleMonitor"
+            class="control-button"
+            title="Monitoring"
+          >
+            I
           </el-button>
         </div>
       </div>
@@ -176,22 +234,30 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { Mute, VideoPlay, Headset } from '@element-plus/icons-vue'
 import { useMidiStore } from '@/stores/midi'
 import { useMidiManager } from '@/composables/useMidiManager'
+import { useMidiRecording } from '@/composables/useMidiRecording'
 import VuMeter from './VuMeter.vue'
 // import CustomSlider from './ui/CustomSlider.vue'
 
-// Store
+// Store et composables
 const midiStore = useMidiStore()
 const midiManager = useMidiManager()
+const midiRecording = useMidiRecording()
 
 // Variables réactives locales pour éviter les conflits
 const localVolume = ref(0)
 const localPan = ref(64)
 const localMuted = ref(false)
 const localSolo = ref(false)
+
+// Variables pour l'édition du nom
+const editingName = ref(false)
+const tempTrackName = ref('')
+const nameInput = ref(null)
+
 
 // Computed
 const selectedTrackInfo = computed(() => midiStore.getSelectedTrackData)
@@ -251,6 +317,9 @@ onMounted(async () => {
   if (!midiManager.isInitialized?.value) {
     await midiManager.initializeMidi()
   }
+  
+  // Configurer le monitoring MIDI au démarrage
+  midiRecording.setupMidiMonitoring()
 })
 
 onUnmounted(() => {
@@ -300,9 +369,41 @@ function formatPanTooltip(value) {
 let volumeTimeout = null
 let panTimeout = null
 
-async function updateTrackName(newName) {
-  if (!selectedTrackInfo.value || !newName.trim()) return
-  await midiStore.updateTrackName(selectedTrackInfo.value.id, newName.trim())
+function startEditName() {
+  if (!selectedTrackInfo.value) return
+  editingName.value = true
+  tempTrackName.value = selectedTrackInfo.value.name
+  nextTick(() => {
+    if (nameInput.value) {
+      nameInput.value.focus()
+      nameInput.value.select()
+    }
+  })
+}
+
+async function saveTrackName() {
+  if (!selectedTrackInfo.value) return
+  if (tempTrackName.value.trim() && tempTrackName.value !== selectedTrackInfo.value.name) {
+    await midiStore.updateTrackName(selectedTrackInfo.value.id, tempTrackName.value.trim())
+  }
+  editingName.value = false
+}
+
+function cancelEditName() {
+  if (!selectedTrackInfo.value) return
+  editingName.value = false
+  tempTrackName.value = selectedTrackInfo.value.name
+}
+
+function handleInputKeyDown(event) {
+  console.log('🔍 TrackInfo input keydown:', event.key)
+  
+  // Empêcher la propagation pour Delete/Backspace
+  if (event.key === 'Delete' || event.key === 'Backspace') {
+    console.log('✅ TrackInfo: Arrêt propagation', event.key)
+    event.stopPropagation()
+    event.stopImmediatePropagation()
+  }
 }
 
 function onChannelChange(newChannel) {
@@ -329,6 +430,26 @@ function onOutputChange(outputId) {
     : output?.name || 'Sortie inconnue'
     
   // console.log(`✅ Sortie MIDI mise à jour: ${outputName}`)
+}
+
+function onInputChange(inputId) {
+  if (!selectedTrackInfo.value) return
+  
+  console.log(`🎤 Changement entrée MIDI: "${inputId}"`)
+  
+  // Mettre à jour le store avec la nouvelle entrée MIDI
+  midiStore.updateTrackMidiInput(selectedTrackInfo.value.id, inputId)
+  
+  // Reconfigurer le monitoring MIDI
+  midiRecording.setupMidiMonitoring()
+  
+  const inputName = inputId === 'none' 
+    ? 'Aucune entrée'
+    : inputId === 'all'
+    ? 'Tous les inputs'
+    : midiManager.availableInputs.value.find(i => i.id === inputId)?.name || 'Entrée inconnue'
+    
+  console.log(`✅ Entrée MIDI mise à jour: ${inputName}`)
 }
 
 async function updateTrackPan(pan) {
@@ -409,6 +530,27 @@ function toggleSolo() {
   localSolo.value = !localSolo.value
   midiStore.toggleTrackSolo(selectedTrackInfo.value.id)
 }
+
+function toggleRecord() {
+  if (!selectedTrackInfo.value) return
+  const newRecordState = !selectedTrackInfo.value.record
+  midiStore.toggleTrackRecord(selectedTrackInfo.value.id)
+  
+  // Auto-activer le monitoring quand Record est activé
+  if (newRecordState && !selectedTrackInfo.value.monitor) {
+    midiStore.toggleTrackMonitor(selectedTrackInfo.value.id)
+  }
+  // Auto-désactiver le monitoring quand Record est désactivé
+  else if (!newRecordState && selectedTrackInfo.value.monitor) {
+    midiStore.toggleTrackMonitor(selectedTrackInfo.value.id)
+  }
+}
+
+function toggleMonitor() {
+  if (!selectedTrackInfo.value) return
+  midiStore.toggleTrackMonitor(selectedTrackInfo.value.id)
+}
+
 </script>
 
 <style scoped>
@@ -473,6 +615,48 @@ function toggleSolo() {
   gap: 6px;
 }
 
+.track-name-container {
+  width: 100%;
+}
+
+.track-name-display {
+  padding: 1px 3px;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  background: var(--lane-bg);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--track-name);
+  cursor: text;
+  transition: background-color 0.2s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.2;
+  height: 18px;
+  display: flex;
+  align-items: center;
+}
+
+.track-name-display:hover {
+  background: var(--panel-bg);
+}
+
+.track-name-input {
+  background: var(--panel-bg);
+  border: 1px solid var(--menu-active-fg);
+  border-radius: 2px;
+  padding: 1px 3px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--track-name);
+  width: 100%;
+  line-height: 1.2;
+  height: 18px;
+  outline: none;
+  box-sizing: border-box;
+}
+
 .control-group {
   display: flex;
   flex-direction: column;
@@ -505,7 +689,7 @@ function toggleSolo() {
 
 .button-group {
   display: flex;
-  gap: 8px;
+  gap: 2px;
 }
 
 .control-button {
@@ -514,6 +698,8 @@ function toggleSolo() {
   align-items: center;
   justify-content: center;
   gap: 4px;
+  min-width: 24px;
+  max-width: 28px;
 }
 
 .volume-section {

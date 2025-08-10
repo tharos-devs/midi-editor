@@ -25,34 +25,48 @@
             <!-- Timeline -->
             <div class="timeline-container">
             <div class="timeline-spacer" :style="{ width: uiStore.pianoKeysWidth + 'px' }">
-              <el-button 
-                :type="showSignatureRuler ? 'primary' : 'default'" 
-                :link="true"
-                style="width: 30px; margin: 5px 2px 2px 5px;"
-                size="small"
-                @click="handleShowSignatureRuler"
-              >
-                4/4
-              </el-button>
-              <el-button 
-                :type="showMarkerRuler ? 'primary' : 'default'" 
-                :link="true"
-                style="width: 30px; margin: 5px 5px 2px 2px;"
-                size="small"
-                @click="handleShowMarkerRuler"
-              >
-                Mrk
-              </el-button>              
+              <SelectRulers />    
             </div>
             <div class="timeline-scroll sync-scroll-x">
               <TimeLine />
             </div>
           </div>
+
+          <!-- MarkerRuler -->
+          <div v-if="projectStore.showMarkerRuler" class="marker-container">
+            <div class="marker-spacer" :style="{ width: uiStore.pianoKeysWidth + 'px' }">
+              <MarkerControls 
+                ref="markerControlsRef"
+                :selected-marker="selectedMarker"
+                @marker-deselected="selectedMarker = null"
+              />
+            </div>
+            <div class="marker-scroll sync-scroll-x">
+              <MarkerRuler 
+                ref="markerRulerRef"
+                :selected-marker="selectedMarker"
+                @marker-selected="handleMarkerSelection"
+                @marker-edit="handleMarkerEdit"
+              />
+            </div>
+          </div>            
+
           <!-- TimeSignatureRuler -->
-          <div class="timesignature-container">
-            <div class="timesignature-spacer" :style="{ width: uiStore.pianoKeysWidth + 'px' }"></div>
+          <div v-if="projectStore.showSignatureRuler" class="timesignature-container">
+            <div class="timesignature-spacer" :style="{ width: uiStore.pianoKeysWidth + 'px' }">
+              <SignatureControls 
+                ref="signatureControlsRef"
+                :selected-signature="selectedSignature"
+                @signature-deselected="selectedSignature = null"
+              />
+            </div>
             <div class="timesignature-scroll sync-scroll-x">
-              <TimeSignatureRuler />
+              <TimeSignatureRuler 
+                ref="timeSignatureRulerRef"
+                :selected-signature="selectedSignature"
+                @signature-selected="handleSignatureSelection"
+                @signature-edit="handleSignatureEdit"
+              />
             </div>
           </div>        
 
@@ -139,6 +153,9 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useUIStore } from './stores/ui'
+import { useMidiStore } from './stores/midi'
+import { useProjectStore } from './stores/project'
+import { useKeyboardEvents } from './composables/useKeyboardEvents'
 import MenuBar from './components/MenuBar.vue'
 import ToolBar from './components/ToolBar.vue'
 import TrackList from './components/TrackList.vue'
@@ -150,14 +167,19 @@ import MidiLanes from './components/MidiLanes.vue'
 import MidiLaneInfos from './components/MidiLaneInfos.vue'
 import StatusBar from './components/StatusBar.vue'
 import TimeSignatureRuler from './components/rulers/TimeSignatureRuler.vue'
+import MarkerRuler from './components/rulers/MarkerRuler.vue'
 import TransportControls from './components/TransportControls.vue'
 import ScrollController from './components/ScrollController.vue'
-import WheelHandler from './components/WheelHandler.vue'
+import SelectRulers from './components/buttons/SelectRulers.vue'
+import SignatureControls from './components/buttons/SignatureControls.vue'
+import MarkerControls from './components/buttons/MarkerControls.vue'
 
 const uiStore = useUIStore()
+const midiStore = useMidiStore()
+const projectStore = useProjectStore()
+const { shortcuts } = useKeyboardEvents()
 
-const showSignatureRuler = ref(true)
-const showMarkerRuler = ref(false)
+// Les états des rulers sont maintenant dans le projectStore
 
 // Lane sélectionnée
 const selectedLane = ref(null)
@@ -179,6 +201,18 @@ const midiLaneTabsRef = ref(null)
 // Ref pour TransportControls
 const transportControlsRef = ref(null)
 
+// Ref pour TimeSignatureRuler  
+const timeSignatureRulerRef = ref(null)
+
+// Ref pour MarkerRuler
+const markerRulerRef = ref(null)
+
+// État pour la gestion des signatures rythmiques
+const selectedSignature = ref(null)
+
+// État pour la gestion des marqueurs
+const selectedMarker = ref(null)
+
 // Redimensionnement
 let isResizingTrackList = false
 let isResizingMidiLanes = false
@@ -187,15 +221,9 @@ let startY = 0
 let startWidth = 0
 let startHeight = 0
 
-function handleShowSignatureRuler() {
-  showSignatureRuler.value = !showSignatureRuler.value
-  console.log('showSignatureRuler', showSignatureRuler.value)
-}
-
-function handleShowMarkerRuler() {
-  showMarkerRuler.value = !showMarkerRuler.value
-  console.log('showMarkerRuler', showMarkerRuler.value)
-}
+// Les fonctions de toggle des rulers sont maintenant dans le projectStore
+// handleShowSignatureRuler -> projectStore.toggleSignatureRuler
+// handleShowMarkerRuler -> projectStore.toggleMarkerRuler
 
 // Gestion de la sélection de lane
 const handleLaneSelection = (lane) => {
@@ -224,12 +252,18 @@ const handlePointSelection = (pointData) => {
     selectedPointValue.value = null
     selectedPointId.value = null
   } else if (typeof pointData === 'object' && pointData.value !== undefined) {
-    // Sélection avec objet complet
-    selectedPointValue.value = pointData.value
+    // Sélection avec objet complet - valider que value est un nombre
+    const value = typeof pointData.value === 'number' && !isNaN(pointData.value) 
+                  ? pointData.value 
+                  : 0
+    selectedPointValue.value = value
     selectedPointId.value = pointData.id
   } else {
     // Compatibilité avec l'ancien format (juste la valeur)
-    selectedPointValue.value = pointData
+    const value = typeof pointData === 'number' && !isNaN(pointData) 
+                  ? pointData 
+                  : 0
+    selectedPointValue.value = value
     selectedPointId.value = null
   }
 }
@@ -246,7 +280,10 @@ const handlePointValueUpdate = (updateData) => {
       detail: updateData,
       bubbles: true
     })
+    console.log('🔄 App.vue: Émission événement DOM:', customEvent.type, 'vers', midiLanesDiv.className)
     midiLanesDiv.dispatchEvent(customEvent)
+  } else {
+    console.error('❌ App.vue: Element .midi-lanes-scroll non trouvé')
   }
 }
 
@@ -255,6 +292,45 @@ const handleLanesUpdated = (lanes) => {
   // Cette fonction peut être utilisée pour d'autres logiques si nécessaire
   console.log('🎛️ App.vue: Lanes mises à jour:', lanes.length)
 }
+
+// ===== GESTION DES SIGNATURES RYTHMIQUES =====
+
+// Validation des signatures rythmiques selon les règles musicales
+const validateTimeSignature = (numerator, denominator) => {
+  const validNumerators = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 15, 16]
+  const validDenominators = [1, 2, 4, 8, 16, 32]
+  
+  return validNumerators.includes(numerator) && validDenominators.includes(denominator)
+}
+
+// Gestion de la sélection d'une signature
+const handleSignatureSelection = (signature) => {
+  console.log('🎵 App.vue reçoit sélection signature:', signature)
+  selectedSignature.value = signature
+  console.log('🎵 selectedSignature.value mis à jour:', selectedSignature.value)
+}
+
+// Gestion de l'édition d'une signature (double-clic)
+const handleSignatureEdit = (signature) => {
+  console.log('✏️ App.vue reçoit édition signature:', signature)
+  // Cette fonctionnalité sera implémentée dans TimeSignatureRuler
+}
+
+// ===== GESTION DES MARQUEURS =====
+
+// Gestion de la sélection d'un marqueur
+const handleMarkerSelection = (marker) => {
+  console.log('🎯 App.vue reçoit sélection marqueur:', marker)
+  selectedMarker.value = marker
+  console.log('🎯 selectedMarker.value mis à jour:', selectedMarker.value)
+}
+
+// Gestion de l'édition d'un marqueur (double-clic)
+const handleMarkerEdit = (marker) => {
+  console.log('✏️ App.vue reçoit édition marqueur:', marker)
+  // Cette fonctionnalité est implémentée dans MarkerRuler
+}
+
 
 // Synchronisation du scroll horizontal (générique via classe)
 let scrollSyncing = false
@@ -406,7 +482,38 @@ const stopResizeMidiLanes = () => {
   document.removeEventListener('mouseup', stopResizeMidiLanes)
 }
 
-onMounted(() => {
+// Ref vers le composant SignatureControls pour accéder à ses méthodes
+const signatureControlsRef = ref(null)
+
+// Ref vers le composant MarkerControls pour accéder à ses méthodes
+const markerControlsRef = ref(null)
+
+
+// Gestionnaire global pour les clics (désélection)
+const handleGlobalClick = (event) => {
+  // Si le clic n'est pas sur une signature ou les contrôles, déselectionner
+  if (!event.target.closest('.time-signature-text') && 
+      !event.target.closest('.signature-controls') &&
+      !event.target.closest('.signature-mark')) {
+    selectedSignature.value = null
+  }
+  
+  // Si le clic n'est pas sur un marqueur ou les contrôles, déselectionner
+  if (!event.target.closest('.marker-text') &&
+      !event.target.closest('.marker-controls') &&
+      !event.target.closest('.marker-mark')) {
+    selectedMarker.value = null
+  }
+}
+
+
+onMounted(async () => {
+  // Initialisation d'un nouveau projet si aucun fichier n'est chargé
+  if (!midiStore.isLoaded) {
+    console.log('🎵 Initialisation nouveau projet au démarrage')
+    await projectStore.createNewProject('Nouveau Projet')
+  }
+
   // Scroll horizontal
   document.querySelectorAll('.sync-scroll-x').forEach(div => {
     div.addEventListener('scroll', syncHorizontalScroll)
@@ -421,9 +528,84 @@ onMounted(() => {
     syncHorizontalScroll,
     syncVerticalScroll: syncVerticalScrollGeneric
   })
+
+  // Ajouter le gestionnaire global de clic
+  document.addEventListener('click', handleGlobalClick)
+  
+  // Ajouter les raccourcis Delete et Backspace pour supprimer les signatures et marqueurs
+  const handleSignatureDeletion = () => {
+    if (selectedSignature.value && signatureControlsRef.value?.removeTimeSignature) {
+      signatureControlsRef.value.removeTimeSignature()
+      return true // Arrêter la propagation
+    }
+    return false // Laisser passer à d'autres handlers
+  }
+  
+  const handleMarkerDeletion = () => {
+    if (selectedMarker.value && markerControlsRef.value?.removeMarker) {
+      markerControlsRef.value.removeMarker()
+      return true // Arrêter la propagation
+    }
+    return false // Laisser passer à d'autres handlers
+  }
+  
+  const handleGlobalDeletion = () => {
+    // Essayer d'abord les marqueurs, puis les signatures
+    return handleMarkerDeletion() || handleSignatureDeletion()
+  }
+  
+  shortcuts.delete(handleGlobalDeletion, {
+    description: 'Supprimer marqueur ou signature rythmique',
+    ignoreInputs: true
+  })
+  
+  shortcuts.backspace(handleGlobalDeletion, {
+    description: 'Supprimer marqueur ou signature rythmique',
+    ignoreInputs: true
+  })
+  
+  // Test avec gestionnaire direct aussi (redondant mais au cas où)
+  document.addEventListener('keydown', handleDirectDelete)
 })
 
+// Gestionnaire direct Delete/Backspace (redondant mais au cas où le système de raccourcis échoue)
+const handleDirectDelete = (event) => {
+  if (event.key === 'Delete' || event.key === 'Backspace') {
+    // Vérification plus robuste pour les inputs
+    const isInInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(event.target.tagName) ||
+                     event.target.contentEditable === 'true' ||
+                     // Vérifier aussi les éléments parents (au cas où l'event bubblerait)
+                     event.target.closest('input, textarea, select, [contenteditable="true"]')
+    
+    console.log('🔍 Delete/Backspace key:', {
+      key: event.key,
+      target: event.target.tagName,
+      isInInput,
+      hasSelectedSignature: !!selectedSignature.value,
+      hasSelectedMarker: !!selectedMarker.value
+    })
+    
+    if (!isInInput) {
+      // Essayer d'abord les marqueurs, puis les signatures
+      if (selectedMarker.value && markerControlsRef.value?.removeMarker) {
+        console.log('🗑️ Suppression marqueur via gestionnaire direct')
+        event.preventDefault()
+        event.stopPropagation()
+        markerControlsRef.value.removeMarker()
+      } else if (selectedSignature.value && signatureControlsRef.value?.removeTimeSignature) {
+        console.log('🗑️ Suppression signature via gestionnaire direct')
+        event.preventDefault()
+        event.stopPropagation()
+        signatureControlsRef.value.removeTimeSignature()
+      }
+    } else {
+      console.log('✅ Dans un input, laissant passer l\'événement')
+    }
+  }
+}
+
 onUnmounted(() => {
+  document.removeEventListener('keydown', handleDirectDelete)
   document.querySelectorAll('.sync-scroll-x').forEach(div => {
     div.removeEventListener('scroll', syncHorizontalScroll)
   })
@@ -434,6 +616,9 @@ onUnmounted(() => {
   document.removeEventListener('mouseup', stopResizeTrackList)
   document.removeEventListener('mousemove', resizeMidiLanes)
   document.removeEventListener('mouseup', stopResizeMidiLanes)
+  
+  // Supprimer le gestionnaire global de clic
+  document.removeEventListener('click', handleGlobalClick)
 })
 </script>
 
@@ -462,8 +647,8 @@ onUnmounted(() => {
 .left-column {
   background: var(--left-column-bg, #f5f5f5);
   border-right: 1px solid var(--border-color, #ddd);
-  min-width: 300px;
-  max-width: 800px;
+  min-width: 400px;
+  max-width: 600px;
   flex-shrink: 0;
 }
 
@@ -512,6 +697,7 @@ onUnmounted(() => {
   display: flex;
   border-bottom: 1px solid var(--border-color, #ddd);
   background: var(--timesignature-bg, #fafafa);
+  z-index: 1;
 }
 
 .timesignature-spacer {
@@ -521,6 +707,26 @@ onUnmounted(() => {
 }
 
 .timesignature-scroll {
+  flex: 1;
+  overflow: hidden;
+}
+
+/* MarkerRuler */
+.marker-container {
+  height: 20px;
+  display: flex;
+  border-bottom: 1px solid var(--border-color, #ddd);
+  background: var(--timesignature-bg, #fafafa);
+  z-index: 1;
+}
+
+.marker-spacer {
+  flex-shrink: 0;
+  border-right: 1px solid var(--border-color, #ddd);
+  background: var(--timesignature-spacer-bg, #f0f0f0);
+}
+
+.marker-scroll {
   flex: 1;
   overflow: hidden;
 }

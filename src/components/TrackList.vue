@@ -356,7 +356,8 @@ if (process.env.NODE_ENV === 'development') {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  min-width: 0;
+  min-width: 100px;
+  max-width: 400px;
   transition: none; /* Suppression de la transition pour éviter l'effet élastique */
 }
 

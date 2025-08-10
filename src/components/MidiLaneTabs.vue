@@ -24,7 +24,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, shallowRef, computed, watch } from 'vue'
+import { ref, onMounted, onUnmounted, shallowRef, computed, watch } from 'vue'
 import { ElTabs, ElTabPane } from 'element-plus'
 import TempoLane from './lanes/tempo/TempoLane.vue'
 import VelocityLane from './lanes/velocity/VelocityLane.vue'
@@ -36,6 +36,9 @@ import { useTimeSignature } from '@/composables/useTimeSignature'
 const emit = defineEmits(['tab-selected', 'lanes-updated'])
 const midiStore = useMidiStore()
 const timeSignatureComposable = useTimeSignature()
+
+// Forcer le recalcul des lanes après enregistrement MIDI
+const forceUpdate = ref(0)
 
 // Noms communs des contrôleurs MIDI
 const ccNames = {
@@ -78,6 +81,8 @@ const visibleCCNumbers = computed(() => {
 
 // Calculer les lanes disponibles dynamiquement
 const availableLanes = computed(() => {
+  // Surveiller forceUpdate pour forcer le recalcul
+  forceUpdate.value
 
   // Forcer la réactivité en surveillant les changements
   const currentTrack = midiStore.selectedTrack
@@ -152,13 +157,25 @@ function getAvailableCC(selectedTrack = null) {
   // Extraire les numéros de CC uniques
   const ccNumbers = [...new Set(trackCC.map(cc => {
     const controller = cc.controller || cc.number
-    return controller
-  }))]
+    // Convertir en number pour éviter les doublons string/number
+    return parseInt(controller)
+  }).filter(num => !isNaN(num)))]
+  
+  // Debug réduit
+  if (trackCC.length > 0) {
+    console.log(`🎛️ Piste ${selectedTrackId}: ${ccNumbers.length} types CC détectés`)
+  }
 
   return ccNumbers.sort((a, b) => a - b)
 }
 
-const activeTab = ref('tempo') // Utiliser l'ID au lieu d'un index - démarrer sur Tempo
+// Gestionnaires d'événements MIDI
+function handleMidiCCUpdated(event) {
+  console.log('🎛️ MidiLaneTabs: CC mis à jour, forcer le recalcul des lanes')
+  forceUpdate.value++
+}
+
+const activeTab = ref('velocity') // Utiliser l'ID au lieu d'un index - démarrer sur Vélocité
 
 function handleTabClick(tab) {
   const selectedLane = availableLanes.value.find(lane => lane.id === tab.paneName)
@@ -200,21 +217,28 @@ function selectVelocityTab() {
   }
 }
 
-// Sélectionner l'onglet tempo par défaut au montage
+// Sélectionner l'onglet vélocité par défaut au montage
 onMounted(() => {
-  // Toujours essayer de sélectionner l'onglet tempo en premier
-  if (!selectTempoTab() && availableLanes.value.length > 0) {
-    // Si pas de tempo (cas étrange), prendre le premier disponible
+  // Toujours essayer de sélectionner l'onglet vélocité en premier
+  if (!selectVelocityTab() && availableLanes.value.length > 0) {
+    // Si pas de vélocité (cas étrange), prendre le premier disponible
     emit('tab-selected', availableLanes.value[0])
   }
   
+  // Écouter les événements de mise à jour MIDI CC
+  window.addEventListener('midi-cc-updated', handleMidiCCUpdated)
+})
+
+onUnmounted(() => {
+  // Nettoyer les listeners
+  window.removeEventListener('midi-cc-updated', handleMidiCCUpdated)
 })
 
 watch(() => midiStore.isLoaded, (newLoaded, oldLoaded) => {
   if (newLoaded && !oldLoaded) {
-    // Attendre que les lanes soient recalculées puis sélectionner tempo
+    // Attendre que les lanes soient recalculées puis sélectionner vélocité
     setTimeout(() => {
-      selectTempoTab()
+      selectVelocityTab()
     }, 100)
   }
 })

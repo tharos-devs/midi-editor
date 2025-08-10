@@ -16,7 +16,7 @@ export function usePianoPositioning() {
   const allMidiNotes = computed(() => {
     const notes = []
     for (let midi = 127; midi >= 0; midi--) {
-      const octave = Math.floor(midi / 12) - 1
+      const octave = Math.floor(midi / 12) - 2 // CORRECTION: C-1 → C-2 pour conformité DAW (middle C = C3)
       const noteIndex = midi % 12
       const noteName = noteNames[noteIndex]
       const isBlack = blackKeys.includes(noteIndex)
@@ -73,7 +73,7 @@ export function usePianoPositioning() {
 
   // Fonction pour obtenir le nom d'une note
   const getNoteName = (midi) => {
-    const octave = Math.floor(midi / 12) - 1
+    const octave = Math.floor(midi / 12) - 2 // CORRECTION: C-1 → C-2 pour conformité DAW (middle C = C3)
     const noteIndex = midi % 12
     return `${noteNames[noteIndex]}${octave}`
   }

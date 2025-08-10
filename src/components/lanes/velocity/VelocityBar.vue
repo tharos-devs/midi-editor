@@ -149,45 +149,30 @@ const barStyle = computed(() => {
   }
 })
 
-// Cache pour les calculs de vélocité
-const cachedVelocityCalc = ref(null)
-const lastVelocityValue = ref(null)
 
-// Style du fill avec optimisations et cache
+// Cache pour les calculs de fill style
+const cachedFillStyle = ref(null)
+const lastVelocity = ref(null)
+const lastHeight = ref(null)
+const lastState = ref(null)
+
+// Style du fill - VERSION ULTRA SIMPLE POUR DEBUG
 const fillStyle = computed(() => {
   const midiVelocity = props.note.velocity !== undefined ? props.note.velocity : 100
   const clampedVelocity = Math.max(0, Math.min(127, Math.round(midiVelocity)))
-
-  // Utiliser le cache si la vélocité n'a pas changé
-  if (lastVelocityValue.value === clampedVelocity && cachedVelocityCalc.value) {
-    return {
-      ...cachedVelocityCalc.value,
-      backgroundColor: getBackgroundColor(clampedVelocity),
-      transition: props.isDragging ? 'none' : 'height 0.05s ease, background-color 0.05s ease'
-    }
-  }
   
-  // Recalculer seulement si nécessaire
+  
+  // CALCUL DIRECT SANS AUCUN CACHE - comme TempoLane
   const barTopY = velocityToY(clampedVelocity, props.usableHeight, VELOCITY_MARGIN_TOP)
   const barBottomY = velocityToY(0, props.usableHeight, VELOCITY_MARGIN_TOP)
   const barHeightPx = Math.max(2, barBottomY - barTopY)
   const heightPercentage = (barHeightPx / props.laneHeight) * 100
 
-  // Mettre à jour le cache
-  const calculatedStyle = {
-    height: heightPercentage + '%',
-    width: '100%'
-  }
-  
-  cachedVelocityCalc.value = calculatedStyle
-  lastVelocityValue.value = clampedVelocity
-
   return {
-    ...calculatedStyle,
+    height: heightPercentage + '%',
+    width: '100%',
     backgroundColor: getBackgroundColor(clampedVelocity),
-    transition: props.isDragging ? 'none' : 'height 0.05s ease, background-color 0.05s ease',
-    willChange: props.isDragging || props.isBrushed ? 'height, background-color' : 'auto',
-    transform: 'translateZ(0)' // Force GPU acceleration
+    transition: props.isDragging ? 'none' : 'height 0.1s ease, background-color 0.1s ease'
   }
 })
 
@@ -225,10 +210,6 @@ watchEffect(() => {
     cachedPosition.value = null
   }
   
-  // Invalider le cache de vélocité si la vélocité change
-  if (props.note.velocity !== lastVelocityValue.value) {
-    cachedVelocityCalc.value = null
-  }
 })
 </script>
 

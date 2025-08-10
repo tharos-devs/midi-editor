@@ -35,6 +35,13 @@ export function useKeyboardEvents() {
     const isInputFocused = ['INPUT', 'TEXTAREA', 'SELECT'].includes(event.target.tagName) ||
                           event.target.contentEditable === 'true'
     
+    // Si un input est focus, ne pas traiter l'événement du tout
+    // sauf si c'est explicitement demandé par le listener
+    if (isInputFocused) {
+      console.log('🔍 useKeyboardEvents: Input focusé, laissant passer', event.key)
+      return // Laisser l'input gérer l'événement normalement
+    }
+    
     // Mettre à jour l'état des modificateurs
     globalKeyboardState.value.activeModifiers = {
       ctrl: event.ctrlKey,
@@ -64,11 +71,6 @@ export function useKeyboardEvents() {
     for (const listener of matchingListeners) {
       // Vérifier les conditions du listener
       if (listener.condition && !listener.condition(event, globalKeyboardState.value)) {
-        continue
-      }
-      
-      // Vérifier si on doit ignorer les inputs
-      if (listener.ignoreInputs && isInputFocused) {
         continue
       }
       
@@ -150,6 +152,7 @@ export function useKeyboardEvents() {
     rewind: (callback, options) => onKey('KeyR', callback, { description: 'Rewind', ...options }),
     loop: (callback, options) => onKey('KeyL', callback, { description: 'Toggle Loop', ...options }),
     marker: (callback, options) => onKey('KeyP', callback, { description: 'Toggle Playback Marker', ...options }),
+    record: (callback, options) => onKey('KeyF', callback, { description: 'Toggle Record Armed', ...options }),
     
     // Navigation
     seekLeft: (callback, options) => onKey('shift+ArrowLeft', callback, { description: 'Seek -5s', ...options }),

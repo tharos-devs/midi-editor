@@ -294,7 +294,7 @@ async function sendPitchBend({ value, channel = 0, outputId = 'default' }) {
 // Conversion MIDI note vers nom
 function getMidiNoteName(midi) {
   const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
-  const octave = Math.floor(midi / 12) - 1
+  const octave = Math.floor(midi / 12) - 2 // CORRECTION: Conformité DAW
   const noteName = noteNames[midi % 12]
   return `${noteName}${octave}`
 }

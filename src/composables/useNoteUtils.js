@@ -18,7 +18,7 @@ export function useNoteUtils() {
 
     const noteNames = useFlats ? NOTE_NAMES_FLAT : NOTE_NAMES
     const noteIndex = midiNote % 12
-    const octave = Math.floor(midiNote / 12) - 1 // MIDI note 60 = C4
+    const octave = Math.floor(midiNote / 12) - 2 // CORRECTION: MIDI note 60 = C3 (conformité DAW)
 
     return `${noteNames[noteIndex]}${octave}`
   }
@@ -41,7 +41,7 @@ export function useNoteUtils() {
     }
     if (noteIndex === -1) return -1
 
-    return (octave + 1) * 12 + noteIndex
+    return (octave + 2) * 12 + noteIndex // CORRECTION: Ajuster pour le nouveau système d'octaves
   }
 
   /**
@@ -63,7 +63,7 @@ export function useNoteUtils() {
 
     const noteNames = useFlats ? NOTE_NAMES_FLAT : NOTE_NAMES
     const noteIndex = midiNote % 12
-    const octave = Math.floor(midiNote / 12) - 1
+    const octave = Math.floor(midiNote / 12) - 2 // CORRECTION: Conformité DAW
     const pitch = noteNames[noteIndex]
     const noteName = `${pitch}${octave}`
 

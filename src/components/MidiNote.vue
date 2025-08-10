@@ -44,6 +44,7 @@ import { usePianoPositioning } from '@/composables/usePianoPositioning'
 import { useTimeSignature } from '@/composables/useTimeSignature'
 import { useSnapLogic } from '@/composables/useSnapLogic'
 import { useMidiOutput } from '@/composables/useMidiOutput'
+import { useMidiManager } from '@/composables/useMidiManager'
 
 const props = defineProps({
   note: Object
@@ -79,8 +80,9 @@ const {
   getMinNoteDuration
 } = useSnapLogic()
 
-// Composable pour la sortie MIDI
+// Composables pour la sortie MIDI
 const { playNote, stopNote, sendControlChange } = useMidiOutput()
+const midiManager = useMidiManager()
 
 // CORRECTION PROBLÈME VÉLOCITÉ : Fonction utilitaire pour normaliser les vélocités
 const normalizeVelocityToMidi = (velocity) => {
@@ -214,7 +216,10 @@ const onMouseMove = (e) => {
 
   const rect = noteRef.value.getBoundingClientRect()
   const x = e.clientX - rect.left
-  const resizeZoneWidth = Math.max(PIXELS_PER_QUARTER.value * 0.2, 6)
+  
+  // CORRECTION: Zone de redimensionnement proportionnelle à la largeur de la note
+  // Maximum 10% de la largeur de la note, minimum 4px, maximum 12px
+  const resizeZoneWidth = Math.max(4, Math.min(12, rect.width * 0.1))
 
   showResizeCursor.value = x >= rect.width - resizeZoneWidth
 }
@@ -230,13 +235,15 @@ const onMouseDown = (e) => {
   e.preventDefault()
   e.stopPropagation()
 
-  // Jouer la note au clic - CORRECTION: Jouer d'abord la note
+  // Jouer la note au clic
   playNoteSound()
 
   // Vérifier si on est sur la zone de redimensionnement
   const rect = noteRef.value.getBoundingClientRect()
   const x = e.clientX - rect.left
-  const resizeZoneWidth = Math.max(PIXELS_PER_QUARTER.value * 0.2, 6)
+  
+  // CORRECTION: Même logique proportionnelle que pour onMouseMove
+  const resizeZoneWidth = Math.max(4, Math.min(12, rect.width * 0.1))
 
   if (x >= rect.width - resizeZoneWidth) {
     startResize(e)
@@ -270,35 +277,25 @@ const onMouseDown = (e) => {
   }
 }
 
-// CORRECTION PROBLÈME VÉLOCITÉ : Fonction pour jouer la note avec conversion correcte de vélocité
+// CORRECTION : Utiliser la méthode MIDI standardisée comme PianoKeys
 const playNoteSound = () => {
   const track = midiStore.getTrackById(props.note.trackId)
-  if (track) {
-    // Utiliser la fonction utilitaire pour normaliser la vélocité
-    const midiVelocity = normalizeVelocityToMidi(props.note.velocity)
+  if (!track) return
+
+  const channel = Math.max(0, Math.min(15, parseInt(track.channel) || 0))
+  const outputId = track.midiOutput || 'default'
+  const midiVelocity = normalizeVelocityToMidi(props.note.velocity)
+
+  // Envoyer noteOn puis noteOff après délai
+  const success = midiManager.sendNoteOn(outputId, channel, props.note.midi, midiVelocity)
+  
+  if (success) {
+    console.log(`🎵 Note jouée au clic: ${getNoteName(props.note.midi)} (${props.note.midi}) - Vélocité: ${midiVelocity}`)
     
-   // console.log(`🎵 Conversion vélocité: ${props.note.velocity} → ${midiVelocity}`)
-    
-    // Arrêter d'abord toute note qui pourrait jouer sur ce MIDI/canal
-    stopNote({
-      midi: props.note.midi,
-      channel: track.channel || 0,
-      outputId: track.midiOutput || 'default'
-    })
-    
-    // Petit délai pour s'assurer que le Note Off est traité
+    // Arrêter la note après un délai
     setTimeout(() => {
-      // Maintenant jouer la nouvelle note avec la vélocité MIDI correcte
-      const noteKey = playNote({
-        midi: props.note.midi,
-        velocity: midiVelocity, // Utiliser la vélocité MIDI convertie
-        channel: track.channel || 0,
-        outputId: track.midiOutput || 'default',
-        duration: 200 // Durée courte pour le preview
-      })
-      
-      // console.log(`🎵 Note jouée au clic: ${getNoteName(props.note.midi)} (${props.note.midi}) - Vélocité Tone.js: ${props.note.velocity} - Vélocité MIDI: ${midiVelocity}`)
-    }, 10) // Délai de 10ms pour laisser le temps au Note Off d'être traité
+      midiManager.sendNoteOff(outputId, channel, props.note.midi)
+    }, 200)
   }
 }
 
@@ -354,36 +351,29 @@ const onDrag = (e) => {
   const deltaMidi = Math.round(-deltaY / (noteLineHeight.value * uiStore.verticalZoom))
   const deltaTime = newTime - initialTime
 
-  // CORRECTION PROBLÈME VÉLOCITÉ: Jouer la note pendant le drag avec conversion correcte
+  // Jouer la note pendant le drag quand la hauteur change
   const newMidi = Math.max(0, Math.min(127, initialMidi + deltaMidi))
   if (newMidi !== props.note.midi) {
-    // Arrêter la note précédente SEULEMENT si elle existe
+    // Arrêter la note précédente si elle existe
     if (currentPlayingNote !== null) {
-      stopNote({
-        midi: currentPlayingNote.midi,
-        channel: currentPlayingNote.channel,
-        outputId: currentPlayingNote.outputId
-      })
+      midiManager.sendNoteOff(currentPlayingNote.outputId, currentPlayingNote.channel, currentPlayingNote.midi)
     }
     
     // Jouer la nouvelle note
     const track = midiStore.getTrackById(props.note.trackId)
     if (track) {
-      // Utiliser la fonction utilitaire pour normaliser la vélocité
+      const channel = Math.max(0, Math.min(15, parseInt(track.channel) || 0))
+      const outputId = track.midiOutput || 'default'
       const midiVelocity = normalizeVelocityToMidi(props.note.velocity)
       
       currentPlayingNote = {
         midi: newMidi,
-        channel: track.channel || 0,
-        outputId: track.midiOutput || 'default'
+        channel: channel,
+        outputId: outputId
       }
       
       // Jouer la note avec la vélocité MIDI correcte
-      playNote({
-        ...currentPlayingNote,
-        velocity: midiVelocity, // Utiliser la vélocité MIDI convertie
-        duration: 100 // Durée courte pendant le drag
-      })
+      midiManager.sendNoteOn(outputId, channel, newMidi, midiVelocity)
     }
   }
 
@@ -422,11 +412,7 @@ const stopDrag = () => {
 
   // Arrêter la note qui joue pendant le drag
   if (currentPlayingNote !== null) {
-    stopNote({
-      midi: currentPlayingNote.midi,
-      channel: currentPlayingNote.channel,
-      outputId: currentPlayingNote.outputId
-    })
+    midiManager.sendNoteOff(currentPlayingNote.outputId, currentPlayingNote.channel, currentPlayingNote.midi)
     currentPlayingNote = null
   }
 
@@ -548,17 +534,21 @@ const stopResize = () => {
   document.body.style.userSelect = ''
 }
 
-// CORRECTION PROBLÈME 1 : Corriger la position de l'indicateur de snap pour le drag
+// CORRECTION : Position correcte de l'indicateur de snap pour le drag
 const updateSnapIndicator = (snappedPixel, midi, deltaTime) => {
   // Calculer la position Y basée sur le nouveau MIDI
   const noteY = getMidiNotePosition(midi)
   const noteHeight = getNoteHeight() * 1.35
   const adjustedY = noteY - ((noteHeight - getNoteHeight()) / 2)
   
+  // CORRECTION: Convertir le pixel snappé en temps, puis rebackup en pixels pour être cohérent
+  const snappedTime = pixelsToTimeWithSignatures(snappedPixel)
+  const correctLeftPixels = timeToPixelsWithSignatures(snappedTime)
+  
   // Position absolue par rapport au conteneur parent
   snapIndicatorStyle.value = {
     position: 'absolute',
-    left: snappedPixel + 'px',
+    left: correctLeftPixels + 'px',
     top: adjustedY + 'px',
     width: '2px',
     height: noteHeight + 'px',
@@ -570,15 +560,19 @@ const updateSnapIndicator = (snappedPixel, midi, deltaTime) => {
   }
 }
 
-// CORRECTION PROBLÈME 1 : Indicateur de snap pour le redimensionnement
+// CORRECTION : Indicateur de snap pour le redimensionnement
 const updateSnapIndicatorForResize = (snappedEndPixel, midi) => {
   const noteY = getMidiNotePosition(midi)
   const noteHeight = getNoteHeight() * 1.35
   const adjustedY = noteY - ((noteHeight - getNoteHeight()) / 2)
   
+  // CORRECTION: Convertir le pixel snappé en temps, puis rebackup en pixels pour être cohérent
+  const snappedEndTime = pixelsToTimeWithSignatures(snappedEndPixel)
+  const correctEndPixels = timeToPixelsWithSignatures(snappedEndTime)
+  
   snapIndicatorStyle.value = {
     position: 'absolute',
-    left: snappedEndPixel + 'px',
+    left: correctEndPixels + 'px',
     top: adjustedY + 'px',
     width: '2px',
     height: noteHeight + 'px',
@@ -603,11 +597,7 @@ import { onUnmounted } from 'vue'
 onUnmounted(() => {
   // Arrêter toute note qui joue encore
   if (currentPlayingNote !== null) {
-    stopNote({
-      midi: currentPlayingNote.midi,
-      channel: currentPlayingNote.channel,
-      outputId: currentPlayingNote.outputId
-    })
+    midiManager.sendNoteOff(currentPlayingNote.outputId, currentPlayingNote.channel, currentPlayingNote.midi)
     currentPlayingNote = null
   }
 
@@ -714,9 +704,9 @@ onUnmounted(() => {
   background: rgba(255,255,255,0.3);
 }
 
-/* CORRECTION PROBLÈME 1: Style de l'indicateur de snap en position absolue */
+/* CORRECTION: Style de l'indicateur de snap avec position absolue correcte */
 .snap-indicator {
-  position: fixed;
+  position: absolute;
   background-color: #FF9800;
   border: none;
   border-radius: 1px;

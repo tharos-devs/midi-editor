@@ -47,14 +47,14 @@ export function useGridRenderer(options = {}) {
 
   // Fonction pour calculer le nombre de subdivisions selon snapDivision
   const getSubdivisionCount = computed(() => {
-    if (!uiStore.snapToGrid || !showSubdivisionLines) {
+    if (!showSubdivisionLines) {
       return 0
     }
 
     const snapValue = uiStore.snapDivision
 
-    // Ne pas afficher les subdivisions si la division est trop grosse (1/1, 1/2)
-    if (snapValue === '1' || snapValue === '2') {
+    // Ne pas afficher les subdivisions que pour 1/1 (trop grosse)
+    if (snapValue === '1') {
       return 0
     }
 
@@ -63,20 +63,29 @@ export function useGridRenderer(options = {}) {
     if (typeof snapValue === 'string' && snapValue.endsWith('T')) {
       // Triolets: pour afficher les subdivisions de triolets
       const baseValue = parseInt(snapValue.replace('T', ''))
-      if (baseValue < 4) {
+      
+      if (baseValue === 2) {
+        // 1/2T: triolet de noires - 3 subdivisions pour 2 beats
+        // Chaque mesure 4/4 a 2 groupes de triolets de noires
+        subdivisionCount = 3 // 3 subdivisions par groupe de 2 beats
+      } else if (baseValue >= 4) {
+        // 1/4T, 1/8T, etc.: subdivisions par beat
+        subdivisionCount = (baseValue / 4) * 3
+      } else {
         return 0
       }
-      // Pour les triolets, on divise chaque beat en 3 parties égales multipliées par la base
-      // 1/4T -> 3 subdivisions par beat (triolet de noires)
-      // 1/8T -> 6 subdivisions par beat (triolet de croches)
-      subdivisionCount = (baseValue / 4) * 3
     } else {
       const numValue = parseInt(snapValue)
-      if (numValue < 4) {
+      
+      if (numValue === 2) {
+        // 1/2: croches - 2 subdivisions par beat
+        subdivisionCount = 2
+      } else if (numValue >= 4) {
+        // 1/4, 1/8, 1/16, etc.: subdivisions normales
+        subdivisionCount = numValue
+      } else {
         return 0
       }
-      // Division normale: 1/4 -> 4 subdivisions, 1/8 -> 8, 1/16 -> 16, etc.
-      subdivisionCount = numValue
     }
 
     return subdivisionCount
@@ -98,62 +107,110 @@ export function useGridRenderer(options = {}) {
 
     const subdivisions = []
     const isTriolet = typeof uiStore.snapDivision === 'string' && uiStore.snapDivision.endsWith('T')
+    const snapValue = uiStore.snapDivision
+    const baseValue = isTriolet ? parseInt(snapValue.replace('T', '')) : parseInt(snapValue)
 
     measures.value.forEach(measure => {
-
-
-      for (let beatIndex = 0; beatIndex < measure.beatsCount; beatIndex++) {
-        const beatStartPixel = measure.startPixel + beatIndex * measure.beatWidth
-        const subdivisionWidth = measure.beatWidth / subdivisionCount
-
-        // Créer les subdivisions pour ce beat (exclure la première qui coïncide avec le beat)
-        for (let subIndex = 1; subIndex < subdivisionCount; subIndex++) {
-          const subdivisionPixel = beatStartPixel + subIndex * subdivisionWidth
-
-          // Pour les triolets, marquer chaque subdivision comme "forte" 
-          // Pour les divisions normales, marquer chaque 4ème subdivision comme "forte"
-          let isStrongSubdivision = false
-          if (isTriolet) {
-            // Pour les triolets, pas de subdivision "forte" spéciale
-            isStrongSubdivision = false
-          } else {
-            // Pour les divisions normales, chaque 4ème est forte
-            isStrongSubdivision = subIndex % 4 === 0
+      if (isTriolet && baseValue === 2) {
+        // Cas spécial: 1/2T (triolets de noires) - 3 subdivisions pour 2 beats
+        // Chaque mesure 4/4 a 2 groupes de triolets de noires
+        const groupsPerMeasure = measure.beatsCount / 2 // 2 groupes pour une mesure 4/4
+        
+        for (let groupIndex = 0; groupIndex < groupsPerMeasure; groupIndex++) {
+          const groupStartPixel = measure.startPixel + groupIndex * 2 * measure.beatWidth
+          const groupWidth = 2 * measure.beatWidth // 2 beats par groupe
+          const subdivisionWidth = groupWidth / 3 // 3 subdivisions par groupe
+          
+          // Créer les 2 subdivisions intermédiaires (exclure la première qui coïncide avec le beat)
+          for (let subIndex = 1; subIndex < 3; subIndex++) {
+            const subdivisionPixel = groupStartPixel + subIndex * subdivisionWidth
+            
+            subdivisions.push({
+              id: `subdivision-${measure.number}-group${groupIndex}-${subIndex}`,
+              type: 'subdivision',
+              measure: measure.number,
+              beat: groupIndex * 2 + 1, // Beat de référence du groupe
+              subdivision: subIndex,
+              isStrong: false, // Pas de subdivision forte pour les triolets de noires
+              isTriolet: true,
+              style: {
+                position: 'absolute',
+                left: subdivisionPixel + 'px',
+                top: '0px',
+                height: containerHeight ? containerHeight + 'px' : '100%',
+                minHeight: containerHeight ? containerHeight + 'px' : '100vh',
+                zIndex: subdivisionZIndex
+              },
+              classes: [
+                subdivisionLineClass,
+                'weak-subdivision',
+                'triplet-subdivision'
+              ],
+              tooltip: `Mesure ${measure.number}, Triolet de noires ${subIndex}/3`,
+              data: {
+                measure,
+                beatIndex: groupIndex * 2 + 1,
+                subdivisionIndex: subIndex,
+                absolutePixel: subdivisionPixel,
+                isStrong: false,
+                isTriolet: true
+              }
+            })
           }
+        }
+      } else {
+        // Cas normal: subdivisions par beat
+        for (let beatIndex = 0; beatIndex < measure.beatsCount; beatIndex++) {
+          const beatStartPixel = measure.startPixel + beatIndex * measure.beatWidth
+          const subdivisionWidth = measure.beatWidth / subdivisionCount
 
-          subdivisions.push({
-            id: `subdivision-${measure.number}-${beatIndex + 1}-${subIndex}`,
-            type: 'subdivision',
-            measure: measure.number,
-            beat: beatIndex + 1,
-            subdivision: subIndex,
-            isStrong: isStrongSubdivision,
-            isTriolet: isTriolet,
-            style: {
-              position: 'absolute',
-              left: subdivisionPixel + 'px',
-              top: '0px',
-              height: containerHeight ? containerHeight + 'px' : '100%',
-              minHeight: containerHeight ? containerHeight + 'px' : '100vh',
-              zIndex: subdivisionZIndex
-            },
-            classes: [
-              subdivisionLineClass,
-              isStrongSubdivision ? 'strong-subdivision' : 'weak-subdivision',
-              isTriolet ? 'triplet-subdivision' : 'normal-subdivision'
-            ],
-            tooltip: isTriolet
-              ? `Mesure ${measure.number}, Temps ${beatIndex + 1}, Triolet ${subIndex}`
-              : `Mesure ${measure.number}, Temps ${beatIndex + 1}, Subdivision ${subIndex}`,
-            data: {
-              measure,
-              beatIndex: beatIndex + 1,
-              subdivisionIndex: subIndex,
-              absolutePixel: subdivisionPixel,
-              isStrong: isStrongSubdivision,
-              isTriolet: isTriolet
+          // Créer les subdivisions pour ce beat (exclure la première qui coïncide avec le beat)
+          for (let subIndex = 1; subIndex < subdivisionCount; subIndex++) {
+            const subdivisionPixel = beatStartPixel + subIndex * subdivisionWidth
+
+            // Pour les triolets normaux, pas de subdivision "forte"
+            // Pour les divisions normales, marquer chaque 4ème subdivision comme "forte"
+            let isStrongSubdivision = false
+            if (isTriolet) {
+              isStrongSubdivision = false
+            } else {
+              isStrongSubdivision = subIndex % 4 === 0
             }
-          })
+
+            subdivisions.push({
+              id: `subdivision-${measure.number}-${beatIndex + 1}-${subIndex}`,
+              type: 'subdivision',
+              measure: measure.number,
+              beat: beatIndex + 1,
+              subdivision: subIndex,
+              isStrong: isStrongSubdivision,
+              isTriolet: isTriolet,
+              style: {
+                position: 'absolute',
+                left: subdivisionPixel + 'px',
+                top: '0px',
+                height: containerHeight ? containerHeight + 'px' : '100%',
+                minHeight: containerHeight ? containerHeight + 'px' : '100vh',                
+                zIndex: subdivisionZIndex
+              },
+              classes: [
+                subdivisionLineClass,
+                isStrongSubdivision ? 'strong-subdivision' : 'weak-subdivision',
+                isTriolet ? 'triplet-subdivision' : 'normal-subdivision'
+              ],
+              tooltip: isTriolet
+                ? `Mesure ${measure.number}, Temps ${beatIndex + 1}, Triolet ${subIndex}`
+                : `Mesure ${measure.number}, Temps ${beatIndex + 1}, Subdivision ${subIndex}`,
+              data: {
+                measure,
+                beatIndex: beatIndex + 1,
+                subdivisionIndex: subIndex,
+                absolutePixel: subdivisionPixel,
+                isStrong: isStrongSubdivision,
+                isTriolet: isTriolet
+              }
+            })
+          }
         }
       }
     })

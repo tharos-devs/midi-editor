@@ -3,13 +3,18 @@
     <!-- Labels de référence CC fixes à droite -->
     <div class="cc-reference-labels">
       <div
-        v-for="level in [32, 64, 96]"
+        v-for="level in [0, 32, 64, 96, 127]"
         :key="level"
         class="cc-reference-label"
+        :class="{
+          'label-top': level === 127,
+          'label-bottom': level === 0
+        }"
         :style="{ 
-          // CORRECTION: ajuster légèrement pour aligner avec les lignes
           bottom: (level / 127) * 100 + '%',
-          transform: level === 96 ? 'translateY(40%)' : 
+          transform: level === 127 ? 'translateY(100%)' : 
+                    level === 0 ? 'translateY(0%)' :
+                    level === 96 ? 'translateY(40%)' : 
                     level === 32 ? 'translateY(60%)' : 
                     'translateY(50%)'
         }"
@@ -82,6 +87,17 @@ const ccColor = computed(() => ccColors[props.ccNumber] || '#607D8B')
   /* Légère ombre pour la lisibilité */
   text-shadow: 1px 1px 1px rgba(255,255,255,0.8);
   z-index: 100;
+}
+
+/* Positionnement spécial pour les valeurs extrêmes */
+.cc-reference-label.label-top {
+  /* Valeur 127 (en haut) - garder dans la div */
+  transform: translateY(100%) !important;
+}
+
+.cc-reference-label.label-bottom {
+  /* Valeur 0 (en bas) - garder dans la div */
+  transform: translateY(0%) !important;
 }
 
 .cc-current-value {

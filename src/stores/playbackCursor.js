@@ -26,7 +26,7 @@ export const usePlaybackCursorStore = defineStore('playbackCursor', () => {
     latencyCompensation: 0.050 // 50ms
   })
 
-  // Position en pixels calculée
+  // Position en pixels calculée avec ratio de vitesse
   const pixelPosition = computed(() => {
     if (!timeToPixelsWithSignatures || currentTime.value <= 0) return 0
     
@@ -35,7 +35,26 @@ export const usePlaybackCursorStore = defineStore('playbackCursor', () => {
       ? currentTime.value - config.value.latencyCompensation 
       : currentTime.value
     
-    return Math.max(0, timeToPixelsWithSignatures(adjustedTime))
+    // Appliquer le ratio de vitesse pour ralentir visuellement le curseur
+    const basePixelPosition = timeToPixelsWithSignatures(adjustedTime)
+    const speedRatio = uiStore.cursorSpeedRatio || 1.0
+    
+    // Debug pour détecter les changements suspects
+    const result = Math.max(0, basePixelPosition * speedRatio)
+    const previousResult = pixelPosition.value || 0
+    
+    if (Math.abs(result - previousResult) > 200) { // Saut de plus de 200px
+      console.warn('⚠️ SAUT PIXEL POSITION DÉTECTÉ:', {
+        temps: adjustedTime.toFixed(3) + 's',
+        basePixel: basePixelPosition.toFixed(1) + 'px',
+        speedRatio: speedRatio,
+        ancien: previousResult.toFixed(1) + 'px',
+        nouveau: result.toFixed(1) + 'px',
+        saut: (result - previousResult).toFixed(1) + 'px'
+      })
+    }
+    
+    return result
   })
 
   // Démarrer le curseur
@@ -46,7 +65,8 @@ export const usePlaybackCursorStore = defineStore('playbackCursor', () => {
     isPlaying.value = true
     isPaused.value = false
     
-    startTimer()
+    // NE PAS démarrer de timer interne - le store est passif
+    // Le temps vient du MidiPlayer via updateTime() qui tient compte des changements de tempo
   }
 
   // Arrêter le curseur
@@ -57,7 +77,7 @@ export const usePlaybackCursorStore = defineStore('playbackCursor', () => {
     isPlaying.value = false
     isPaused.value = true
     
-    stopTimer()
+    stopTimer() // Nettoyer l'ancien timer s'il existe
   }
 
   // Stop complet
@@ -68,7 +88,7 @@ export const usePlaybackCursorStore = defineStore('playbackCursor', () => {
     isPaused.value = false
     currentTime.value = 0
     
-    stopTimer()
+    stopTimer() // Nettoyer l'ancien timer s'il existe
   }
 
   // Stop en fin de morceau (garde la position)
@@ -79,7 +99,7 @@ export const usePlaybackCursorStore = defineStore('playbackCursor', () => {
     isPaused.value = false
     // NE PAS remettre currentTime.value = 0
     
-    stopTimer()
+    stopTimer() // Nettoyer l'ancien timer s'il existe
     
     // Vérification que la position reste intacte
     setTimeout(() => {
@@ -200,9 +220,8 @@ export const usePlaybackCursorStore = defineStore('playbackCursor', () => {
     }, 100)
     }
     
-    if (isPlaying.value) {
-      startTimer() // Redémarrer le timer avec le nouveau temps
-    }
+    // Pas de timer interne à redémarrer - le store est passif
+    // Le temps vient du MidiPlayer qui tient compte des changements de tempo
   }
   
   // Fonction pour déclencher l'auto-scroll vers la position du curseur
@@ -263,37 +282,8 @@ export const usePlaybackCursorStore = defineStore('playbackCursor', () => {
     }
   }
 
-  // Timer interne
-  function startTimer() {
-    if (internalTimer) clearInterval(internalTimer)
-    
-    timerStartTime = performance.now()
-    timerStartMusicTime = currentTime.value
-    
-    internalTimer = setInterval(() => {
-      if (!isPlaying.value) return
-      
-      const now = performance.now()
-      const realTimeElapsed = (now - timerStartTime) / 1000
-      const newMusicTime = timerStartMusicTime + realTimeElapsed
-      
-      if (newMusicTime <= totalDuration.value) {
-        currentTime.value = newMusicTime
-        
-        // Debug périodique
-        if (Math.floor(newMusicTime * 10) % 20 === 0) {
-          console.log('🎯 CURSEUR GLOBAL:', {
-            temps: newMusicTime.toFixed(2) + 's',
-            pixels: pixelPosition.value.toFixed(1) + 'px'
-          })
-        }
-      } else {
-        // Fin de morceau
-        currentTime.value = totalDuration.value
-        stopAtEnd()
-      }
-    }, 16) // 60fps
-  }
+  // Timer interne SUPPRIMÉ - Le store est 100% passif
+  // Le temps vient du MidiPlayer qui calcule correctement avec les changements de tempo
 
   function stopTimer() {
     if (internalTimer) {
@@ -325,13 +315,30 @@ export const usePlaybackCursorStore = defineStore('playbackCursor', () => {
     console.log('🎯 STORE: Curseur initialisé - durée:', totalDuration.value + 's', 'position:', currentTime.value.toFixed(2) + 's')
   }
 
-  // Watcher pour debug pixelPosition (logs réduits)
+  // Watcher pour debug pixelPosition (logs très réduits)
   watch(() => pixelPosition.value, (newPos, oldPos) => {
-    // Log seulement pour les changements significatifs
-    if (Math.abs(newPos - (oldPos || 0)) > 1) {
+    // Log seulement tous les 50 pixels pour éviter la vibration
+    if (Math.abs(newPos - (oldPos || 0)) > 50) {
       console.log('📍 Curseur: ' + newPos?.toFixed(1) + 'px (' + currentTime.value.toFixed(2) + 's)')
     }
   })
+
+  // Fonction pour mettre à jour le temps depuis MidiPlayer
+  function updateTime(time) {
+    // Debug pour détecter les sauts anormaux
+    const oldTime = currentTime.value
+    const timeDiff = Math.abs(time - oldTime)
+    
+    if (timeDiff > 0.5 && oldTime > 0) {
+      console.warn('⚠️ SAUT TEMPOREL DÉTECTÉ:', {
+        ancien: oldTime.toFixed(3) + 's',
+        nouveau: time.toFixed(3) + 's',
+        saut: (time - oldTime).toFixed(3) + 's'
+      })
+    }
+    
+    currentTime.value = time
+  }
 
   return {
     // État
@@ -348,6 +355,7 @@ export const usePlaybackCursorStore = defineStore('playbackCursor', () => {
     stopPlayback,
     stopAtEnd,
     seekTo,
-    initialize
+    initialize,
+    updateTime
   }
 })

@@ -191,7 +191,7 @@ defineExpose({
 /* === LIGNES DE MESURES === */
 .measure-line {
   width: 3px;
-  background: var(--grid-measure-line, #666);
+  background: var(--grid-measure-line, #333);
   border: none;
 }
 
@@ -204,7 +204,7 @@ defineExpose({
 /* === LIGNES DE BEATS === */
 .beat-line {
   width: 1px;
-  background: var(--grid-beat-line, #888);
+  background: var(--grid-beat-line, #666);
   border: none;
 }
 
@@ -212,28 +212,24 @@ defineExpose({
 .subdivision-line {
   width: 1px;
   border: none;
-  background: var(--grid-subdivision-weak, #ddd);
-  opacity: 0.6;
+  background: var(--grid-subdivision-weak, #bbb);
 }
 
 /* Subdivisions faibles (la plupart) */
 .subdivision-line.weak-subdivision {
-  background: var(--grid-subdivision-weak, #ddd);
-  opacity: 0.5;
+  background: var(--grid-subdivision-weak, #bbb);
   width: 1px;
 }
 
 /* Subdivisions fortes (chaque 4ème) */
 .subdivision-line.strong-subdivision {
-  background: var(--grid-subdivision-strong, #aaa);
+  background: var(--grid-subdivision-strong, #888);
   width: 1px;
-  opacity: 0.8;
 }
 
 /* Subdivisions de triolets - couleur distinctive */
 .subdivision-line.triplet-subdivision {
   background: var(--grid-triplet-subdivision, #f0a030);
-  opacity: 0.7;
 }
 
 /* === ÉLÉMENTS DE TEXTE === */
@@ -287,10 +283,10 @@ defineExpose({
 
 /* === VARIABLES CSS POUR LES THÈMES === */
 :root {
-  --grid-measure-line: #666;
-  --grid-beat-line: #888;
-  --grid-subdivision-weak: #ddd;
-  --grid-subdivision-strong: #aaa;
+  --grid-measure-line: #333;
+  --grid-beat-line: #666;
+  --grid-subdivision-weak: #bbb;
+  --grid-subdivision-strong: #888;
   --grid-triplet-subdivision: #f0a030;
   --grid-signature-change: #2196F3;
   --grid-signature-shadow: rgba(33, 150, 243, 0.3);
@@ -305,10 +301,10 @@ defineExpose({
 /* Mode sombre */
 @media (prefers-color-scheme: dark) {
   :root {
-    --grid-measure-line: #888;
-    --grid-beat-line: #666;
-    --grid-subdivision-weak: #333;
-    --grid-subdivision-strong: #555;
+    --grid-measure-line: #aaa;
+    --grid-beat-line: #777;
+    --grid-subdivision-weak: #555;
+    --grid-subdivision-strong: #666;
     --grid-triplet-subdivision: #cc8800;
     --grid-signature-change: #64B5F6;
     --grid-signature-shadow: rgba(100, 181, 246, 0.3);

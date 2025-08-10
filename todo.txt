@@ -1,11 +1,62 @@
-pour des intervalles réguliers il vaut mieux utiliser 0, 50, 100, 150, 200. l'affichage des labels n'est pas bon. l'espace entre chaque label n'est pas identique. il faudra adapter l'affichage des lignes
+x déselectionne une signature quand on clic dans un espace vide
+x au chargement de la page, simuler nouvau projet avec creation d'une nouvelle piste et des 3 midi cc lane par defaut CC1, CC7, CC11
+à revoir en mode edition inline, on ne peut pas utilse les touches delete ou backspace pour corriger une saisie
+x faire un composant SignatureControls dans /src/components/buttons pour deporter la gestion des boutons + et - des signatures dans ce composant au lieu que dans App.vue. ne pas changer le visuel des boutons
+x dans l'onglet velocité, l'affichage des labels des lignes de reference est à modifier pour avoir un visuel comme celui des midi cc (justifé à droite, repartition des valeurs en hauteur)
+x quand il a des variations de tempo, l'affichage du tempo dans TransportControls ne correspond pas avec la valeur de tempo en cours en fonction de la position de PlaybackCursor
+x l'edition du nom de la piste dans TrackInfo ne fonctionne pas faire comme dans TrackInstrument
+x Compléter le composant SelectRulers pour afficher ou masque les regles des signatures et des marqueurs
+x Compléter le composant src/components/rulers/MarkerRuler pour gérer les marqueurs midi. se baser exactement sur le composant TimeSignatureRuler. Meme comportant, pareil pour les boutons + et -, sauf pour les marqueurs midi au lieu des signatures. bouton + et -, edition en ligne, ajout et suppression dans le store
+x Erreur: TimeSignatureRuler.vue:132 Uncaught (in promise) TypeError: signatureInput.value.focus is not a function at TimeSignatureRuler.vue:132:28
+x Erreur: SignatureControls.vue:116 ⚠️ Événement de signature non trouvé ou méthode removeTimeSignature non disponible
+x MarkerRuler: le double clic pour ajouter un nouveau marqueur ne fonctionne pas. c'est le simple clic qui est pris en compte
+x changer le nom des marqueur par defaut : # + (nombre de marqueur + 1)
+x MarkerRuler: quand on fait un double clic sur un marqueur existant, sélectionner le texte du champ. voir dans TrackInfo cette logique fonctionne mais pas au niveau de marqueur
+x au chargement de la page les controls de transport sont disabled, à mettre enabled, comme quand on fait nouveau projet
+x TimeSignatureRuler: quand on est en mode edition, quand on clic sur un zone vide de l'écran on ne sort pas du mode d'edition, idem pour MarkerRuler
+x Dans le deroulant permettant d'ajouter des nouveaux onglets de midi cc, tous les midi cc ne sont pas dans la liste
+x Courbe tempo. impossible de mettre à 0 le premier point timing 0s
+x les changements de tempo ne sont lus pendant la lecture
+x les textes dans TransportControls bougent pendant la lecture. ne pas toucher à la mise en forme, juste regler le probleme de texte qui bouge
+x quand ajout d'un nouveau midi cc (nouvel onglet), les evenements midi cc de cet onglet ne sont pas envoyés sur le canal et la sortie midi de la piste
+x Mettra la largeur des barres de velocités à 6px au lieu de 8px
 
-gridrender ligne des divisions entre les temps des mesures en fonction du snap
+x autoscroll toujours a la meme vitesse. voir /logs.txt
+x quand on se positionne sur la timeline avec un clic, l'indicateur de tempo dans TransportControls ne se met pas à jour en fonction du tempo correspondant à la position temporelle
+x dans TempoLane et CCLane le curseur de defilement n'est pas visible
+logs TempoLane a supprimer comme: DEBUG%, %DRAG%, %UPDATE%, TEMPO% 
+x dans TempoLane, avec le mode lasso + drag vertical effet magnetique quand on bouge et qu'on retourne vers la valeur de départ
+x ajouter interploation lineaire de certians midi cc uniquement. voir les pratiques dans les DAW
+x décaler la numerotation des toutes les notes dans PianoKeys: C-1 devient C-2 pour etre en phase avec les pratiques des DAW
+x MarkerRuler: gérer le déplacement des marqueurs avec le drag horizontal
+x Dans MidiNotes, quand le snap est activé, l'indicateur de snap affiche une barre à droite de la note
+x Dans MidiNotes, imprecision de la zone de sélection pour déplacer ou agrandir les notes. souris forme pointer, on frag à droite et ça agrandi les notes, alors que quand souris = pointer c'est pour déplacer
+x Sur TimeLine ajouter 2 drapeaux pour sélectionner la zone de loop. Chaque drapeau peut etre déplace avec un drag horizontal. Faire joue le morceau dans la boucle, quand le bouton loop dans TransportControls est activé
+Dans MidiNote afficher les notes avec du svg pour encore + de performance. 
+Bouton Panic dans Toolbar. réinitialiser tous les midi cc, envoyer des noteoff
+Gérer l'input Midi. Dans TrackInfo ajouter une liste déroulante pour sélectionner le périphérique d'entrée, avec l'option d'écouter sur tous les inputs + Enregistrer en temps réel lors de la lecteur du morceau l'activité midi noteon, noteoff, midicc, dans le store. Raffraichir les lanes quand arret du morceau. si affichage en temps réel encore mieux
+Enregistrer en temps réel lors de la lecteur du morceau l'activité midi noteon, noteoff, midicc, dans le store. Raffraichir les lanes quand arret du morceau. si affichage en temps réel encore mieux
 
-deplacement horizontal des points tempo ne suit pas la souris
+Supprimer et nettoyer le cache de la gestion des notes et des velocités. on utilise plus de cache les calculs
 
-vecocité VelocityInfo label 32, 64, 96, champ input pour saisir manuellement une velocité
+Composant TrackVisibily
+Composant MidiMonitor
 
-bouton pour ajouter des mesures
+==================
 
-ruler pour les marqeurs
+ajoute un indicateur d'activité midi dans TrackInstrument devant le nom de la piste sous forme de puce qui passe au vert quand une activité midi en input est détectée
+
+
+
+x supprime le bouton armer dans TransportControls
+
+x dans TrackInfo et TrackInstrument ajoute un bouton Record 'R' et Monitor 'I' à droite de Solo pour activer ou non l'enregistrement et le monitoring de la piste
+xtoutes les pistes qui ont Record activé écoutent l'input midi pour enregistrer, celle qui ont Monitor activé envoie les events sur l'output en temps réel
+xsi on clique sur Record, ça active aussi le Monitoring
+
+bugs:
+le mode d'enregistrement replace doit supprimer les events midi entre la position de debut et de fin d'enregistrement
+dans les cc lane, quand on selectionne une zone et qu'on fait delete, les points sont supprimés mais d'autres apparaissent. l'interpolation doit masquer des cc qui ont été enregistrés. avec la suppression l'interpolation et recalculer et fait apparaitre les points. à faire: supprimer tous les points dans la zone de selection meme ceux qui ne sont pas affichés
+
+
+corrige le mode replace: efface les événements MIDI existants sur la portion temporelle que traverse le curseur et les remplace instantanément par ceux joués. si aucun événement MIDI n’est joué pendant le passage du curseur, les événements existants sur cette portion sont simplement effacés et remplacés par du vide. 

@@ -67,7 +67,11 @@ export const useProjectStore = defineStore('project', () => {
       theme: "dark",
       noteColors: "velocity",
       showNoteNames: true,
-      showGrid: true
+      showGrid: true,
+      rulers: {
+        showSignatureRuler: true,
+        showMarkerRuler: false
+      }
     },
     keyboard: {
       octave: 4,
@@ -122,6 +126,11 @@ export const useProjectStore = defineStore('project', () => {
       bpm: projectMetadata.value.bpm
     }
   })
+
+  // Computed pour les rulers
+  const rulersVisibility = computed(() => userPreferences.value.display?.rulers || { showSignatureRuler: true, showMarkerRuler: false })
+  const showSignatureRuler = computed(() => userPreferences.value.display?.rulers?.showSignatureRuler ?? true)
+  const showMarkerRuler = computed(() => userPreferences.value.display?.rulers?.showMarkerRuler ?? false)
 
   // ==========================================
   // WATCHERS POUR DÉTECTER LES CHANGEMENTS
@@ -214,6 +223,10 @@ export const useProjectStore = defineStore('project', () => {
             })
           }
         })
+        
+        // CORRECTION: Sélectionner automatiquement la première piste
+        console.log('🎯 Sélection automatique de la première piste lors du nouveau projet')
+        midiStore.selectTrack(trackId)
       }
       
       // Debug: Vérifier l'état final
@@ -222,6 +235,7 @@ export const useProjectStore = defineStore('project', () => {
         projectIsLoaded: isLoaded.value,
         midiStoreIsLoaded: midiStore.isLoaded,
         tracksCount: midiStore.tracks?.length || 0,
+        selectedTrack: midiStore.selectedTrack,
         hasTimeSignatureEvents: midiStore.timeSignatureEvents?.length || 0,
         hasTempoEvents: midiStore.tempoEvents?.length || 0,
         canSave: canSave.value,
@@ -683,6 +697,23 @@ export const useProjectStore = defineStore('project', () => {
   }
 
   /**
+   * Met à jour un marqueur existant
+   */
+  function updateMarker(markerId, updates) {
+    const marker = markers.value.find(m => m.id === markerId)
+    if (marker) {
+      Object.assign(marker, updates)
+      if (updates.time !== undefined) {
+        // Trier à nouveau si le temps a changé
+        markers.value.sort((a, b) => a.time - b.time)
+      }
+      markAsModified()
+      return true
+    }
+    return false
+  }
+
+  /**
    * Met à jour les préférences utilisateur
    */
   function updateUserPreferences(category, updates) {
@@ -693,6 +724,35 @@ export const useProjectStore = defineStore('project', () => {
       }
       markAsModified()
     }
+  }
+
+  // Fonctions spécifiques pour les rulers
+  function toggleSignatureRuler() {
+    // S'assurer que la structure existe
+    if (!userPreferences.value.display.rulers) {
+      userPreferences.value.display.rulers = { showSignatureRuler: true, showMarkerRuler: false }
+    }
+    userPreferences.value.display.rulers.showSignatureRuler = !userPreferences.value.display.rulers.showSignatureRuler
+    markAsModified()
+    console.log('🎼 Signature ruler:', userPreferences.value.display.rulers.showSignatureRuler ? 'visible' : 'masqué')
+  }
+
+  function toggleMarkerRuler() {
+    // S'assurer que la structure existe
+    if (!userPreferences.value.display.rulers) {
+      userPreferences.value.display.rulers = { showSignatureRuler: true, showMarkerRuler: false }
+    }
+    userPreferences.value.display.rulers.showMarkerRuler = !userPreferences.value.display.rulers.showMarkerRuler
+    markAsModified()
+    console.log('📍 Marker ruler:', userPreferences.value.display.rulers.showMarkerRuler ? 'visible' : 'masqué')
+  }
+
+  function setRulersVisibility(rulersConfig) {
+    userPreferences.value.display.rulers = {
+      ...userPreferences.value.display.rulers,
+      ...rulersConfig
+    }
+    markAsModified()
   }
 
   /**
@@ -863,6 +923,9 @@ export const useProjectStore = defineStore('project', () => {
     canSaveAs,
     projectInfo,
     recentMarkers,
+    rulersVisibility,
+    showSignatureRuler,
+    showMarkerRuler,
 
     // Actions principales
     createNewProject,
@@ -880,8 +943,12 @@ export const useProjectStore = defineStore('project', () => {
     updateSelection,
     addMarker,
     removeMarker,
+    updateMarker,
     updateUserPreferences,
     updateProjectMetadata,
+    toggleSignatureRuler,
+    toggleMarkerRuler,
+    setRulersVisibility,
 
     // Utilitaires
     checkUnsavedChanges,

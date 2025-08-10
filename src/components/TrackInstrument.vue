@@ -29,6 +29,26 @@
       <div class="track-header" @click="selectTrack">
         <div class="track-main-info">
           <div class="track-number">{{ getTrackNumber() }}</div>
+          <!-- Indicateur d'activité MIDI -->
+          <svg 
+            class="midi-activity-indicator"
+            width="10" 
+            height="10" 
+            viewBox="0 0 10 10"
+            :title="getMidiActivityTooltip()"
+          >
+            <circle
+              cx="5" 
+              cy="5" 
+              r="3"
+              :fill="getMidiActivityColor()"
+              :stroke="getMidiActivityStroke()"
+              stroke-width="1"
+              :class="{ 
+                'activity-pulse': midiActivity && track.monitor
+              }"
+            />
+          </svg>
           <div class="track-details">
             <input
               v-if="editingName"
@@ -36,6 +56,7 @@
               @blur="saveTrackName"
               @keyup.enter="saveTrackName"
               @keyup.escape="cancelEditName"
+              @keydown="handleInputKeyDown"
               class="track-name-input"
               ref="nameInput"
             />
@@ -69,6 +90,24 @@
             title="Solo"
           >
             S
+          </el-button>
+          <el-button
+            :type="props.track.record ? 'danger' : 'default'"
+            size="small"
+            @click.stop="toggleRecord"
+            class="control-button record-btn"
+            title="Enregistrement"
+          >
+            R
+          </el-button>
+          <el-button
+            :type="props.track.monitor ? 'info' : 'default'"
+            size="small"
+            @click.stop="toggleMonitor"
+            class="control-button monitor-btn"
+            title="Monitoring"
+          >
+            I
           </el-button>
           
           <!-- Icône + pour toggler la hauteur (toujours visible) -->
@@ -189,6 +228,10 @@ const localVolume = ref(127)
 const localMuted = ref(false)
 const localSolo = ref(false)
 
+// État d'activité MIDI
+const midiActivity = ref(false)
+let activityTimeout = null
+
 // Système de hauteur avec 3 niveaux : 30px, 70px, 100px
 const heightLevels = [30, 70, 100]
 const currentHeightLevel = ref(0) // Index dans heightLevels (0, 1, 2)
@@ -258,12 +301,21 @@ onMounted(async () => {
     }
   }
   await initializeMidiAccess()
+  
+  // Écouter les événements d'activité MIDI
+  window.addEventListener('midi-activity', handleMidiActivity)
 })
 
 onUnmounted(() => {
   if (midiAccess.value) {
     midiAccess.value.onstatechange = null
   }
+  // Nettoyer le timeout d'activité
+  if (activityTimeout) {
+    clearTimeout(activityTimeout)
+  }
+  // Supprimer les listeners d'activité MIDI
+  window.removeEventListener('midi-activity', handleMidiActivity)
 })
 
 // Fonctions MIDI
@@ -308,6 +360,61 @@ function getTrackNumber() {
   const tracks = midiStore.tracks
   const index = tracks.findIndex(t => t.id === props.track.id)
   return index + 1
+}
+
+// Fonction pour gérer l'activité MIDI
+function handleMidiActivity(event) {
+  const { trackId } = event.detail
+  
+  // Vérifier si cette activité concerne notre piste
+  if (trackId === props.track.id && props.track.monitor) {
+    // Activer l'indicateur
+    midiActivity.value = true
+    
+    // Programmer la désactivation après 200ms
+    if (activityTimeout) {
+      clearTimeout(activityTimeout)
+    }
+    
+    activityTimeout = setTimeout(() => {
+      midiActivity.value = false
+    }, 200) // 200ms de clignotement
+  }
+}
+
+
+// Fonctions pour les couleurs de l'indicateur
+function getMidiActivityColor() {
+  if (midiActivity.value && props.track.monitor) {
+    return '#4CAF50' // Vert actif
+  } else if (props.track.monitor) {
+    return '#999' // Gris monitoring actif
+  } else {
+    return '#666' // Gris monitoring inactif
+  }
+}
+
+function getMidiActivityStroke() {
+  if (midiActivity.value && props.track.monitor) {
+    return '#45a049' // Vert foncé
+  } else if (props.track.monitor) {
+    return '#bbb' // Gris clair
+  } else {
+    return '#999' // Gris
+  }
+}
+
+// Tooltip pour l'indicateur d'activité
+function getMidiActivityTooltip() {
+  if (!props.track.monitor) {
+    return 'Monitoring désactivé - Activez le bouton I pour voir l\'activité MIDI'
+  }
+  
+  if (midiActivity.value) {
+    return 'Activité MIDI détectée'
+  }
+  
+  return 'Monitoring activé - En attente d\'activité MIDI'
 }
 
 // Gestionnaire de changement de couleur
@@ -363,6 +470,17 @@ async function saveTrackName() {
 function cancelEditName() {
   editingName.value = false
   tempTrackName.value = props.track.name
+}
+
+function handleInputKeyDown(event) {
+  console.log('🔍 TrackInstrument input keydown:', event.key)
+  
+  // Empêcher la propagation pour Delete/Backspace
+  if (event.key === 'Delete' || event.key === 'Backspace') {
+    console.log('✅ TrackInstrument: Arrêt propagation', event.key)
+    event.stopPropagation()
+    event.stopImmediatePropagation()
+  }
 }
 
 // Gestionnaires avec débounce pour le volume
@@ -440,6 +558,24 @@ function toggleMute() {
 function toggleSolo() {
   localSolo.value = !localSolo.value
   midiStore.toggleTrackSolo(props.track.id)
+}
+
+function toggleRecord() {
+  const newRecordState = !props.track.record
+  midiStore.toggleTrackRecord(props.track.id)
+  
+  // Auto-activer le monitoring quand Record est activé
+  if (newRecordState && !props.track.monitor) {
+    midiStore.toggleTrackMonitor(props.track.id)
+  }
+  // Auto-désactiver le monitoring quand Record est désactivé
+  else if (!newRecordState && props.track.monitor) {
+    midiStore.toggleTrackMonitor(props.track.id)
+  }
+}
+
+function toggleMonitor() {
+  midiStore.toggleTrackMonitor(props.track.id)
 }
 
 // Fonctions drag & drop
@@ -610,6 +746,34 @@ function onDrop(event) {
   min-width: 20px;
   text-align: center;
   flex-shrink: 0;
+}
+
+.midi-activity-indicator {
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.midi-activity-indicator circle {
+  transition: all 0.15s ease;
+}
+
+.midi-activity-indicator .activity-pulse {
+  animation: midi-pulse 0.3s ease-out;
+}
+
+@keyframes midi-pulse {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.3);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 .track-details {

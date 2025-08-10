@@ -1,10 +1,367 @@
-AddCCLane.vue:96 ➕ AddCCLaneButton: Sélection CC1
-MidiLaneTabs.vue:206 🎛️ Création point CC initial: {trackId: 1754580901796, controller: Array(1), time: 0, value: 64, channel: 0}
-midi.js:41 🔄 Réactivité déclenchée: add-cc-1754580906196.088 à 17:35:06
-midi.js:42 🎛️ CC count après trigger: 1
-MidiLaneTabs.vue:222 🎛️ CC créé avec ID: 1754580906196.088
-App.vue:217 🎛️ App.vue: Lanes mises à jour: 2
-CCLane.vue:153 🎛️ 🚨 CCLane-1-wamy5wwwx computed ccPoints appelé @ 1754580906250 🚨
-CCLane.vue:162 🎛️ CCLane - Store CC count: 1
-CCLane.vue:170 🎛️ CCLane-1-wamy5wwwx - CC1 trouvés: 0 @ 1754580906250
-CCLane.vue:241 🎯 MODE NORMAL - Points du store: 0
+useMidiPlayer.js:485 🔴 Démarrage enregistrement auto car 1 pistes en Record
+useMidiRecording.js:633 🎤 Événement de début d'enregistrement reçu: {mode: 'replace'} mode: replace
+useMidiRecording.js:498 🔴 DÉBUT ENREGISTREMENT...
+useMidiRecording.js:502 🆔 Nouvelle session d'enregistrement: 2
+useMidiRecording.js:522 🗑️ Mode Replace: Pistes armées pour enregistrement sélectif: [0]
+useMidiRecording.js:427 🧹 Nettoyage de 1 listeners MIDI...
+useMidiRecording.js:430 🧹 Suppression listener: 0--350350912 (piste 0)
+useMidiRecording.js:434 ✅ 1 listeners MIDI nettoyés
+useMidiRecording.js:331 🎤 Configuration des listeners MIDI pour enregistrement/monitoring...
+useMidiRecording.js:332 🔍 État enregistrement: {isRecording: true, recordingBlocked: false}
+useMidiRecording.js:340 📍 Piste 0: input="-350350912" record=true monitor=true
+useMidiRecording.js:359 🎧 Configuration input pour piste 0 (record=true, monitor=true)...
+useMidiRecording.js:375 🎧 Piste 0: écoute input spécifique "iRig KEYS 37 PRO"
+useMidiRecording.js:412 🎤 Listener COMPLET configuré: piste 0 <- input "iRig KEYS 37 PRO" (session=2)
+useMidiRecording.js:530 🔴 Enregistrement démarré (mode: replace)
+useMidiPlayer.js:492 🔄 Préparation des données MIDI...
+useMidiPlayer.js:554 🔄 Réveil du navigateur (après préparation)...
+useMidiPlayer.js:435 🔄 Réveil du navigateur... 5 cycles
+useMidiPlayer.js:425 ✅ Navigateur réveillé après 5 cycles
+useMidiPlayer.js:558 🔄 Pré-réchauffement moteur de rendu...
+useMidiPlayer.js:470 🔄 Réchauffement moteur de rendu... 10 cycles
+useMidiPlayer.js:462 ✅ Moteur de rendu réchauffé après 10 cycles
+playbackCursor.js:64 🚀 STORE: Démarrage curseur global
+useMidiRecording.js:633 🎤 Événement de début d'enregistrement reçu: {trackCount: 1, mode: 'merge'} mode: merge
+useMidiRecording.js:498 🔴 DÉBUT ENREGISTREMENT...
+useMidiRecording.js:502 🆔 Nouvelle session d'enregistrement: 3
+useMidiRecording.js:524 🎵 Mode Merge: Pistes armées pour enregistrement sélectif: [0]
+useMidiRecording.js:427 🧹 Nettoyage de 1 listeners MIDI...
+useMidiRecording.js:430 🧹 Suppression listener: 0--350350912 (piste 0)
+useMidiRecording.js:434 ✅ 1 listeners MIDI nettoyés
+useMidiRecording.js:331 🎤 Configuration des listeners MIDI pour enregistrement/monitoring...
+useMidiRecording.js:332 🔍 État enregistrement: {isRecording: true, recordingBlocked: false}
+useMidiRecording.js:340 📍 Piste 0: input="-350350912" record=true monitor=true
+useMidiRecording.js:359 🎧 Configuration input pour piste 0 (record=true, monitor=true)...
+useMidiRecording.js:375 🎧 Piste 0: écoute input spécifique "iRig KEYS 37 PRO"
+useMidiRecording.js:412 🎤 Listener COMPLET configuré: piste 0 <- input "iRig KEYS 37 PRO" (session=3)
+useMidiRecording.js:530 🔴 Enregistrement démarré (mode: merge)
+useMidiPlayer.js:583 🔴 Événement d'enregistrement MIDI émis pour 1 piste(s)
+useMidiPlayer.js:1223 🚀 INIT PLAYBACK: {playStartTime: 29165.5, playStartMusicTime: '0.000s', currentTimeValue: '0.000s'}
+useMidiPlayer.js:1231 🎬 DÉMARRAGE PLAYBACK - Tempo initial: 120 BPM (tempoEvents: 1)
+useMidiPlayer.js:1232 🎵 DEBUG TEMPO: {currentTempo: 120, getTempoAtTime0: 120, midiInfoTempo: 120, firstTempoEvent: Proxy(Object)}
+usePlaybackCursor.js:316 🚀 startPlayback appelé - État actuel: {isPlaying: false, isPaused: true, currentTime: 0, totalDuration: 64}
+usePlaybackCursor.js:330 🎵 CURSEUR EN MODE 100% PASSIF - aucun timer interne
+usePlaybackCursor.js:333 ▶️ Lecture démarrée par curseur - isPlaying maintenant: true
+useMidiPlayer.js:1292 🔄 CYCLE 0: {realTimeElapsed: '0.013s', playStartMusicTime: '0.000s', currentPlayTime: '0.013s', delta: '0.013s', calcTime: '0.00ms'}
+useMidiPlayer.js:1292 🔄 CYCLE 1: {realTimeElapsed: '0.026s', playStartMusicTime: '0.000s', currentPlayTime: '0.026s', delta: '0.014s', calcTime: '0.00ms'}
+useMidiPlayer.js:1292 🔄 CYCLE 2: {realTimeElapsed: '0.039s', playStartMusicTime: '0.000s', currentPlayTime: '0.039s', delta: '0.013s', calcTime: '0.00ms'}
+useMidiPlayer.js:1292 🔄 CYCLE 3: {realTimeElapsed: '0.053s', playStartMusicTime: '0.000s', currentPlayTime: '0.053s', delta: '0.013s', calcTime: '0.10ms'}
+useMidiPlayer.js:1292 🔄 CYCLE 4: {realTimeElapsed: '0.066s', playStartMusicTime: '0.000s', currentPlayTime: '0.066s', delta: '0.013s', calcTime: '0.10ms'}
+useMidiPlayer.js:1292 🔄 CYCLE 5: {realTimeElapsed: '0.079s', playStartMusicTime: '0.000s', currentPlayTime: '0.079s', delta: '0.013s', calcTime: '0.00ms'}
+useMidiPlayer.js:1292 🔄 CYCLE 6: {realTimeElapsed: '0.093s', playStartMusicTime: '0.000s', currentPlayTime: '0.093s', delta: '0.013s', calcTime: '0.00ms'}
+useMidiPlayer.js:1292 🔄 CYCLE 7: {realTimeElapsed: '0.106s', playStartMusicTime: '0.000s', currentPlayTime: '0.106s', delta: '0.013s', calcTime: '0.00ms'}
+useMidiPlayer.js:1292 🔄 CYCLE 8: {realTimeElapsed: '0.119s', playStartMusicTime: '0.000s', currentPlayTime: '0.119s', delta: '0.013s', calcTime: '0.10ms'}
+useMidiPlayer.js:1292 🔄 CYCLE 9: {realTimeElapsed: '0.133s', playStartMusicTime: '0.000s', currentPlayTime: '0.133s', delta: '0.013s', calcTime: '0.00ms'}
+useMidiPlayer.js:1292 🔄 CYCLE 10: {realTimeElapsed: '0.146s', playStartMusicTime: '0.000s', currentPlayTime: '0.146s', delta: '0.013s', calcTime: '0.00ms'}
+useMidiPlayer.js:1292 🔄 CYCLE 11: {realTimeElapsed: '0.160s', playStartMusicTime: '0.000s', currentPlayTime: '0.160s', delta: '0.013s', calcTime: '0.00ms'}
+useMidiPlayer.js:1292 🔄 CYCLE 12: {realTimeElapsed: '0.173s', playStartMusicTime: '0.000s', currentPlayTime: '0.173s', delta: '0.013s', calcTime: '0.00ms'}
+useMidiPlayer.js:1292 🔄 CYCLE 13: {realTimeElapsed: '0.186s', playStartMusicTime: '0.000s', currentPlayTime: '0.186s', delta: '0.013s', calcTime: '0.00ms'}
+useMidiPlayer.js:1292 🔄 CYCLE 14: {realTimeElapsed: '0.199s', playStartMusicTime: '0.000s', currentPlayTime: '0.199s', delta: '0.013s', calcTime: '0.00ms'}
+useMidiRecording.js:107 🔍 Debug Record: trackId=0 track.record=true isRecording=true shouldRecord=true
+useMidiRecording.js:109 🎤 ENREGISTREMENT: Status=90 Channel=1 Note=84 Vel=48 Time=0.199s
+useMidiRecording.js:153 🎵 Premier événement Note reçu pour piste 0 à 0.199s
+useMidiRecording.js:157 🗑️ Mode Replace - suppression des notes à partir de 0.199s
+useMidiRecording.js:449 🗑️ Replace: suppression note à partir de 0.199s
+useMidiRecording.js:464 🗑️ Replace: 0 notes supprimées de la piste 0 à partir de 0.199s
+useMidiRecording.js:189 🎵 Note On enregistrée: 84 (recorded-1754783696134-6e8kq3boe) à 0.199s
+useMidiRecording.js:671 🔄 Inputs MIDI ou états Record/Monitor changés, reconfiguration...
+useMidiRecording.js:386 🔊 Configuration du monitoring MIDI...
+useMidiRecording.js:427 🧹 Nettoyage de 1 listeners MIDI...
+useMidiRecording.js:430 🧹 Suppression listener: 0--350350912 (piste 0)
+useMidiRecording.js:434 ✅ 1 listeners MIDI nettoyés
+useMidiRecording.js:331 🎤 Configuration des listeners MIDI pour enregistrement/monitoring...
+useMidiRecording.js:332 🔍 État enregistrement: {isRecording: true, recordingBlocked: false}
+useMidiRecording.js:340 📍 Piste 0: input="-350350912" record=true monitor=true
+useMidiRecording.js:359 🎧 Configuration input pour piste 0 (record=true, monitor=true)...
+useMidiRecording.js:375 🎧 Piste 0: écoute input spécifique "iRig KEYS 37 PRO"
+useMidiRecording.js:412 🎤 Listener COMPLET configuré: piste 0 <- input "iRig KEYS 37 PRO" (session=3)
+useMidiPlayer.js:891 🎼 Événements: 4 total, 0 notes
+useMidiPlayer.js:891 🎼 Événements: 4 total, 0 notes
+useMidiPlayer.js:891 🎼 Événements: 4 total, 0 notes
+useMidiPlayer.js:891 🎼 Événements: 4 total, 0 notes
+MidiLaneTabs.vue:166 🎛️ Piste 0: 3 types CC détectés
+App.vue:293 🎛️ App.vue: Lanes mises à jour: 5
+useMidiPlayer.js:1292 🔄 CYCLE 15: {realTimeElapsed: '0.213s', playStartMusicTime: '0.000s', currentPlayTime: '0.213s', delta: '0.014s', calcTime: '0.00ms'}
+useMidiPlayer.js:1292 🔄 CYCLE 16: {realTimeElapsed: '0.226s', playStartMusicTime: '0.000s', currentPlayTime: '0.226s', delta: '0.013s', calcTime: '0.00ms'}
+useMidiPlayer.js:1292 🔄 CYCLE 17: {realTimeElapsed: '0.239s', playStartMusicTime: '0.000s', currentPlayTime: '0.239s', delta: '0.013s', calcTime: '0.00ms'}
+useMidiPlayer.js:1292 🔄 CYCLE 18: {realTimeElapsed: '0.253s', playStartMusicTime: '0.000s', currentPlayTime: '0.253s', delta: '0.013s', calcTime: '0.00ms'}
+useMidiPlayer.js:1292 🔄 CYCLE 19: {realTimeElapsed: '0.266s', playStartMusicTime: '0.000s', currentPlayTime: '0.266s', delta: '0.013s', calcTime: '0.00ms'}
+useMidiPlayer.js:1292 🔄 CYCLE 20: {realTimeElapsed: '0.280s', playStartMusicTime: '0.000s', currentPlayTime: '0.280s', delta: '0.014s', calcTime: '0.00ms'}
+useMidiPlayer.js:1292 🔄 CYCLE 21: {realTimeElapsed: '0.293s', playStartMusicTime: '0.000s', currentPlayTime: '0.293s', delta: '0.013s', calcTime: '0.10ms'}
+useMidiPlayer.js:1292 🔄 CYCLE 22: {realTimeElapsed: '0.306s', playStartMusicTime: '0.000s', currentPlayTime: '0.306s', delta: '0.013s', calcTime: '0.00ms'}
+useMidiPlayer.js:1292 🔄 CYCLE 23: {realTimeElapsed: '0.320s', playStartMusicTime: '0.000s', currentPlayTime: '0.320s', delta: '0.013s', calcTime: '0.00ms'}
+useMidiPlayer.js:1292 🔄 CYCLE 24: {realTimeElapsed: '0.333s', playStartMusicTime: '0.000s', currentPlayTime: '0.333s', delta: '0.013s', calcTime: '0.00ms'}
+useMidiPlayer.js:1292 🔄 CYCLE 25: {realTimeElapsed: '0.346s', playStartMusicTime: '0.000s', currentPlayTime: '0.346s', delta: '0.014s', calcTime: '0.00ms'}
+useMidiPlayer.js:1292 🔄 CYCLE 26: {realTimeElapsed: '0.360s', playStartMusicTime: '0.000s', currentPlayTime: '0.360s', delta: '0.013s', calcTime: '0.00ms'}
+useMidiPlayer.js:1292 🔄 CYCLE 27: {realTimeElapsed: '0.373s', playStartMusicTime: '0.000s', currentPlayTime: '0.373s', delta: '0.013s', calcTime: '0.00ms'}
+useMidiPlayer.js:1292 🔄 CYCLE 28: {realTimeElapsed: '0.386s', playStartMusicTime: '0.000s', currentPlayTime: '0.386s', delta: '0.013s', calcTime: '0.00ms'}
+useMidiPlayer.js:1292 🔄 CYCLE 29: {realTimeElapsed: '0.400s', playStartMusicTime: '0.000s', currentPlayTime: '0.400s', delta: '0.014s', calcTime: '0.00ms'}
+useMidiPlayer.js:1292 🔄 CYCLE 30: {realTimeElapsed: '0.413s', playStartMusicTime: '0.000s', currentPlayTime: '0.413s', delta: '0.013s', calcTime: '0.00ms'}
+useMidiPlayer.js:1292 🔄 CYCLE 31: {realTimeElapsed: '0.426s', playStartMusicTime: '0.000s', currentPlayTime: '0.426s', delta: '0.013s', calcTime: '0.10ms'}
+useMidiPlayer.js:1292 🔄 CYCLE 32: {realTimeElapsed: '0.439s', playStartMusicTime: '0.000s', currentPlayTime: '0.439s', delta: '0.013s', calcTime: '0.00ms'}
+useMidiPlayer.js:1292 🔄 CYCLE 33: {realTimeElapsed: '0.453s', playStartMusicTime: '0.000s', currentPlayTime: '0.453s', delta: '0.013s', calcTime: '0.00ms'}
+useMidiPlayer.js:1292 🔄 CYCLE 34: {realTimeElapsed: '0.465s', playStartMusicTime: '0.000s', currentPlayTime: '0.465s', delta: '0.013s', calcTime: '0.00ms'}
+useMidiRecording.js:107 🔍 Debug Record: trackId=0 track.record=true isRecording=true shouldRecord=true
+useMidiRecording.js:109 🎤 ENREGISTREMENT: Status=80 Channel=1 Note=84 Vel=59 Time=0.465s
+useMidiRecording.js:237 ➕ DIRECT PUSH vers midiStore.notes: {noteId: 'recorded-1754783696134-6e8kq3boe', midi: 84, time: 0.1993999999999069, duration: 0.265899999999907, recordingBlocked: false, …}
+useMidiRecording.js:250 ✅ Note enregistrée: 84 durée=0.266s
+useMidiRecording.js:212 🎵 Note Off enregistrée: 84 durée=0.266s
+useMidiRecording.js:671 🔄 Inputs MIDI ou états Record/Monitor changés, reconfiguration...
+useMidiRecording.js:386 🔊 Configuration du monitoring MIDI...
+useMidiRecording.js:427 🧹 Nettoyage de 1 listeners MIDI...
+useMidiRecording.js:430 🧹 Suppression listener: 0--350350912 (piste 0)
+useMidiRecording.js:434 ✅ 1 listeners MIDI nettoyés
+useMidiRecording.js:331 🎤 Configuration des listeners MIDI pour enregistrement/monitoring...
+useMidiRecording.js:332 🔍 État enregistrement: {isRecording: true, recordingBlocked: false}
+useMidiRecording.js:340 📍 Piste 0: input="-350350912" record=true monitor=true
+useMidiRecording.js:359 🎧 Configuration input pour piste 0 (record=true, monitor=true)...
+useMidiRecording.js:375 🎧 Piste 0: écoute input spécifique "iRig KEYS 37 PRO"
+useMidiRecording.js:412 🎤 Listener COMPLET configuré: piste 0 <- input "iRig KEYS 37 PRO" (session=3)
+useMidiPlayer.js:891 🎼 Événements: 6 total, 1 notes
+useMidiPlayer.js:891 🎼 Événements: 6 total, 1 notes
+useMidiPlayer.js:891 🎼 Événements: 6 total, 1 notes
+useMidiPlayer.js:891 🎼 Événements: 6 total, 1 notes
+MidiLaneTabs.vue:166 🎛️ Piste 0: 3 types CC détectés
+App.vue:293 🎛️ App.vue: Lanes mises à jour: 5
+useMidiPlayer.js:1292 🔄 CYCLE 35: {realTimeElapsed: '0.479s', playStartMusicTime: '0.000s', currentPlayTime: '0.479s', delta: '0.014s', calcTime: '0.00ms'}
+useMidiPlayer.js:1292 🔄 CYCLE 36: {realTimeElapsed: '0.493s', playStartMusicTime: '0.000s', currentPlayTime: '0.493s', delta: '0.013s', calcTime: '0.10ms'}
+useMidiPlayer.js:1292 🔄 CYCLE 37: {realTimeElapsed: '0.506s', playStartMusicTime: '0.000s', currentPlayTime: '0.506s', delta: '0.013s', calcTime: '0.00ms'}
+useMidiPlayer.js:1292 🔄 CYCLE 38: {realTimeElapsed: '0.520s', playStartMusicTime: '0.000s', currentPlayTime: '0.520s', delta: '0.013s', calcTime: '0.00ms'}
+useMidiPlayer.js:1292 🔄 CYCLE 39: {realTimeElapsed: '0.533s', playStartMusicTime: '0.000s', currentPlayTime: '0.533s', delta: '0.013s', calcTime: '0.10ms'}
+useMidiPlayer.js:1292 🔄 CYCLE 40: {realTimeElapsed: '0.546s', playStartMusicTime: '0.000s', currentPlayTime: '0.546s', delta: '0.014s', calcTime: '0.00ms'}
+useMidiPlayer.js:1292 🔄 CYCLE 41: {realTimeElapsed: '0.560s', playStartMusicTime: '0.000s', currentPlayTime: '0.560s', delta: '0.013s', calcTime: '0.00ms'}
+useMidiPlayer.js:1292 🔄 CYCLE 42: {realTimeElapsed: '0.573s', playStartMusicTime: '0.000s', currentPlayTime: '0.573s', delta: '0.013s', calcTime: '0.10ms'}
+useMidiPlayer.js:1292 🔄 CYCLE 43: {realTimeElapsed: '0.586s', playStartMusicTime: '0.000s', currentPlayTime: '0.586s', delta: '0.013s', calcTime: '0.00ms'}
+useMidiPlayer.js:1292 🔄 CYCLE 44: {realTimeElapsed: '0.599s', playStartMusicTime: '0.000s', currentPlayTime: '0.599s', delta: '0.013s', calcTime: '0.00ms'}
+useMidiRecording.js:107 🔍 Debug Record: trackId=0 track.record=true isRecording=true shouldRecord=true
+useMidiRecording.js:109 🎤 ENREGISTREMENT: Status=90 Channel=1 Note=86 Vel=43 Time=0.599s
+useMidiRecording.js:189 🎵 Note On enregistrée: 86 (recorded-1754783696534-6oz1wmcr5) à 0.599s
+useMidiPlayer.js:1292 🔄 CYCLE 45: {realTimeElapsed: '0.613s', playStartMusicTime: '0.000s', currentPlayTime: '0.613s', delta: '0.013s', calcTime: '0.00ms'}
+useMidiPlayer.js:1292 🔄 CYCLE 46: {realTimeElapsed: '0.626s', playStartMusicTime: '0.000s', currentPlayTime: '0.626s', delta: '0.013s', calcTime: '0.00ms'}
+useMidiPlayer.js:1292 🔄 CYCLE 47: {realTimeElapsed: '0.640s', playStartMusicTime: '0.000s', currentPlayTime: '0.640s', delta: '0.013s', calcTime: '0.00ms'}
+useMidiPlayer.js:1292 🔄 CYCLE 48: {realTimeElapsed: '0.653s', playStartMusicTime: '0.000s', currentPlayTime: '0.653s', delta: '0.013s', calcTime: '0.00ms'}
+useMidiPlayer.js:1292 🔄 CYCLE 49: {realTimeElapsed: '0.666s', playStartMusicTime: '0.000s', currentPlayTime: '0.666s', delta: '0.013s', calcTime: '0.00ms'}
+useMidiRecording.js:107 🔍 Debug Record: trackId=0 track.record=true isRecording=true shouldRecord=true
+useMidiRecording.js:109 🎤 ENREGISTREMENT: Status=80 Channel=1 Note=86 Vel=55 Time=0.799s
+useMidiRecording.js:237 ➕ DIRECT PUSH vers midiStore.notes: {noteId: 'recorded-1754783696534-6oz1wmcr5', midi: 86, time: 0.599399999999907, duration: 0.20010000000009298, recordingBlocked: false, …}
+useMidiRecording.js:250 ✅ Note enregistrée: 86 durée=0.200s
+useMidiRecording.js:212 🎵 Note Off enregistrée: 86 durée=0.200s
+useMidiRecording.js:671 🔄 Inputs MIDI ou états Record/Monitor changés, reconfiguration...
+useMidiRecording.js:386 🔊 Configuration du monitoring MIDI...
+useMidiRecording.js:427 🧹 Nettoyage de 1 listeners MIDI...
+useMidiRecording.js:430 🧹 Suppression listener: 0--350350912 (piste 0)
+useMidiRecording.js:434 ✅ 1 listeners MIDI nettoyés
+useMidiRecording.js:331 🎤 Configuration des listeners MIDI pour enregistrement/monitoring...
+useMidiRecording.js:332 🔍 État enregistrement: {isRecording: true, recordingBlocked: false}
+useMidiRecording.js:340 📍 Piste 0: input="-350350912" record=true monitor=true
+useMidiRecording.js:359 🎧 Configuration input pour piste 0 (record=true, monitor=true)...
+useMidiRecording.js:375 🎧 Piste 0: écoute input spécifique "iRig KEYS 37 PRO"
+useMidiRecording.js:412 🎤 Listener COMPLET configuré: piste 0 <- input "iRig KEYS 37 PRO" (session=3)
+useMidiPlayer.js:891 🎼 Événements: 8 total, 2 notes
+useMidiPlayer.js:891 🎼 Événements: 8 total, 2 notes
+useMidiPlayer.js:891 🎼 Événements: 8 total, 2 notes
+useMidiPlayer.js:891 🎼 Événements: 8 total, 2 notes
+MidiLaneTabs.vue:166 🎛️ Piste 0: 3 types CC détectés
+App.vue:293 🎛️ App.vue: Lanes mises à jour: 5
+useMidiRecording.js:107 🔍 Debug Record: trackId=0 track.record=true isRecording=true shouldRecord=true
+useMidiRecording.js:109 🎤 ENREGISTREMENT: Status=90 Channel=1 Note=88 Vel=60 Time=0.986s
+useMidiRecording.js:189 🎵 Note On enregistrée: 88 (recorded-1754783696916-nc27gzq91) à 0.986s
+useMidiRecording.js:107 🔍 Debug Record: trackId=0 track.record=true isRecording=true shouldRecord=true
+useMidiRecording.js:109 🎤 ENREGISTREMENT: Status=80 Channel=1 Note=88 Vel=37 Time=1.240s
+useMidiRecording.js:237 ➕ DIRECT PUSH vers midiStore.notes: {noteId: 'recorded-1754783696916-nc27gzq91', midi: 88, time: 0.9861999999997204, duration: 0.25340000000037244, recordingBlocked: false, …}
+useMidiRecording.js:250 ✅ Note enregistrée: 88 durée=0.253s
+useMidiRecording.js:212 🎵 Note Off enregistrée: 88 durée=0.253s
+useMidiRecording.js:671 🔄 Inputs MIDI ou états Record/Monitor changés, reconfiguration...
+useMidiRecording.js:386 🔊 Configuration du monitoring MIDI...
+useMidiRecording.js:427 🧹 Nettoyage de 1 listeners MIDI...
+useMidiRecording.js:430 🧹 Suppression listener: 0--350350912 (piste 0)
+useMidiRecording.js:434 ✅ 1 listeners MIDI nettoyés
+useMidiRecording.js:331 🎤 Configuration des listeners MIDI pour enregistrement/monitoring...
+useMidiRecording.js:332 🔍 État enregistrement: {isRecording: true, recordingBlocked: false}
+useMidiRecording.js:340 📍 Piste 0: input="-350350912" record=true monitor=true
+useMidiRecording.js:359 🎧 Configuration input pour piste 0 (record=true, monitor=true)...
+useMidiRecording.js:375 🎧 Piste 0: écoute input spécifique "iRig KEYS 37 PRO"
+useMidiRecording.js:412 🎤 Listener COMPLET configuré: piste 0 <- input "iRig KEYS 37 PRO" (session=3)
+useMidiPlayer.js:891 🎼 Événements: 10 total, 3 notes
+useMidiPlayer.js:891 🎼 Événements: 10 total, 3 notes
+useMidiPlayer.js:891 🎼 Événements: 10 total, 3 notes
+useMidiPlayer.js:891 🎼 Événements: 10 total, 3 notes
+MidiLaneTabs.vue:166 🎛️ Piste 0: 3 types CC détectés
+App.vue:293 🎛️ App.vue: Lanes mises à jour: 5
+useMidiRecording.js:107 🔍 Debug Record: trackId=0 track.record=true isRecording=true shouldRecord=true
+useMidiRecording.js:109 🎤 ENREGISTREMENT: Status=90 Channel=1 Note=86 Vel=55 Time=1.399s
+useMidiRecording.js:189 🎵 Note On enregistrée: 86 (recorded-1754783697327-sr5ss1pss) à 1.399s
+useMidiRecording.js:107 🔍 Debug Record: trackId=0 track.record=true isRecording=true shouldRecord=true
+useMidiRecording.js:109 🎤 ENREGISTREMENT: Status=80 Channel=1 Note=86 Vel=50 Time=1.626s
+useMidiRecording.js:237 ➕ DIRECT PUSH vers midiStore.notes: {noteId: 'recorded-1754783697327-sr5ss1pss', midi: 86, time: 1.3994999999999997, duration: 0.22679999999981382, recordingBlocked: false, …}
+useMidiRecording.js:250 ✅ Note enregistrée: 86 durée=0.227s
+useMidiRecording.js:212 🎵 Note Off enregistrée: 86 durée=0.227s
+useMidiRecording.js:671 🔄 Inputs MIDI ou états Record/Monitor changés, reconfiguration...
+useMidiRecording.js:386 🔊 Configuration du monitoring MIDI...
+useMidiRecording.js:427 🧹 Nettoyage de 1 listeners MIDI...
+useMidiRecording.js:430 🧹 Suppression listener: 0--350350912 (piste 0)
+useMidiRecording.js:434 ✅ 1 listeners MIDI nettoyés
+useMidiRecording.js:331 🎤 Configuration des listeners MIDI pour enregistrement/monitoring...
+useMidiRecording.js:332 🔍 État enregistrement: {isRecording: true, recordingBlocked: false}
+useMidiRecording.js:340 📍 Piste 0: input="-350350912" record=true monitor=true
+useMidiRecording.js:359 🎧 Configuration input pour piste 0 (record=true, monitor=true)...
+useMidiRecording.js:375 🎧 Piste 0: écoute input spécifique "iRig KEYS 37 PRO"
+useMidiRecording.js:412 🎤 Listener COMPLET configuré: piste 0 <- input "iRig KEYS 37 PRO" (session=3)
+useMidiPlayer.js:891 🎼 Événements: 12 total, 4 notes
+useMidiPlayer.js:891 🎼 Événements: 12 total, 4 notes
+useMidiPlayer.js:891 🎼 Événements: 12 total, 4 notes
+useMidiPlayer.js:891 🎼 Événements: 12 total, 4 notes
+MidiLaneTabs.vue:166 🎛️ Piste 0: 3 types CC détectés
+App.vue:293 🎛️ App.vue: Lanes mises à jour: 5
+useMidiRecording.js:107 🔍 Debug Record: trackId=0 track.record=true isRecording=true shouldRecord=true
+useMidiRecording.js:109 🎤 ENREGISTREMENT: Status=90 Channel=1 Note=84 Vel=53 Time=1.840s
+useMidiRecording.js:189 🎵 Note On enregistrée: 84 (recorded-1754783697765-3cs81vhpy) à 1.840s
+useMidiRecording.js:107 🔍 Debug Record: trackId=0 track.record=true isRecording=true shouldRecord=true
+useMidiRecording.js:109 🎤 ENREGISTREMENT: Status=80 Channel=1 Note=84 Vel=66 Time=2.093s
+useMidiRecording.js:237 ➕ DIRECT PUSH vers midiStore.notes: {noteId: 'recorded-1754783697765-3cs81vhpy', midi: 84, time: 1.8396999999997206, duration: 0.2533000000002794, recordingBlocked: false, …}
+useMidiRecording.js:250 ✅ Note enregistrée: 84 durée=0.253s
+useMidiRecording.js:212 🎵 Note Off enregistrée: 84 durée=0.253s
+useMidiRecording.js:671 🔄 Inputs MIDI ou états Record/Monitor changés, reconfiguration...
+useMidiRecording.js:386 🔊 Configuration du monitoring MIDI...
+useMidiRecording.js:427 🧹 Nettoyage de 1 listeners MIDI...
+useMidiRecording.js:430 🧹 Suppression listener: 0--350350912 (piste 0)
+useMidiRecording.js:434 ✅ 1 listeners MIDI nettoyés
+useMidiRecording.js:331 🎤 Configuration des listeners MIDI pour enregistrement/monitoring...
+useMidiRecording.js:332 🔍 État enregistrement: {isRecording: true, recordingBlocked: false}
+useMidiRecording.js:340 📍 Piste 0: input="-350350912" record=true monitor=true
+useMidiRecording.js:359 🎧 Configuration input pour piste 0 (record=true, monitor=true)...
+useMidiRecording.js:375 🎧 Piste 0: écoute input spécifique "iRig KEYS 37 PRO"
+useMidiRecording.js:412 🎤 Listener COMPLET configuré: piste 0 <- input "iRig KEYS 37 PRO" (session=3)
+useMidiPlayer.js:891 🎼 Événements: 14 total, 5 notes
+useMidiPlayer.js:891 🎼 Événements: 14 total, 5 notes
+useMidiPlayer.js:891 🎼 Événements: 14 total, 5 notes
+useMidiPlayer.js:891 🎼 Événements: 14 total, 5 notes
+MidiLaneTabs.vue:166 🎛️ Piste 0: 3 types CC détectés
+App.vue:293 🎛️ App.vue: Lanes mises à jour: 5
+useMidiRecording.js:107 🔍 Debug Record: trackId=0 track.record=true isRecording=true shouldRecord=true
+useMidiRecording.js:109 🎤 ENREGISTREMENT: Status=90 Channel=1 Note=86 Vel=52 Time=2.120s
+useMidiRecording.js:189 🎵 Note On enregistrée: 86 (recorded-1754783698056-xv7kl6gg1) à 2.120s
+useMidiRecording.js:107 🔍 Debug Record: trackId=0 track.record=true isRecording=true shouldRecord=true
+useMidiRecording.js:109 🎤 ENREGISTREMENT: Status=90 Channel=1 Note=88 Vel=28 Time=2.332s
+useMidiRecording.js:189 🎵 Note On enregistrée: 88 (recorded-1754783698267-syc68yggo) à 2.332s
+useMidiRecording.js:107 🔍 Debug Record: trackId=0 track.record=true isRecording=true shouldRecord=true
+useMidiRecording.js:109 🎤 ENREGISTREMENT: Status=80 Channel=1 Note=86 Vel=28 Time=2.373s
+useMidiRecording.js:237 ➕ DIRECT PUSH vers midiStore.notes: {noteId: 'recorded-1754783698056-xv7kl6gg1', midi: 86, time: 2.1197999999998136, duration: 0.25330000000027963, recordingBlocked: false, …}
+useMidiRecording.js:250 ✅ Note enregistrée: 86 durée=0.253s
+useMidiRecording.js:212 🎵 Note Off enregistrée: 86 durée=0.253s
+useMidiRecording.js:671 🔄 Inputs MIDI ou états Record/Monitor changés, reconfiguration...
+useMidiRecording.js:386 🔊 Configuration du monitoring MIDI...
+useMidiRecording.js:427 🧹 Nettoyage de 1 listeners MIDI...
+useMidiRecording.js:430 🧹 Suppression listener: 0--350350912 (piste 0)
+useMidiRecording.js:434 ✅ 1 listeners MIDI nettoyés
+useMidiRecording.js:331 🎤 Configuration des listeners MIDI pour enregistrement/monitoring...
+useMidiRecording.js:332 🔍 État enregistrement: {isRecording: true, recordingBlocked: false}
+useMidiRecording.js:340 📍 Piste 0: input="-350350912" record=true monitor=true
+useMidiRecording.js:359 🎧 Configuration input pour piste 0 (record=true, monitor=true)...
+useMidiRecording.js:375 🎧 Piste 0: écoute input spécifique "iRig KEYS 37 PRO"
+useMidiRecording.js:412 🎤 Listener COMPLET configuré: piste 0 <- input "iRig KEYS 37 PRO" (session=3)
+useMidiPlayer.js:891 🎼 Événements: 16 total, 6 notes
+useMidiPlayer.js:891 🎼 Événements: 16 total, 6 notes
+useMidiPlayer.js:891 🎼 Événements: 16 total, 6 notes
+useMidiPlayer.js:891 🎼 Événements: 16 total, 6 notes
+MidiLaneTabs.vue:166 🎛️ Piste 0: 3 types CC détectés
+App.vue:293 🎛️ App.vue: Lanes mises à jour: 5
+useMidiRecording.js:107 🔍 Debug Record: trackId=0 track.record=true isRecording=true shouldRecord=true
+useMidiRecording.js:109 🎤 ENREGISTREMENT: Status=80 Channel=1 Note=88 Vel=87 Time=2.493s
+useMidiRecording.js:237 ➕ DIRECT PUSH vers midiStore.notes: {noteId: 'recorded-1754783698267-syc68yggo', midi: 88, time: 2.3320000000000003, duration: 0.16100000000000003, recordingBlocked: false, …}
+useMidiRecording.js:250 ✅ Note enregistrée: 88 durée=0.161s
+useMidiRecording.js:212 🎵 Note Off enregistrée: 88 durée=0.161s
+useMidiRecording.js:671 🔄 Inputs MIDI ou états Record/Monitor changés, reconfiguration...
+useMidiRecording.js:386 🔊 Configuration du monitoring MIDI...
+useMidiRecording.js:427 🧹 Nettoyage de 1 listeners MIDI...
+useMidiRecording.js:430 🧹 Suppression listener: 0--350350912 (piste 0)
+useMidiRecording.js:434 ✅ 1 listeners MIDI nettoyés
+useMidiRecording.js:331 🎤 Configuration des listeners MIDI pour enregistrement/monitoring...
+useMidiRecording.js:332 🔍 État enregistrement: {isRecording: true, recordingBlocked: false}
+useMidiRecording.js:340 📍 Piste 0: input="-350350912" record=true monitor=true
+useMidiRecording.js:359 🎧 Configuration input pour piste 0 (record=true, monitor=true)...
+useMidiRecording.js:375 🎧 Piste 0: écoute input spécifique "iRig KEYS 37 PRO"
+useMidiRecording.js:412 🎤 Listener COMPLET configuré: piste 0 <- input "iRig KEYS 37 PRO" (session=3)
+useMidiPlayer.js:891 🎼 Événements: 18 total, 7 notes
+useMidiPlayer.js:891 🎼 Événements: 18 total, 7 notes
+useMidiPlayer.js:891 🎼 Événements: 18 total, 7 notes
+useMidiPlayer.js:891 🎼 Événements: 18 total, 7 notes
+MidiLaneTabs.vue:166 🎛️ Piste 0: 3 types CC détectés
+App.vue:293 🎛️ App.vue: Lanes mises à jour: 5
+playbackCursor.js:76 ⏸️ STORE: Pause curseur global
+usePlaybackCursor.js:344 ⏸️ Lecture mise en pause par curseur
+useMidiRecording.js:107 🔍 Debug Record: trackId=0 track.record=true isRecording=true shouldRecord=true
+useMidiRecording.js:109 🎤 ENREGISTREMENT: Status=90 Channel=1 Note=86 Vel=49 Time=3.000s
+useMidiRecording.js:189 🎵 Note On enregistrée: 86 (recorded-1754783699382-m6k4lo4ov) à 3.000s
+useMidiRecording.js:107 🔍 Debug Record: trackId=0 track.record=true isRecording=true shouldRecord=true
+useMidiRecording.js:109 🎤 ENREGISTREMENT: Status=80 Channel=1 Note=86 Vel=52 Time=3.000s
+useMidiRecording.js:237 ➕ DIRECT PUSH vers midiStore.notes: {noteId: 'recorded-1754783699382-m6k4lo4ov', midi: 86, time: 2.9997999999998135, duration: 0.1, recordingBlocked: false, …}
+useMidiRecording.js:250 ✅ Note enregistrée: 86 durée=0.100s
+useMidiRecording.js:212 🎵 Note Off enregistrée: 86 durée=0.100s
+useMidiRecording.js:671 🔄 Inputs MIDI ou états Record/Monitor changés, reconfiguration...
+useMidiRecording.js:386 🔊 Configuration du monitoring MIDI...
+useMidiRecording.js:427 🧹 Nettoyage de 1 listeners MIDI...
+useMidiRecording.js:430 🧹 Suppression listener: 0--350350912 (piste 0)
+useMidiRecording.js:434 ✅ 1 listeners MIDI nettoyés
+useMidiRecording.js:331 🎤 Configuration des listeners MIDI pour enregistrement/monitoring...
+useMidiRecording.js:332 🔍 État enregistrement: {isRecording: true, recordingBlocked: false}
+useMidiRecording.js:340 📍 Piste 0: input="-350350912" record=true monitor=true
+useMidiRecording.js:359 🎧 Configuration input pour piste 0 (record=true, monitor=true)...
+useMidiRecording.js:375 🎧 Piste 0: écoute input spécifique "iRig KEYS 37 PRO"
+useMidiRecording.js:412 🎤 Listener COMPLET configuré: piste 0 <- input "iRig KEYS 37 PRO" (session=3)
+useMidiPlayer.js:891 🎼 Événements: 20 total, 8 notes
+useMidiPlayer.js:891 🎼 Événements: 20 total, 8 notes
+useMidiPlayer.js:891 🎼 Événements: 20 total, 8 notes
+useMidiPlayer.js:891 🎼 Événements: 20 total, 8 notes
+MidiLaneTabs.vue:166 🎛️ Piste 0: 3 types CC détectés
+App.vue:293 🎛️ App.vue: Lanes mises à jour: 5
+useMidiRecording.js:107 🔍 Debug Record: trackId=0 track.record=true isRecording=true shouldRecord=true
+useMidiRecording.js:109 🎤 ENREGISTREMENT: Status=90 Channel=1 Note=88 Vel=57 Time=3.000s
+useMidiRecording.js:189 🎵 Note On enregistrée: 88 (recorded-1754783699779-6yabxe1a1) à 3.000s
+useMidiRecording.js:107 🔍 Debug Record: trackId=0 track.record=true isRecording=true shouldRecord=true
+useMidiRecording.js:109 🎤 ENREGISTREMENT: Status=80 Channel=1 Note=88 Vel=56 Time=3.000s
+useMidiRecording.js:237 ➕ DIRECT PUSH vers midiStore.notes: {noteId: 'recorded-1754783699779-6yabxe1a1', midi: 88, time: 2.9997999999998135, duration: 0.1, recordingBlocked: false, …}
+useMidiRecording.js:250 ✅ Note enregistrée: 88 durée=0.100s
+useMidiRecording.js:212 🎵 Note Off enregistrée: 88 durée=0.100s
+useMidiRecording.js:671 🔄 Inputs MIDI ou états Record/Monitor changés, reconfiguration...
+useMidiRecording.js:386 🔊 Configuration du monitoring MIDI...
+useMidiRecording.js:427 🧹 Nettoyage de 1 listeners MIDI...
+useMidiRecording.js:430 🧹 Suppression listener: 0--350350912 (piste 0)
+useMidiRecording.js:434 ✅ 1 listeners MIDI nettoyés
+useMidiRecording.js:331 🎤 Configuration des listeners MIDI pour enregistrement/monitoring...
+useMidiRecording.js:332 🔍 État enregistrement: {isRecording: true, recordingBlocked: false}
+useMidiRecording.js:340 📍 Piste 0: input="-350350912" record=true monitor=true
+useMidiRecording.js:359 🎧 Configuration input pour piste 0 (record=true, monitor=true)...
+useMidiRecording.js:375 🎧 Piste 0: écoute input spécifique "iRig KEYS 37 PRO"
+useMidiRecording.js:412 🎤 Listener COMPLET configuré: piste 0 <- input "iRig KEYS 37 PRO" (session=3)
+useMidiPlayer.js:891 🎼 Événements: 22 total, 9 notes
+useMidiPlayer.js:891 🎼 Événements: 22 total, 9 notes
+useMidiPlayer.js:891 🎼 Événements: 22 total, 9 notes
+useMidiPlayer.js:891 🎼 Événements: 22 total, 9 notes
+MidiLaneTabs.vue:166 🎛️ Piste 0: 3 types CC détectés
+App.vue:293 🎛️ App.vue: Lanes mises à jour: 5
+useMidiRecording.js:107 🔍 Debug Record: trackId=0 track.record=true isRecording=true shouldRecord=true
+useMidiRecording.js:109 🎤 ENREGISTREMENT: Status=90 Channel=1 Note=84 Vel=50 Time=3.000s
+useMidiRecording.js:189 🎵 Note On enregistrée: 84 (recorded-1754783700237-q2fdcbhae) à 3.000s
+useMidiRecording.js:107 🔍 Debug Record: trackId=0 track.record=true isRecording=true shouldRecord=true
+useMidiRecording.js:109 🎤 ENREGISTREMENT: Status=80 Channel=1 Note=84 Vel=57 Time=3.000s
+useMidiRecording.js:237 ➕ DIRECT PUSH vers midiStore.notes: {noteId: 'recorded-1754783700237-q2fdcbhae', midi: 84, time: 2.9997999999998135, duration: 0.1, recordingBlocked: false, …}
+useMidiRecording.js:250 ✅ Note enregistrée: 84 durée=0.100s
+useMidiRecording.js:212 🎵 Note Off enregistrée: 84 durée=0.100s
+useMidiRecording.js:671 🔄 Inputs MIDI ou états Record/Monitor changés, reconfiguration...
+useMidiRecording.js:386 🔊 Configuration du monitoring MIDI...
+useMidiRecording.js:427 🧹 Nettoyage de 1 listeners MIDI...
+useMidiRecording.js:430 🧹 Suppression listener: 0--350350912 (piste 0)
+useMidiRecording.js:434 ✅ 1 listeners MIDI nettoyés
+useMidiRecording.js:331 🎤 Configuration des listeners MIDI pour enregistrement/monitoring...
+useMidiRecording.js:332 🔍 État enregistrement: {isRecording: true, recordingBlocked: false}
+useMidiRecording.js:340 📍 Piste 0: input="-350350912" record=true monitor=true
+useMidiRecording.js:359 🎧 Configuration input pour piste 0 (record=true, monitor=true)...
+useMidiRecording.js:375 🎧 Piste 0: écoute input spécifique "iRig KEYS 37 PRO"
+useMidiRecording.js:412 🎤 Listener COMPLET configuré: piste 0 <- input "iRig KEYS 37 PRO" (session=3)
+useMidiPlayer.js:891 🎼 Événements: 24 total, 10 notes
+useMidiPlayer.js:891 🎼 Événements: 24 total, 10 notes
+useMidiPlayer.js:891 🎼 Événements: 24 total, 10 notes
+useMidiPlayer.js:891 🎼 Événements: 24 total, 10 notes
+MidiLaneTabs.vue:166 🎛️ Piste 0: 3 types CC détectés
+App.vue:293 🎛️ App.vue: Lanes mises à jour: 5

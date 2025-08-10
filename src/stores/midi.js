@@ -1,6 +1,6 @@
 // stores/midi.js - AMÉLIORATIONS POUR LA RÉACTIVITÉ
 import { defineStore } from 'pinia'
-import { ref, computed, markRaw, nextTick } from 'vue'
+import { ref, computed, markRaw, nextTick, watch } from 'vue'
 
 export const useMidiStore = defineStore('midi', () => {
   // ==========================================
@@ -37,9 +37,6 @@ export const useMidiStore = defineStore('midi', () => {
     notesVersion.value++
     tracksVersion.value++
     ccVersion.value++
-
-    console.log(`🔄 Réactivité déclenchée: ${reason} à ${new Date(timestamp).toLocaleTimeString()}`)
-    console.log(`🎛️ CC count après trigger: ${midiCC.value.length}`)
 
     // Forcer Vue à détecter le changement avec une nouvelle référence
     notes.value = [...notes.value]
@@ -115,6 +112,52 @@ export const useMidiStore = defineStore('midi', () => {
       
       // console.log(`🎤 Solo piste ${trackId}: ${newSoloState}`)
       triggerReactivity(`solo-${trackId}`)
+      
+      return true
+    }
+    return false
+  }
+
+  function toggleTrackRecord(trackId) {
+    const trackIndex = tracks.value.findIndex(t => t.id === trackId)
+    if (trackIndex !== -1) {
+      const track = tracks.value[trackIndex]
+      const newRecordState = !track.record
+      
+      // Créer une nouvelle référence d'objet
+      const updatedTrack = {
+        ...track,
+        record: newRecordState,
+        lastModified: Date.now()
+      }
+      
+      tracks.value.splice(trackIndex, 1, updatedTrack)
+      
+      // console.log(`🔴 Record piste ${trackId}: ${newRecordState}`)
+      triggerReactivity(`record-${trackId}`)
+      
+      return true
+    }
+    return false
+  }
+
+  function toggleTrackMonitor(trackId) {
+    const trackIndex = tracks.value.findIndex(t => t.id === trackId)
+    if (trackIndex !== -1) {
+      const track = tracks.value[trackIndex]
+      const newMonitorState = !track.monitor
+      
+      // Créer une nouvelle référence d'objet
+      const updatedTrack = {
+        ...track,
+        monitor: newMonitorState,
+        lastModified: Date.now()
+      }
+      
+      tracks.value.splice(trackIndex, 1, updatedTrack)
+      
+      // console.log(`📡 Monitor piste ${trackId}: ${newMonitorState}`)
+      triggerReactivity(`monitor-${trackId}`)
       
       return true
     }
@@ -246,6 +289,28 @@ export const useMidiStore = defineStore('midi', () => {
 
       tracks.value.splice(trackIndex, 1, updatedTrack)
       triggerReactivity(`output-${trackId}`)
+      return true
+    }
+    return false
+  }
+
+  function updateTrackMidiInput(trackId, inputId) {
+    const trackIndex = tracks.value.findIndex(t => t.id === trackId)
+    if (trackIndex !== -1) {
+      const currentTrack = tracks.value[trackIndex]
+      
+      if (currentTrack.midiInput === inputId) {
+        return true
+      }
+
+      const updatedTrack = {
+        ...currentTrack,
+        midiInput: inputId,
+        lastModified: Date.now()
+      }
+
+      tracks.value.splice(trackIndex, 1, updatedTrack)
+      triggerReactivity(`input-${trackId}`)
       return true
     }
     return false
@@ -414,19 +479,25 @@ export const useMidiStore = defineStore('midi', () => {
   async function updateNote(noteId, updates) {
     const noteIndex = notes.value.findIndex(n => n.id === noteId)
     if (noteIndex === -1) {
+      // Essayer une comparaison plus flexible (string vs number)
+      const flexibleMatch = notes.value.findIndex(n => String(n.id) === String(noteId))
+      if (flexibleMatch !== -1) {
+        const currentNote = notes.value[flexibleMatch]
+        Object.assign(currentNote, updates, { lastModified: Date.now() })
+        triggerReactivity(`note-update-${noteId}`)
+        await nextTick()
+        return true
+      }
+      console.log(`❌ updateNote: Note ${noteId} non trouvée dans le store`)
       return false
     }
 
     const currentNote = notes.value[noteIndex]
-    const updatedNote = {
-      ...currentNote,
-      ...updates,
-      lastModified: Date.now()
-    }
-
-    notes.value.splice(noteIndex, 1, updatedNote)
     
-    // console.log(`🎵 Note ${noteId} mise à jour:`, updates)
+    // Modifier directement les propriétés au lieu de remplacer l'objet
+    // Cela préserve l'objet et assure la réactivité Vue
+    Object.assign(currentNote, updates, { lastModified: Date.now() })
+    
     triggerReactivity(`note-update-${noteId}`)
     
     await nextTick()
@@ -446,6 +517,15 @@ export const useMidiStore = defineStore('midi', () => {
   }
 
   function addNote(noteData) {
+    // TRACE: Logger toutes les additions de notes avec stack trace
+    console.log(`➕ STORE addNote appelé:`, {
+      noteData,
+      trackId: noteData.trackId,
+      midi: noteData.midi,
+      time: noteData.time,
+      stack: new Error().stack.split('\n').slice(1, 4).join('\n')
+    })
+    
     const newNote = {
       id: Date.now() + Math.random(),
       ...noteData,
@@ -454,7 +534,7 @@ export const useMidiStore = defineStore('midi', () => {
 
     notes.value.push(newNote)
     
-    // console.log(`➕ Note ajoutée:`, newNote)
+    console.log(`✅ Note ajoutée au store:`, newNote)
     triggerReactivity(`add-note-${newNote.id}`)
     
     return newNote.id
@@ -586,21 +666,43 @@ export const useMidiStore = defineStore('midi', () => {
   }
 
   function updateTempoEvent(tempoId, updates) {
+    console.log('🎯 DEBUG updateTempoEvent CALLED:', { tempoId, updates })
+    
     const tempoIndex = tempoEvents.value.findIndex(tempo => tempo.id === tempoId)
     if (tempoIndex === -1) {
+      console.log('🎯 ERREUR: Tempo non trouvé:', tempoId)
       return false
     }
 
     const currentTempo = tempoEvents.value[tempoIndex]
+    console.log('🎯 TEMPO ACTUEL:', currentTempo)
+    
+    // CORRECTION: Si on essaie de mettre un tempo à 0s et qu'il y a un tempo virtuel à 0s
+    if (updates.time === 0) {
+      const virtualTempo = tempoEvents.value.find(t => t.id === 'virtual-0s' && t.virtual)
+      if (virtualTempo && virtualTempo.id !== tempoId) {
+        // Supprimer le tempo virtuel pour permettre au tempo réel de prendre sa place
+        const virtualIndex = tempoEvents.value.findIndex(t => t.id === 'virtual-0s')
+        if (virtualIndex !== -1) {
+          tempoEvents.value.splice(virtualIndex, 1)
+          console.log('🎵 Tempo virtuel supprimé pour permettre le placement à 0s')
+        }
+      }
+    }
+    
     const updatedTempo = {
       ...currentTempo,
       ...updates,
-      bpm: updates.bpm ? Math.max(20, Math.min(300, updates.bpm)) : currentTempo.bpm,
+      bpm: updates.bpm !== undefined ? Math.max(0, Math.min(300, updates.bpm)) : currentTempo.bpm,
       lastModified: Date.now()
     }
+    
+    console.log('🎯 TEMPO UPDATED:', updatedTempo)
 
     tempoEvents.value.splice(tempoIndex, 1, updatedTempo)
     tempoEvents.value.sort((a, b) => a.time - b.time) // Re-trier après modification
+    
+    console.log('🎯 TEMPOS APRÈS UPDATE:', tempoEvents.value.map(t => ({ id: t.id, time: t.time, bpm: t.bpm })))
 
     triggerReactivity(`tempo-update-${tempoId}`)
     return true
@@ -615,6 +717,70 @@ export const useMidiStore = defineStore('midi', () => {
     tempoEvents.value.splice(tempoIndex, 1)
     
     triggerReactivity(`delete-tempo-${tempoId}`)
+    return true
+  }
+
+  // ==========================================
+  // TIME SIGNATURE EVENTS CRUD FUNCTIONS
+  // ==========================================
+  function addTimeSignature(signatureData) {
+    const signatureEvent = {
+      id: signatureData.id || `timesig-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      numerator: Math.max(1, Math.min(16, signatureData.numerator || 4)), // Limiter entre 1 et 16
+      denominator: [1, 2, 4, 8, 16, 32].includes(signatureData.denominator) ? signatureData.denominator : 4, // Valeurs valides seulement
+      time: signatureData.time || 0,
+      ticks: signatureData.ticks || 0,
+      measure: signatureData.measure || 1,
+      lastModified: Date.now()
+    }
+    
+    timeSignatureEvents.value.push(signatureEvent)
+    timeSignatureEvents.value.sort((a, b) => a.time - b.time) // Maintenir l'ordre chronologique
+    triggerReactivity(`add-timesig-${signatureEvent.id}`)
+    console.log('✅ Signature rythmique ajoutée:', signatureEvent)
+    return signatureEvent.id
+  }
+
+  function updateTimeSignature(signatureId, updates) {
+    const signatureIndex = timeSignatureEvents.value.findIndex(sig => sig.id === signatureId)
+    if (signatureIndex === -1) {
+      return false
+    }
+    
+    const currentSignature = timeSignatureEvents.value[signatureIndex]
+    const updatedSignature = {
+      ...currentSignature,
+      ...updates,
+      numerator: updates.numerator ? Math.max(1, Math.min(16, updates.numerator)) : currentSignature.numerator,
+      denominator: updates.denominator && [1, 2, 4, 8, 16, 32].includes(updates.denominator) ? updates.denominator : currentSignature.denominator,
+      lastModified: Date.now()
+    }
+    
+    timeSignatureEvents.value.splice(signatureIndex, 1, updatedSignature)
+    timeSignatureEvents.value.sort((a, b) => a.time - b.time) // Re-trier après modification
+    triggerReactivity(`timesig-update-${signatureId}`)
+    console.log('✅ Signature rythmique mise à jour:', updatedSignature)
+    return true
+  }
+
+  function removeTimeSignature(signatureId) {
+    const signatureIndex = timeSignatureEvents.value.findIndex(sig => sig.id === signatureId)
+    if (signatureIndex === -1) {
+      console.warn('❌ Signature rythmique non trouvée:', signatureId)
+      return false
+    }
+    
+    const signature = timeSignatureEvents.value[signatureIndex]
+    
+    // Empêcher la suppression de la première signature (mesure 1)
+    if (signature.measure === 1 || signature.time === 0) {
+      console.warn('❌ Impossible de supprimer la première signature rythmique')
+      return false
+    }
+    
+    timeSignatureEvents.value.splice(signatureIndex, 1)
+    triggerReactivity(`delete-timesig-${signatureId}`)
+    console.log('✅ Signature rythmique supprimée:', signature)
     return true
   }
 
@@ -814,6 +980,7 @@ export const useMidiStore = defineStore('midi', () => {
       return midiInfo.value.tempo || 120
     }
 
+    // Store: données brutes, pas d'interpolation (fait dans MidiPlayer)
     let currentTempo = midiInfo.value.tempo || 120
 
     for (const tempoEvent of tempoEvents.value) {
@@ -874,7 +1041,6 @@ export const useMidiStore = defineStore('midi', () => {
   }
 
   function forceCCUpdate() {
-    console.log('🎛️ Force CC update - CC count:', midiCC.value.length)
     ccVersion.value++
     midiCC.value = [...midiCC.value]
     triggerReactivity('force-cc-update')
@@ -1006,6 +1172,7 @@ export const useMidiStore = defineStore('midi', () => {
   const getNoteCount = computed(() => notes.value.length)
   const getControlChangeCount = computed(() => midiCC.value.length)
   const getTotalDuration = computed(() => midiInfo.value.duration || 0)
+  
   const getCurrentTempo = computed(() => midiInfo.value.tempo || 120)
 
   // ✅ UTILITAIRES MANQUANTS AJOUTÉS
@@ -1177,11 +1344,14 @@ export const useMidiStore = defineStore('midi', () => {
     // Actions de modification des pistes
     toggleTrackMute,
     toggleTrackSolo,
+    toggleTrackRecord,
+    toggleTrackMonitor,
     updateTrackVolume,
     updateTrackName,
     updateTrackPan,
     updateTrackChannel,
     updateTrackMidiOutput,
+    updateTrackMidiInput,
     updateTrackProgram,
     updateTrackBank,
     updateTrackColor,
@@ -1210,6 +1380,11 @@ export const useMidiStore = defineStore('midi', () => {
     addTempoEvent,
     updateTempoEvent,
     deleteTempoEvent,
+
+    // Actions de modification des Time Signature Events
+    addTimeSignature,
+    updateTimeSignature,
+    removeTimeSignature,
 
     // Getters
     getTrackById,

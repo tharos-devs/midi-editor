@@ -5,12 +5,18 @@
       <GridRenderer 
         :show-measure-lines="true"
         :show-beat-lines="true"
-        :show-subdivision-lines="false"
+        :show-subdivision-lines="uiStore.snapToGrid"
         :show-signature-indicators="false"
         :show-measure-numbers="false" 
         :show-beat-labels="false"
         :show-subdivision-labels="false"
-      />
+      >
+        <GlobalPlaybackCursor
+          :container-height="100"
+          :total-width="totalWidth"
+          :show-debug-info="false"
+        />
+      </GridRenderer>
     </div>
 
     <div class="tempo-curve-container" 
@@ -54,13 +60,13 @@
 
     </div>
 
-    <!-- Lignes de référence Tempo (BPM 80, 120, 160) -->
+    <!-- Lignes de référence Tempo (BPM 10, 50, 100, 150, 200) - intervalles avec minimum professionnel -->
     <div class="tempo-reference-lines">
       <div
-        v-for="bpm in [80, 120, 160]"
+        v-for="bpm in [MIN_TEMPO_BPM, 50, 100, 150, 200]"
         :key="bpm"
         class="tempo-reference-line"
-        :style="{ bottom: ((bpm - 60) / (200 - 60)) * 100 + '%' }"
+        :style="{ bottom: Math.max(2, Math.min(98, (bpm / 200) * 100)) + '%' }"
       >
       </div>
     </div>
@@ -80,6 +86,7 @@ import { useMidiStore } from '@/stores/midi'
 import { useTimeSignature } from '@/composables/useTimeSignature'
 import { useSnapLogic } from '@/composables/useSnapLogic'
 import GridRenderer from '@/components/GridRenderer.vue'
+import GlobalPlaybackCursor from '@/components/GlobalPlaybackCursor.vue'
 
 const props = defineProps({
   totalMeasures: Number,
@@ -97,9 +104,14 @@ const midiStore = useMidiStore()
 const timeSignature = useTimeSignature()
 const { snapTimeToGrid } = useSnapLogic()
 const selectedPoint = ref(null)
+
+// Tempo minimum comme les DAW professionnels (Logic Pro, Cubase, etc.)
+const MIN_TEMPO_BPM = 10
 const selectedPoints = ref([]) // Points sélectionnés en mode lasso
 const isDragging = ref(false)
 const dragTempPoints = ref(null) // Points temporaires pendant le drag
+const isDragModeSet = ref(false) // Mode drag déterminé (vertical/horizontal)
+const isDragVertical = ref(false) // True si drag vertical
 
 // Variables pour le mode lasso
 const isLassoMode = ref(false)
@@ -143,6 +155,9 @@ const tempoPoints = computed(() => {
     ticks: tempo.ticks,
     lastModified: tempo.lastModified
   })).sort((a, b) => a.time - b.time)
+  
+  console.log('🎵 DEBUG TempoLane: tempoEvents du store:', midiStore.tempoEvents.length, midiStore.tempoEvents.map(t => `${t.time}s=${t.bpm}BPM`))
+  console.log('🎵 DEBUG TempoLane: points mappés:', points.length, points.map(p => `${p.time}s=${p.bpm}BPM`))
   
   return points
 })
@@ -200,8 +215,8 @@ const tempoPointStyle = (point) => {
   const adjustedPosition = Math.round(pixelX) - 1
   
   // Adapter l'affichage pour les BPM (plage typique 60-200)
-  const normalizedBPM = Math.max(0, Math.min(300, point.bpm || point.value))
-  const percentage = ((normalizedBPM - 60) / (200 - 60)) * 100 // Normaliser 60-200 BPM sur 0-100%
+  const normalizedBPM = Math.max(0, Math.min(200, point.bpm || point.value))
+  const percentage = (normalizedBPM / 200) * 100 // Normaliser 0-200 BPM sur 0-100%
   const clampedPercentage = Math.max(0, Math.min(100, percentage))
     
   return {
@@ -218,8 +233,8 @@ const tempoPolylinePoints = computed(() => {
   const points = displayedPoints.map(point => {
     const x = timeSignature.timeToPixelsWithSignatures(point.time)
     // Adapter pour les BPM
-    const normalizedBPM = Math.max(0, Math.min(300, point.bpm || point.value))
-    const percentage = ((normalizedBPM - 60) / (200 - 60)) * 100
+    const normalizedBPM = Math.max(0, Math.min(200, point.bpm || point.value))
+    const percentage = (normalizedBPM / 200) * 100
     const y = 100 - Math.max(0, Math.min(100, percentage)) // Inversion Y pour SVG
     return `${x.toFixed(1)},${y.toFixed(1)}`
   }).join(' ')
@@ -232,31 +247,28 @@ let dragStartY = 0
 let originalTime = 0
 let originalValue = 0
 
+// Variables pour le drag
+
 const startDrag = (point, event) => {
-  console.log('🎯 START DRAG - Point cliqué:', {
-    pointId: point.id,
-    pointTime: point.time,
-    pointValue: point.value,
-    currentSelectedId: selectedPoint.value?.id,
-    selectedPointsCount: selectedPoints.value.length
-  })
-  
   // Si le point fait partie de la sélection multiple, démarrer un drag de groupe
   const isPartOfMultiSelection = selectedPoints.value.some(p => p.id === point.id)
   
   if (isPartOfMultiSelection && selectedPoints.value.length > 1) {
     // Mode drag de groupe
     isGroupDragging.value = true
-    selectedPoint.value = point // Le point sur lequel on a cliqué reste le point de référence
-    console.log(`🎯 Début drag de groupe: ${selectedPoints.value.length} points`)
+    selectedPoint.value = point
   } else {
     // Mode drag simple
     selectedPoint.value = point
-    selectedPoints.value = [] // Vider la sélection multiple
+    selectedPoints.value = []
     isGroupDragging.value = false
   }
   
   isDragging.value = true
+  
+  // CORRECTION: Reset mode drag au début de chaque nouveau drag
+  isDragModeSet.value = false
+  isDragVertical.value = false
   
   // Ajouter la classe dragging pour forcer le curseur
   const container = document.querySelector('.tempo-curve-container')
@@ -264,9 +276,10 @@ const startDrag = (point, event) => {
     container.classList.add('dragging')
   }
   
-  // Émettre la sélection du point vers le parent avec l'ID et la valeur
+  // Émettre une seule fois au début
   emit('tempo-selected', { id: String(point.id), value: point.bpm || point.value })
   
+  // Variables de départ pour référence (non utilisées mais conservées)
   dragStartX = event.clientX
   dragStartY = event.clientY
   originalTime = point.time
@@ -275,35 +288,25 @@ const startDrag = (point, event) => {
   // Créer une copie des points OPTIMISÉS pour la manipulation temporaire
   const basePoints = tempoPointsOptimized.value
   dragTempPoints.value = [...basePoints]
-  
-  console.log('🎯 START DRAG - Copie créée:', {
-    basePointsCount: basePoints.length,
-    tempPointsCount: dragTempPoints.value.length,
-    pointInBase: basePoints.some(p => p.id === point.id),
-    pointInTemp: dragTempPoints.value.some(p => p.id === point.id),
-    groupDragging: isGroupDragging.value
-  })
 
-  document.addEventListener('mousemove', onDrag)
-  document.addEventListener('mouseup', stopDrag)
+  document.addEventListener('mousemove', onDrag, { passive: false })
+  document.addEventListener('mouseup', stopDrag, { passive: true })
   event.preventDefault()
-  event.stopPropagation() // Empêcher startLassoOrDrag d'être appelé
+  event.stopPropagation()
 }
 
 const onDrag = (event) => {
   if (!isDragging.value || !selectedPoint.value || !dragTempPoints.value) return
 
-  // SOLUTION RADICALE: Calculer la position EXACTE sous la souris
+  // Calculer la position EXACTE sous la souris (comme CC)
   const container = document.querySelector('.tempo-curve-container')
   if (!container) return
   
   const rect = container.getBoundingClientRect()
-  
-  // Position absolue de la souris dans le container
   const mouseX = event.clientX - rect.left
   const mouseY = event.clientY - rect.top
   
-  // Conversion directe sans passer par les deltas - utiliser fonction injectée
+  // Conversion directe sans passer par les deltas
   let newTime = props.pixelsToTimeWithSignatures ? 
     props.pixelsToTimeWithSignatures(mouseX) : 
     (timeSignature.pixelsToTimeWithSignatures ? 
@@ -312,26 +315,47 @@ const onDrag = (event) => {
   
   newTime = Math.max(0, newTime)
   
-  // APPLIQUER LE SNAP si activé
+  // Appliquer le snap si activé
   if (uiStore.snapToGrid) {
     newTime = snapTimeToGrid(newTime)
   }
   
-  // Conversion Y: 0 en haut = 200 BPM, height en bas = 60 BPM
-  const containerHeight = rect.height
-  const relativeY = mouseY / containerHeight
-  const percentage = (1 - relativeY) * 100
-  const newBPM = Math.round(60 + (percentage / 100) * (200 - 60))
-  const newValue = Math.max(60, Math.min(200, newBPM))
+  // CORRECTION: Ne recalculer le BPM que si on drag significativement en Y
+  const originalValue = selectedPoint.value.value
   
-  // Calculer les deltas par rapport à la position initiale
+  // Calculer si le drag est principalement vertical (une seule fois au début)
+  if (!isDragModeSet.value) {
+    const deltaX = Math.abs(event.clientX - dragStartX)
+    const deltaY = Math.abs(event.clientY - dragStartY)
+    if (deltaY > 20 && deltaY > deltaX * 1.5) {
+      isDragVertical.value = true
+      isDragModeSet.value = true
+      console.log('🎯 MODE VERTICAL DRAG activé:', { deltaX, deltaY })
+    } else if (deltaX > 20 || deltaY > 20) {
+      isDragVertical.value = false
+      isDragModeSet.value = true
+      console.log('🎯 MODE HORIZONTAL DRAG activé:', { deltaX, deltaY })
+    }
+  }
+  
+  let newValue = originalValue // Valeur par défaut
+  
+  if (isDragVertical.value) {
+    // CORRECTION: Calcul de delta persistant - pas de reset magnétique
+    const containerHeight = rect.height
+    const deltaY = event.clientY - dragStartY // Delta depuis le début du drag
+    const deltaTempo = -(deltaY / containerHeight) * 200 // Inverser (haut = plus rapide)
+    newValue = Math.max(MIN_TEMPO_BPM, Math.min(200, Math.round(originalValue + deltaTempo)))
+    console.log('🎯 VERTICAL DRAG:', { deltaY: deltaY, deltaTempo: deltaTempo.toFixed(1), originalValue, newValue })
+  }
+  
+  
+  // Calculer les deltas une seule fois
   const deltaTime = newTime - originalTime
   const deltaValue = newValue - originalValue
   
   if (isGroupDragging.value && selectedPoints.value.length > 1) {
     // Mode drag de groupe: mettre à jour tous les points sélectionnés
-    console.log(`🎯 GROUP DRAG - Delta temps: ${deltaTime.toFixed(3)}s, Delta valeur: ${deltaValue}`)
-    
     selectedPoints.value.forEach(selectedP => {
       const tempPointIndex = dragTempPoints.value.findIndex(p => p.id === selectedP.id)
       if (tempPointIndex !== -1) {
@@ -340,14 +364,15 @@ const onDrag = (event) => {
           let newPointTime = originalPoint.time + deltaTime
           let newPointValue = originalPoint.value + deltaValue
           
-          // Contraintes
+          // Contraintes avec tempo minimum
           newPointTime = Math.max(0, newPointTime)
-          newPointValue = Math.max(60, Math.min(200, newPointValue))
+          newPointValue = Math.max(MIN_TEMPO_BPM, Math.min(200, newPointValue))
           
           dragTempPoints.value[tempPointIndex] = {
             ...dragTempPoints.value[tempPointIndex],
             time: newPointTime,
-            value: newPointValue
+            value: newPointValue,
+            bpm: newPointValue
           }
         }
       }
@@ -356,11 +381,16 @@ const onDrag = (event) => {
     // Mode drag simple: mettre à jour uniquement le point sélectionné
     const tempPointIndex = dragTempPoints.value.findIndex(p => p.id === selectedPoint.value.id)
     if (tempPointIndex !== -1) {
+      console.log('🎯 AVANT UPDATE tempPoint:', dragTempPoints.value[tempPointIndex])
+      
       dragTempPoints.value[tempPointIndex] = {
         ...dragTempPoints.value[tempPointIndex],
         time: newTime,
-        value: newValue
+        value: newValue,
+        bpm: newValue
       }
+      
+      console.log('🎯 APRÈS UPDATE tempPoint:', dragTempPoints.value[tempPointIndex])
     }
   }
   
@@ -371,14 +401,6 @@ const onDrag = (event) => {
 }
 
 const stopDrag = async () => {
-  console.log('🔄 STOP DRAG - État avant:', {
-    isDragging: isDragging.value,
-    selectedPointId: selectedPoint.value?.id,
-    tempPointsCount: dragTempPoints.value?.length,
-    groupDragging: isGroupDragging.value,
-    selectedPointsCount: selectedPoints.value.length
-  })
-  
   // Nettoyer les event listeners immédiatement
   document.removeEventListener('mousemove', onDrag)
   document.removeEventListener('mouseup', stopDrag)
@@ -388,12 +410,9 @@ const stopDrag = async () => {
   if (realDrag) {
     if (isGroupDragging.value && selectedPoints.value.length > 1) {
       // Mode groupe: mettre à jour tous les points sélectionnés
-      console.log(`🔄 STOP GROUP DRAG - Mise à jour ${selectedPoints.value.length} points`)
-      
       const updatePromises = selectedPoints.value.map(async (selectedP) => {
         const tempPoint = dragTempPoints.value.find(p => p.id === selectedP.id)
         if (tempPoint) {
-          console.log(`🔄 Mise à jour point groupe ${tempPoint.id}: temps=${tempPoint.time}, bpm=${tempPoint.value}`)
           return midiStore.updateTempoEvent(tempPoint.id, {
             time: tempPoint.time,
             bpm: tempPoint.value
@@ -402,7 +421,6 @@ const stopDrag = async () => {
       })
       
       await Promise.all(updatePromises.filter(Boolean))
-      console.log('🔄 STOP GROUP DRAG - Tous les points mis à jour')
       
     } else {
       // Mode simple: mettre à jour uniquement le point sélectionné
@@ -410,18 +428,20 @@ const stopDrag = async () => {
       const tempPoint = dragTempPoints.value.find(p => p.id === draggedPointId)
       
       if (tempPoint) {
-        console.log('🔄 STOP DRAG - Mise à jour store:', {
-          pointId: tempPoint.id,
+        console.log('🎯 DEBUG DRAG END:', {
+          pointId: draggedPointId,
+          originalTime: selectedPoint.value.time,
           newTime: tempPoint.time,
-          newBPM: tempPoint.value
+          newBpm: tempPoint.value,
+          tempPoint: tempPoint
         })
         
-        await midiStore.updateTempoEvent(draggedPointId, {
+        const result = await midiStore.updateTempoEvent(draggedPointId, {
           time: tempPoint.time,
           bpm: tempPoint.value
         })
         
-        console.log('🔄 STOP DRAG - Store mis à jour')
+        console.log('🎯 UPDATE RESULT:', result)
       }
     }
   }
@@ -429,8 +449,6 @@ const stopDrag = async () => {
   // NETTOYAGE FINAL
   isDragging.value = false
   isGroupDragging.value = false
-  // NE PAS déselectionner le point - le garder sélectionné après le drag
-  // selectedPoint.value = null
   dragTempPoints.value = null
   
   // Supprimer la classe dragging
@@ -470,10 +488,10 @@ const addPoint = (event) => {
     time = snapTimeToGrid(time)
   }
   
-  // Convertir Y en BPM (plage 60-200)
-  const percentage = (1 - y / rect.height) * 100 // 0-100%
-  const bpm = Math.round(60 + (percentage / 100) * (200 - 60)) // Convertir en BPM 60-200
-  const clampedBPM = Math.max(60, Math.min(200, bpm))
+  // Convertir Y en BPM (plage MIN_TEMPO_BPM-200)
+  const relativeY = y / rect.height
+  const bpm = Math.round((1 - relativeY) * 200) // Convertir en BPM 0-200
+  const clampedBPM = Math.max(MIN_TEMPO_BPM, Math.min(200, bpm))
 
   // Créer le nouveau tempo dans le store
   console.log(`🎵 Ajout Tempo:`, { 
@@ -589,12 +607,15 @@ const endLassoOrDrag = () => {
   const pointsInSelection = []
   tempoPointsDisplayed.value.forEach(point => {
     const pointPixelX = timeSignature.timeToPixelsWithSignatures(point.time)
-    const pointPixelY = (1 - (point.bpm - 60) / (200 - 60)) * 100 // Conversion Y inverse pour l'affichage tempo
+    const bpm = point.bpm || point.value
+    // Conversion Y : même logique que tempoPointStyle
+    const percentage = (bpm / 200) * 100 // 0-200 BPM → 0-100%
     
     // Convertir les coordonnées du point en pixels absolus dans le container
     const containerRect = document.querySelector('.tempo-curve-container').getBoundingClientRect()
-    const adjustedX = Math.round(pointPixelX) - 1 // Même calcul que ccPointStyle
-    const adjustedY = pointPixelY / 100 * containerRect.height
+    const adjustedX = Math.round(pointPixelX) - 1
+    // Convertir percentage (bottom %) en position depuis le top
+    const adjustedY = containerRect.height - (percentage / 100 * containerRect.height)
     
     if (adjustedX >= left && adjustedX <= right && adjustedY >= top && adjustedY <= bottom) {
       pointsInSelection.push(point)
@@ -659,18 +680,21 @@ const handleManualPointValueUpdate = async (event) => {
   console.log(`📝 TempoLane: Réception mise à jour manuelle:`, updateData)
   
   if (updateData.pointId) {
+    // Appliquer la validation tempo minimum
+    const validatedBPM = Math.max(MIN_TEMPO_BPM, Math.min(200, updateData.newValue))
+    
     try {
-      // Mettre à jour directement dans le store
+      // Mettre à jour directement dans le store avec la valeur validée
       await midiStore.updateTempoEvent(updateData.pointId, {
-        bpm: updateData.newValue
+        bpm: validatedBPM
       })
       
       // Mettre à jour la sélection actuelle si c'est le point sélectionné
       if (selectedPoint.value && selectedPoint.value.id === updateData.pointId) {
-        emit('tempo-selected', { id: String(updateData.pointId), bpm: updateData.newValue })
+        emit('tempo-selected', { id: String(updateData.pointId), bpm: validatedBPM })
       }
       
-      console.log(`✅ Point Tempo ${updateData.pointId} mis à jour: ${updateData.newValue} BPM`)
+      console.log(`✅ Point Tempo ${updateData.pointId} mis à jour: ${validatedBPM} BPM (demandé: ${updateData.newValue})`)
     } catch (error) {
       console.error(`❌ Erreur mise à jour Tempo:`, error)
     }
@@ -733,7 +757,7 @@ onUnmounted(() => {
   width: 100%;
   height: 100%;
   z-index: 1;
-  opacity: 0.3;
+  opacity: 0.6;
 }
 
 .tempo-curve-container {
@@ -820,8 +844,8 @@ onUnmounted(() => {
   position: absolute;
   left: 0;
   width: 100%;
-  border-top: 1px dashed #ff9800;
-  opacity: 0.5;
+  border-top: 1px dashed #888;
+  opacity: 0.6;
 }
 
 

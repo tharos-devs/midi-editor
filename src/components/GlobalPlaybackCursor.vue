@@ -1,14 +1,45 @@
-<!-- components/GlobalPlaybackCursor.vue - Curseur global simplifié -->
+<!-- components/GlobalPlaybackCursor.vue - Curseur SVG ultra-performant -->
 <template>
-  <div 
+  <svg 
     v-if="cursorStore.totalDuration > 0 || cursorStore.currentTime >= 0"
-    class="global-playback-cursor"
-    :style="cursorStyle"
+    class="global-playback-cursor-svg"
+    :viewBox="`0 0 ${totalWidth} ${containerHeight || 100}`"
+    preserveAspectRatio="none"
   >
-    <!-- Ligne du curseur -->
-    <div class="cursor-line" />
+    <!-- Ligne du curseur SVG -->
+    <line
+      class="cursor-line-svg"
+      :x1="cursorX"
+      :y1="0"
+      :x2="cursorX"
+      :y2="containerHeight || 100"
+      stroke="#ff0000"
+      stroke-width="3"
+      stroke-linecap="round"
+      :opacity="cursorStore.totalDuration > 0 ? 1 : 0"
+    />
     
-  </div>
+    <!-- Ombre/effet lumineux -->
+    <line
+      class="cursor-glow-svg"
+      :x1="cursorX"
+      :y1="0"
+      :x2="cursorX"
+      :y2="containerHeight || 100"
+      stroke="#ff0000"
+      stroke-width="8"
+      stroke-linecap="round"
+      opacity="0.3"
+      filter="url(#cursor-blur)"
+    />
+    
+    <!-- Définition du filtre blur -->
+    <defs>
+      <filter id="cursor-blur">
+        <feGaussianBlur stdDeviation="2"/>
+      </filter>
+    </defs>
+  </svg>
 </template>
 
 <script setup>
@@ -16,34 +47,18 @@ import { computed } from 'vue'
 import { usePlaybackCursorStore } from '@/stores/playbackCursor'
 
 const props = defineProps({
-  containerHeight: { type: Number, default: null }
+  containerHeight: { type: Number, default: 100 },
+  totalWidth: { type: Number, default: 5000 } // Largeur totale fixe ou fournie par parent
 })
 
 const emit = defineEmits(['position-change'])
 
 const cursorStore = usePlaybackCursorStore()
 
-// Style du curseur
-const cursorStyle = computed(() => {
-  // CORRECTION: Le curseur doit se positionner par rapport au contenu scrollé
-  // La position pixelPosition est absolue dans le contenu total
-  // Elle doit rester telle quelle car le conteneur parent gère le scroll
-  
-  const style = {
-    position: 'absolute',
-    left: `${cursorStore.pixelPosition}px`, // Position absolue dans le contenu total
-    top: '0px',
-    height: props.containerHeight ? `${props.containerHeight}px` : '100%',
-    width: '3px',
-    zIndex: 9999,
-    pointerEvents: 'none',
-    transform: 'translateX(-1.5px)', // Centrer
-    opacity: cursorStore.totalDuration > 0 ? 1 : 0,
-    transition: 'opacity 0.3s ease'
-  }
-  
-  
-  return style
+// Position X du curseur - utiliser directement pixelPosition du store 
+// qui fait déjà tous les calculs de tempo/signature
+const cursorX = computed(() => {
+  return Math.round(cursorStore.pixelPosition)
 })
 
 // Émission pour l'auto-scroll
@@ -60,19 +75,30 @@ setInterval(() => {
 </script>
 
 <style scoped>
-.global-playback-cursor {
+/* ✅ CURSEUR SVG ULTRA-PERFORMANT */
+.global-playback-cursor-svg {
   position: absolute;
-  pointer-events: none;
-  user-select: none;
-}
-
-.cursor-line {
+  top: 0;
+  left: 0;
   width: 100%;
   height: 100%;
-  background: #ff0000;
-  border-radius: 1.5px;
-  box-shadow: 0 0 4px rgba(255, 0, 0, 0.6);
+  pointer-events: none;
+  user-select: none;
+  z-index: 9999;
+  overflow: visible; /* Important pour que le curseur reste visible même en dehors */
 }
 
+.cursor-line-svg {
+  transition: opacity 0.3s ease;
+  will-change: auto; /* Pas d'animation sur la position, juste sur l'opacité */
+}
 
+.cursor-glow-svg {
+  will-change: auto;
+}
+
+/* Optimisation GPU */
+.global-playback-cursor-svg {
+  transform: translateZ(0); /* Force GPU layer */
+}
 </style>

@@ -3,96 +3,117 @@
   <el-row>
     <el-col :span="2">
     </el-col>
-    <el-col :span="20" class="transport-controls" :class="{ compact, playing: isPlaying, paused: isPaused }">
-    <!-- Affichage de la position (mesure.temps.subdivision) -->
-    <div class="position-display">
-      <el-icon><Location /></el-icon>
-      <span class="position-text">{{ currentPositionFormatted }}</span>
-    </div>
+    <el-col :span="20" class="transport-controls" :class="{ playing: isPlaying, paused: isPaused }">
+      <!-- Affichage de la position (mesure.temps.subdivision) -->
+      <div class="position-display">
+        <span class="position-text">{{ currentPositionFormatted }}</span>
+      </div>
 
-    <div class="transport-buttons">
-      <!-- Bouton Rewind -->
-      <el-button
-        :icon="DArrowLeft"
-        :disabled="!canPlay"
-        @click="handleRewind"
-        title="Retour au début (R)"
-        circle
-        size="small"
-      />
+      <div class="transport-buttons">
+        <!-- Bouton Rewind -->
+        <el-button
+          :icon="DArrowLeft"
+          :disabled="!canPlay"
+          @click="handleRewind"
+          title="Retour au début (R)"
+          circle
+          size="small"
+        />
 
-      <!-- Bouton Stop -->
-      <el-button
-        :icon="SwitchButton"
-        :disabled="!canPlay"
-        @click="handleStop"
-        title="Arrêter (S)"
-        circle
-        size="small"
-        type="danger"
-      />
+        <!-- Bouton Stop -->
+        <el-button
+          :icon="SwitchButton"
+          :disabled="!canPlay"
+          @click="handleStop"
+          title="Arrêter (S)"
+          circle
+          size="small"
+          type="danger"
+        />
 
-      <!-- Bouton Play/Pause -->
-      <el-button
-        :icon="isPlaying ? VideoPause : VideoPlay"
-        :disabled="!canPlay"
-        @click="handlePlayPause"
-        :title="isPlaying ? 'Pause (Espace)' : 'Lecture (Espace)'"
-        circle
-        type="primary"
-      />
+        <!-- Bouton Play/Pause -->
+        <el-button
+          :icon="isPlaying ? VideoPause : VideoPlay"
+          :disabled="!canPlay"
+          @click="handlePlayPause"
+          :title="isPlaying ? 'Pause (Espace)' : 'Lecture (Espace)'"
+          circle
+          type="primary"
+        />
 
-      <!-- Bouton Loop (optionnel) -->
-      <el-button
-        :icon="Refresh"
-        :disabled="!canPlay"
-        @click="toggleLoop"
-        :title="isLooping ? 'Désactiver la boucle (L)' : 'Activer la boucle (L)'"
-        :type="isLooping ? 'success' : 'default'"
-        circle
-        size="small"
-      />
-    </div>
+        <!-- Bouton Loop (optionnel) -->
+        <el-button
+          :icon="Refresh"
+          :disabled="!canPlay"
+          @click="toggleLoop"
+          :title="isLooping ? 'Désactiver la boucle (L)' : 'Activer la boucle (L)'"
+          :type="isLooping ? 'success' : 'default'"
+          circle
+          size="small"
+        />
 
-    <!-- Affichage du temps -->
-    <div class="time-display">
-      <span class="current-time">{{ safeCurrentTimeFormatted }}</span>
-      <span class="separator">/</span>
-      <span class="total-time">{{ totalDurationFormatted }}</span>
-    </div>
+        <!-- Mode d'enregistrement -->
+        <el-select
+          v-model="recordMode"
+          size="small"
+          style="width: 80px"
+          title="Mode d'enregistrement"
+        >
+          <el-option label="Merge" value="merge" title="Ajouter aux données existantes" />
+          <el-option label="Replace" value="replace" title="Remplacer les données existantes" />
+        </el-select>
 
-    <!-- Indicateur de tempo (optionnel) -->
-    <div v-if="showTempo" class="tempo-display">
-      <el-icon><Timer /></el-icon>
-      <span>{{ Math.round(currentTempo) }} BPM</span>
-    </div>
+      </div>
 
-    <!-- Contrôles de vitesse (optionnel) -->
-    <div v-if="showPlaybackRate" class="playback-rate">
-      <el-select
-        v-model="localPlaybackRate"
-        size="small"
-        style="width: 80px"
-        @change="handlePlaybackRateChange"
-      >
-        <el-option label="0.5x" :value="0.5" />
-        <el-option label="0.75x" :value="0.75" />
-        <el-option label="1x" :value="1" />
-        <el-option label="1.25x" :value="1.25" />
-        <el-option label="1.5x" :value="1.5" />
-        <el-option label="2x" :value="2" />
-      </el-select>
-    </div>
+      <!-- Affichage du temps -->
+      <div class="time-display">
+        <span class="current-time">{{ safeCurrentTimeFormatted }}</span>
+        <span class="separator">/</span>
+        <span class="total-time">{{ totalDurationFormatted }}</span>
+      </div>
 
-    <!-- Indicateur de statut MIDI -->
-    <div class="midi-status">
-      <el-icon 
-        :class="['status-icon', midiStatusClass]"
-        :title="midiStatusText"
-      >
-        <component :is="midiStatusIcon" />
-      </el-icon>
-    </div>
+      <!-- Indicateur de tempo (optionnel) -->
+      <div v-if="showTempo" class="tempo-display">
+        <el-icon><Timer /></el-icon>
+        <span>{{ Math.round(currentTempo) }} BPM</span>
+      </div>
+
+      <!-- Contrôle vitesse curseur -->
+      <div class="cursor-speed-control">
+        <el-tooltip content="Vitesse d'affichage du curseur" placement="top">
+          <el-select
+            v-model="localCursorSpeedRatio"
+            size="small"
+            style="width: 90px"
+            @change="handleCursorSpeedChange"
+          >
+            <el-option label="0.1x" :value="0.1" />
+            <el-option label="0.25x" :value="0.25" />
+            <el-option label="0.5x" :value="0.5" />
+            <el-option label="0.75x" :value="0.75" />
+            <el-option label="1x" :value="1.0" />
+            <el-option label="1.5x" :value="1.5" />
+            <el-option label="2x" :value="2.0" />
+          </el-select>
+        </el-tooltip>
+      </div>
+
+      <!-- Contrôles de vitesse (optionnel) -->
+      <div v-if="showPlaybackRate" class="playback-rate">
+        <el-select
+          v-model="localPlaybackRate"
+          size="small"
+          style="width: 80px"
+          @change="handlePlaybackRateChange"
+        >
+          <el-option label="0.5x" :value="0.5" />
+          <el-option label="0.75x" :value="0.75" />
+          <el-option label="1x" :value="1" />
+          <el-option label="1.25x" :value="1.25" />
+          <el-option label="1.5x" :value="1.5" />
+          <el-option label="2x" :value="2" />
+        </el-select>
+      </div>
     </el-col>
     <el-col :span="2" align="right" style="padding-right: 20px">
       <el-button :type="showEditor ? 'primary' : 'default'" @click="handleShowEditor">Edit</el-button>
@@ -109,14 +130,12 @@ import {
   DArrowLeft, 
   Refresh, 
   Timer,
-  Connection,
-  Close,
-  Warning,
-  Location
 } from '@element-plus/icons-vue'
 import { useMidiPlayer } from '@/composables/useMidiPlayer'
 import { useMidiManager } from '@/composables/useMidiManager'
 import { useMidiStore } from '@/stores/midi'
+import { useProjectStore } from '@/stores/project'
+import { useUIStore } from '@/stores/ui'
 import { usePlaybackCursor } from '@/composables/usePlaybackCursor'
 import { useTimeSignature } from '@/composables/useTimeSignature'
 import { usePlaybackMarkerStore } from '@/stores/playbackMarker'
@@ -147,6 +166,8 @@ const props = defineProps({
 const midiPlayer = useMidiPlayer()
 const midiManager = useMidiManager()
 const midiStore = useMidiStore()
+const projectStore = useProjectStore()
+const uiStore = useUIStore()
 const cursor = usePlaybackCursor()
 const timeSignature = useTimeSignature()
 const markerStore = usePlaybackMarkerStore()
@@ -156,13 +177,20 @@ const showEditor = ref(true)
 
 // Refs locales
 const localPlaybackRate = ref(1)
+const localCursorSpeedRatio = ref(1.0)
+
+// Mode d'enregistrement
+const recordMode = computed({
+  get: () => projectStore.userPreferences.keyboard.recordingMode,
+  set: (value) => projectStore.updateUserPreferences('keyboard', { recordingMode: value })
+})
+
 
 // ============ SYNCHRONISATION SIMPLIFIÉE ============
 // Synchroniser uniquement le curseur avec le lecteur MIDI
 watch(() => midiPlayer.isPlaying.value, (playing) => {
   if (playing) {
-    // Démarrer le curseur avec synchronisation initiale
-    cursor.syncWithPlayer(midiPlayer.currentTime.value)
+    // Démarrer le curseur - PAS de syncWithPlayer car le MidiPlayer met à jour directement le store
     cursor.startPlayback()
   } else {
     // CORRECTION: Ne pas réinitialiser le curseur si c'est un arrêt de fin de morceau
@@ -175,13 +203,22 @@ watch(() => midiPlayer.isPlaying.value, (playing) => {
   }
 }, { immediate: true })
 
-// Synchroniser le temps uniquement quand nécessaire
+// CORRECTION FINALE: Synchronisation continue du curseur avec le temps musical de MidiPlayer
 watch(() => midiPlayer.currentTime.value, (newTime) => {
-  // Synchroniser seulement si le curseur n'est pas déjà en train de jouer
-  if (!cursor.isPlaying.value || Math.abs(cursor.currentTime.value - newTime) > 0.5) {
-    cursor.syncWithPlayer(newTime)
+  const hasTempoChanges = midiStore.tempoEvents.length > 0
+  
+  // Debug désactivé - trop verbeux
+  
+  // TOUJOURS synchroniser le curseur avec le temps musical du MidiPlayer
+  // Le MidiPlayer calcule déjà le temps musical avec les changements de tempo
+  cursor.currentTime.value = newTime
+  
+  // Si changements de tempo, arrêter le timer interne du curseur
+  if (hasTempoChanges && cursor.internalTimer?.value) {
+    cursor.stopInternalTimer()
+    // Timer curseur arrêté - suit MidiPlayer
   }
-})
+}, { immediate: true })
 
 // Synchroniser la durée totale
 watch(() => midiPlayer.totalDuration.value, (newDuration) => {
@@ -190,10 +227,7 @@ watch(() => midiPlayer.totalDuration.value, (newDuration) => {
   }
 }, { immediate: true })
 
-// Synchroniser le tempo
-watch(() => midiStore.getCurrentTempo, (newTempo) => {
-  cursor.currentTempo.value = newTempo
-}, { immediate: true })
+// SUPPRIMÉ: Plus de synchronisation de tempo - MidiPlayer s'en charge
 
 // ============ PROVISION DES DONNÉES ============
 provide('midiPlayer', midiPlayer)
@@ -218,39 +252,11 @@ const {
   toggleLoop
 } = midiPlayer
 
-// Computed pour le tempo en temps réel
+// Computed pour le tempo - UTILISE DIRECTEMENT MidiPlayer
 const currentTempo = computed(() => {
-  // Priorité au tempo du lecteur MIDI s'il est en cours de lecture
-  if (isPlaying.value && midiPlayer.currentTempo?.value) {
-    return midiPlayer.currentTempo.value
-  }
-  
-  // Sinon, calculer le tempo basé sur la position actuelle
-  return midiStore.getTempoAtTime ? midiStore.getTempoAtTime(currentTime.value) : 120
-})
-
-const midiStatusClass = computed(() => {
-  switch (midiManager.midiStatus) {
-    case 'connected': return 'status-connected'
-    case 'disconnected': return 'status-disconnected'
-    case 'no-devices': return 'status-warning'
-    case 'unsupported': return 'status-error'
-    default: return 'status-unknown'
-  }
-})
-
-const midiStatusIcon = computed(() => {
-  switch (midiManager.midiStatus) {
-    case 'connected': return Connection
-    case 'disconnected': return Close
-    case 'no-devices': 
-    case 'unsupported': return Warning
-    default: return Connection
-  }
-})
-
-const midiStatusText = computed(() => {
-  return midiManager.midiStatusText
+  // MidiPlayer est la seule source de vérité pour le tempo
+  // Il gère déjà l'interpolation et les changements de tempo/signatures
+  return midiPlayer.currentTempo?.value || 120
 })
 
 // Computed pour un temps sécurisé qui ne dépasse jamais la durée totale
@@ -262,13 +268,13 @@ const safeCurrentTimeFormatted = computed(() => {
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(2, '0')}`
 })
 
-// NOUVEAU: Computed pour la position mesure.temps.subdivision
+// NOUVEAU: Computed pour la position mesure.temps.subdivision basé sur le cursor
 const currentPositionFormatted = computed(() => {
   if (!midiStore.isLoaded || !timeSignature) {
     return '0000.00.00'
   }
 
-  const time = currentTime.value
+  const time = cursorStore.currentTime
   
   // Utiliser les fonctions de timeSignature pour calculer la position
   const measures = timeSignature.measuresWithSignatures?.value || []
@@ -335,6 +341,7 @@ function handlePlayPause() {
       midiPlayer.stoppedAtEnd.value = false
     }
     
+    
     // Si marqueur P présent, démarrer à cette position
     if (markerStore.hasMarker) {
       seekTo(markerStore.markerTime)
@@ -353,8 +360,14 @@ function handleRewind() {
 }
 
 
+
 function handlePlaybackRateChange(newRate) {
   playbackRate.value = newRate
+}
+
+function handleCursorSpeedChange(newRatio) {
+  uiStore.setCursorSpeedRatio(newRatio)
+  console.log('🎯 Vitesse curseur:', newRatio + 'x')
 }
 
 function handlePlaybackMarker() {
@@ -405,6 +418,7 @@ function setupKeyboardShortcuts() {
     condition: (event) => !event.ctrlKey && !event.metaKey
   })
   
+  
   // Navigation temporelle
   keyboard.shortcuts.seekLeft(() => {
     if (!canPlay.value) return false
@@ -446,6 +460,7 @@ onMounted(() => {
   // console.log('⌨️  Raccourcis TransportControls configurés')
   
   localPlaybackRate.value = playbackRate.value
+  localCursorSpeedRatio.value = uiStore.cursorSpeedRatio
 })
 
 onUnmounted(() => {
@@ -464,9 +479,8 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   gap: 12px;
-  padding: 8px 12px;
+  padding: 8px 0 5px 0;
   background: var(--el-bg-color);
-  border-radius: 6px;
   user-select: none;
   box-sizing: border-box;
 }
@@ -480,72 +494,40 @@ onUnmounted(() => {
 .time-display {
   display: flex;
   align-items: center;
-  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--el-text-color-primary);
+  font-size: 18px;
+  font-weight: bold;
+  color: var(--el-text-color-regular);
   min-width: 140px;
+  padding: 3px 0 0 8px;
 }
 
 .separator {
   margin: 0 6px;
   color: var(--el-text-color-secondary);
+  flex-shrink: 0;
 }
 
 .current-time {
   color: var(--el-color-primary);
+  font-family: 'Courier New', monospace;
+  min-width: 65px;
+  text-align: right;
+  flex-shrink: 0;
 }
 
 .total-time {
   color: var(--el-text-color-regular);
-}
-
-.progress-bar {
-  flex: 1;
-  min-width: 100px;
-  height: 20px;
-  cursor: pointer;
-  padding: 4px 0;
-}
-
-.progress-background {
-  position: relative;
-  width: 100%;
-  height: 4px;
-  background: var(--el-border-color-light);
-  border-radius: 2px;
-  overflow: hidden;
-}
-
-.progress-fill {
-  height: 100%;
-  background: var(--el-color-primary);
-  border-radius: 2px;
-  transition: width 0.1s ease;
-}
-
-.progress-handle {
-  position: absolute;
-  top: -4px;
-  width: 12px;
-  height: 12px;
-  background: var(--el-color-primary);
-  border: 2px solid var(--el-bg-color);
-  border-radius: 50%;
-  transform: translateX(-50%);
-  transition: left 0.1s ease;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-}
-
-.progress-bar:hover .progress-handle {
-  background: var(--el-color-primary-light-3);
+  font-family: 'Courier New', monospace;
+  min-width: 65px;
+  text-align: left;
+  flex-shrink: 0;
 }
 
 .tempo-display {
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 12px;
+  font-size: 18px;
   color: var(--el-text-color-regular);
   min-width: 70px;
 }
@@ -554,65 +536,23 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 4px;
-  font-family: monospace;
-  font-size: 12px;
+  font-size: 18px;
   font-weight: bold;
   color: var(--el-text-color-primary);
-  background: var(--el-fill-color-light);
-  padding: 4px 8px;
-  border-radius: 4px;
+  padding: 10px 8px;
   min-width: 100px;
 }
 
 .position-text {
-  min-width: 80px;
+  font-family: 'Courier New', monospace;
+  min-width: 85px;
   text-align: center;
+  flex-shrink: 0;
 }
 
 .playback-rate {
   display: flex;
   align-items: center;
-}
-
-.midi-status {
-  display: flex;
-  align-items: center;
-}
-
-.status-icon {
-  font-size: 16px;
-  transition: color 0.3s ease;
-}
-
-.status-connected {
-  color: var(--el-color-success);
-}
-
-.status-disconnected {
-  color: var(--el-color-danger);
-}
-
-.status-warning {
-  color: var(--el-color-warning);
-}
-
-.status-error {
-  color: var(--el-color-danger);
-}
-
-.status-unknown {
-  color: var(--el-text-color-secondary);
-}
-
-/* Mode compact */
-.transport-controls.compact {
-  padding: 4px 8px;
-  gap: 8px;
-}
-
-.transport-controls.compact .time-display {
-  font-size: 12px;
-  min-width: 120px;
 }
 
 /* Animations */
@@ -642,6 +582,7 @@ onUnmounted(() => {
   from { opacity: 0.8; }
   to { opacity: 1; }
 }
+
 
 /* Responsive */
 @media (max-width: 768px) {

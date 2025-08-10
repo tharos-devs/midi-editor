@@ -101,16 +101,19 @@ export function usePlaybackCursor() {
       width = injectedTotalWidth
       source = 'injected-direct'
     }
-    // 3. Calcul basé sur la durée avec pixels par seconde par défaut
+    // 3. Calcul basé sur la durée avec pixels par seconde AVEC ZOOM
     else if (totalDuration.value > 0) {
-      const pixelsPerSecond = 100 // Valeur par défaut augmentée pour meilleure visibilité
+      const basePixelsPerSecond = 100
+      const zoomFactor = uiStore.horizontalZoom || 1
+      const pixelsPerSecond = basePixelsPerSecond * zoomFactor
       width = totalDuration.value * pixelsPerSecond
-      source = 'calculated'
+      source = 'calculated-with-zoom'
     }
-    // 4. Fallback depuis le store MIDI
+    // 4. Fallback depuis le store MIDI AVEC ZOOM
     else if (midiStore.midiInfo?.duration && midiStore.midiInfo.duration > 0) {
-      width = midiStore.midiInfo.duration * 100
-      source = 'midi-store'
+      const zoomFactor = uiStore.horizontalZoom || 1
+      width = midiStore.midiInfo.duration * 100 * zoomFactor
+      source = 'midi-store-with-zoom'
     }
     // 5. Fallback minimal
     else {
@@ -118,27 +121,29 @@ export function usePlaybackCursor() {
       source = 'fallback'
     }
     
-    console.log('📏 TotalWidth calculé:', width, 'px (source:', source + ')')
+    // Debug occasionnel
+    if (Math.floor(Date.now() / 1000) % 30 === 0) {
+      console.log('📏 TotalWidth:', width, 'px')
+    }
     return width
   })
 
-  // ============ FONCTION DE CONVERSION TEMPS->PIXEL ROBUSTE ============
+  // ============ FONCTION DE CONVERSION TEMPS->PIXEL PASSIVE ============
   const timeToPixelFunction = computed(() => {
-    // 1. Fonction injectée
+    // PRIORITÉ: Fonction injectée qui a la logique métier (tempo, signatures)
     if (injectedTimeToPixel && typeof injectedTimeToPixel === 'function') {
       return injectedTimeToPixel
     }
     
-    // 2. Fonction dans une ref
     if (injectedTimeToPixel?.value && typeof injectedTimeToPixel.value === 'function') {
       return injectedTimeToPixel.value
     }
     
-    // 3. Fonction par défaut TOUJOURS DISPONIBLE
+    // Fallback simple SANS logique métier - juste conversion linéaire
     return createDefaultConverter()
   })
 
-  // ============ FONCTION DE CONVERSION SIMPLIFIÉE ============
+  // ============ FONCTION DE CONVERSION AVEC ZOOM ============
   function createDefaultConverter() {
     return (timeInSeconds) => {
       if (!timeInSeconds || timeInSeconds < 0) return 0
@@ -150,75 +155,64 @@ export function usePlaybackCursor() {
         return 0
       }
       
-      // Conversion linéaire simple
+      // Conversion linéaire qui prend en compte le zoom via totalWidth
       return (timeInSeconds / duration) * totalWidth
     }
   }
 
-  // ============ POSITION DU CURSEUR ============
+  // ============ POSITION DU CURSEUR ============  
   const pixelPosition = computed(() => {
     try {
       const timeValue = currentTime.value || 0
+      
+      // Debug pour comprendre pourquoi les fonctions de conversion ne sont pas appelées
+      if (Math.floor(timeValue * 10) % 50 === 0 && timeValue > 0) { // Log fréquent pour diagnostic
+        console.log('🔍 CURSEUR pixelPosition appelé:', timeValue.toFixed(2) + 's')
+      }
       
       if (timeValue < 0) {
         return 0
       }
       
-      // CORRECTION: Utiliser TOUJOURS timeToPixelsWithSignatures en priorité
-      // pour être cohérent avec TimeLine
+      // CURSEUR 100% PASSIF - utilise les fonctions métier existantes
+      
+      // 1. PRIORITÉ: timeToPixelsWithSignatures (gère tempo + signatures)
       if (typeof timeToPixelsWithSignatures === 'function') {
-        // Compensation de latence: seulement si temps > 0 ET en cours de lecture
-        let adjustedTime = timeValue
-        if (timeValue > 0 && internalTimer.value !== null) {
-          adjustedTime = timeValue + cursorConfig.value.latencyCompensation
+        const position = timeToPixelsWithSignatures(timeValue)
+        // Debug occasionnel pour vérifier quelle fonction est utilisée
+        if (Math.floor(timeValue * 10) % 200 === 0 && timeValue > 0) {
+          console.log('✅ CURSEUR utilise timeToPixelsWithSignatures:', timeValue.toFixed(2) + 's → ' + position.toFixed(1) + 'px')
         }
-        
-        const position = timeToPixelsWithSignatures(adjustedTime)
-        
-        // Debug moins verbeux MAIS plus d'infos sur les calculs
-        if (Math.floor(timeValue * 5) % 10 === 0) { // Log tous les 2s
-          console.log('🎯 Position (signatures):', {
-            time: timeValue.toFixed(2) + 's',
-            pixels: position.toFixed(1) + 'px',
-            totalWidth: totalWidthValue.value,
-            ratio: (position / totalWidthValue.value * 100).toFixed(1) + '%'
-          })
-        }
-        
         return Math.max(0, position)
       }
       
-      // Fallback: Utiliser timeToPixels simple si timeToPixelsWithSignatures n'est pas disponible
+      // 2. Fallback: timeToPixels simple
       if (typeof timeToPixels === 'function') {
         const position = timeToPixels(timeValue)
-        
-        console.log('🎯 Position via timeToPixels (fallback):', timeValue.toFixed(2) + 's →', position.toFixed(1) + 'px')
-        
+        if (Math.floor(timeValue * 10) % 200 === 0 && timeValue > 0) {
+          console.log('⚠️ CURSEUR utilise timeToPixels (fallback):', timeValue.toFixed(2) + 's → ' + position.toFixed(1) + 'px')
+        }
         return Math.max(0, position)
       }
       
-      // Utiliser la fonction injectée si disponible (prend en compte les signatures temporelles)
-      console.log('🔍 Test injection:', {
-        hasInjection: !!injectedTimeToPixel,
-        hasValue: !!injectedTimeToPixel?.value,
-        valueType: typeof injectedTimeToPixel?.value,
-        isFunction: typeof injectedTimeToPixel?.value === 'function'
-      })
-      
-      if (injectedTimeToPixel && typeof injectedTimeToPixel.value === 'function') {
+      // 3. Fonction injectée
+      if (injectedTimeToPixel?.value && typeof injectedTimeToPixel.value === 'function') {
         const position = injectedTimeToPixel.value(timeValue)
-        console.log('🎯 Position via injection:', timeValue.toFixed(2) + 's →', position.toFixed(1) + 'px')
+        if (Math.floor(timeValue * 10) % 200 === 0 && timeValue > 0) {
+          console.log('⚠️ CURSEUR utilise injection:', timeValue.toFixed(2) + 's → ' + position.toFixed(1) + 'px')
+        }
         return Math.max(0, position)
       }
       
-      // Test direct de l'injection sans .value
       if (injectedTimeToPixel && typeof injectedTimeToPixel === 'function') {
         const position = injectedTimeToPixel(timeValue)
-        console.log('🎯 Position via injection directe:', timeValue.toFixed(2) + 's →', position.toFixed(1) + 'px')
+        if (Math.floor(timeValue * 10) % 200 === 0 && timeValue > 0) {
+          console.log('⚠️ CURSEUR utilise injection directe:', timeValue.toFixed(2) + 's → ' + position.toFixed(1) + 'px')
+        }
         return Math.max(0, position)
       }
       
-      // Fallback avec conversion simple
+      // 4. Fallback linéaire simple (PAS BON - pas de logique métier)
       const durationValue = totalDuration.value || 1
       const widthValue = totalWidthValue.value
       
@@ -227,7 +221,9 @@ export function usePlaybackCursor() {
       }
       
       const position = (timeValue / durationValue) * widthValue
-      console.log('🎯 Position via fallback:', timeValue.toFixed(2) + 's →', position.toFixed(1) + 'px')
+      if (Math.floor(timeValue * 10) % 200 === 0 && timeValue > 0) {
+        console.log('❌ CURSEUR utilise fallback linéaire (PROBLÈME):', timeValue.toFixed(2) + 's → ' + position.toFixed(1) + 'px')
+      }
       return Math.max(0, position)
     } catch (error) {
       console.error('❌ Erreur calcul position curseur:', error)
@@ -244,81 +240,16 @@ export function usePlaybackCursor() {
     
     const shouldShow = hasTime && hasDuration && hasWidth && hasPosition
     
-    // Debug périodique de la visibilité
-    if (Math.floor(Date.now() / 1000) % 5 === 0) { // Log toutes les 5 secondes
-      console.log('👁️ Visibilité curseur:', {
-        shouldShow,
-        hasTime,
-        hasDuration,
-        hasWidth,
-        hasPosition,
-        currentTime: currentTime.value,
-        totalDuration: totalDuration.value,
-        totalWidth: totalWidthValue.value,
-        pixelPos: pixelPosition.value
-      })
-    }
+    // Debug désactivé
     
     return shouldShow
   })
 
-  // ============ TIMER INTERNE POUR LE DÉFILEMENT ============
+  // ============ TIMER INTERNE COMPLÈTEMENT SUPPRIMÉ ============
+  // Le curseur est maintenant 100% passif et ne calcule jamais son propre temps
   function startInternalTimer() {
-    console.log('🔥 startInternalTimer appelé - isPlaying:', isPlaying.value)
-    
-    if (internalTimer.value) {
-      console.log('⚠️ Timer déjà actif, arrêt du précédent')
-      clearInterval(internalTimer.value)
-    }
-    
-    timerStartTime.value = performance.now()
-    timerStartMusicTime.value = currentTime.value
-    lastUpdateTime.value = performance.now()
-    
-    console.log('⏰ Démarrage timer interne à', currentTime.value.toFixed(2) + 's')
-    console.log('📊 Paramètres:', {
-      totalDuration: totalDuration.value,
-      startTime: timerStartMusicTime.value,
-      isPlaying: isPlaying.value
-    })
-    
-    internalTimer.value = setInterval(() => {
-      if (!isPlaying.value) {
-        console.log('⏸️ Timer en pause, isPlaying=false')
-        return
-      }
-      
-      const now = performance.now()
-      const realTimeElapsed = (now - timerStartTime.value) / 1000
-      const newMusicTime = timerStartMusicTime.value + realTimeElapsed
-      
-      // Log du premier tick
-      if (Math.abs(newMusicTime - timerStartMusicTime.value) < 0.1) {
-        console.log('✅ Premier tick du timer - newMusicTime:', newMusicTime.toFixed(2))
-      }
-      
-      // Vérifier qu'on ne dépasse pas la durée totale
-      if (newMusicTime <= totalDuration.value) {
-        currentTime.value = newMusicTime
-        lastUpdateTime.value = now
-        
-        // Debug plus détaillé pour diagnostiquer les sauts
-        const timeDiff = newMusicTime - timerStartMusicTime.value
-        if (timeDiff > 0.1 && Math.floor(newMusicTime * 20) % 4 === 0) { // Log fréquent au début
-          console.log('🎯 CURSEUR DÉFILE:', {
-            musicTime: newMusicTime.toFixed(3) + 's',
-            realTime: realTimeElapsed.toFixed(3) + 's',
-            pixelPos: pixelPosition.value.toFixed(1) + 'px',
-            diff: timeDiff.toFixed(3) + 's'
-          })
-        }
-      } else {
-        // Fin de morceau - utiliser stopAtEnd pour garder la position
-        currentTime.value = totalDuration.value
-        stopAtEnd()
-        console.log('🔚 Fin de morceau atteinte par le curseur')
-      }
-    }, 16) // ~60fps - équilibré entre fluidité et performance
+    console.log('🚫 startInternalTimer DÉSACTIVÉ - curseur 100% passif')
+    // Ne fait plus rien - le curseur suit uniquement les mises à jour de MidiPlayer
   }
 
   function stopInternalTimer() {
@@ -331,37 +262,19 @@ export function usePlaybackCursor() {
 
   // ============ SYNCHRONISATION AVEC LE LECTEUR ============
   function syncWithPlayer(playerTime, skipRecalculation = false) {
-    console.log('🔗 Sync curseur avec lecteur:', playerTime.toFixed(2) + 's', skipRecalculation ? '(skip recalc)' : '')
+    // Debug occasionnel uniquement
+    if (Math.floor(playerTime * 10) % 100 === 0) {
+      console.log('🔗 Sync curseur:', playerTime.toFixed(2) + 's')
+    }
     
     if (!skipRecalculation) {
-      // DEBUG: position AVANT et APRÈS la mise à jour du temps
-      const positionBefore = pixelPosition.value
-      
       // Mise à jour immédiate du temps
       currentTime.value = playerTime
       isSyncedWithPlayer.value = true
-      
-      // DEBUG: position APRÈS la mise à jour
-      const positionAfter = pixelPosition.value
-      if (Math.abs(positionAfter - positionBefore) > 10) {
-        console.log('⚠️ RECALCUL SUSPECT:', {
-          time: playerTime.toFixed(2) + 's',
-          positionBefore: positionBefore.toFixed(1) + 'px',
-          positionAfter: positionAfter.toFixed(1) + 'px',
-          difference: (positionAfter - positionBefore).toFixed(1) + 'px',
-          totalWidth: totalWidthValue.value
-        })
-      }
     } else {
       // Synchronisation simple sans recalcul de position
       currentTime.value = playerTime
       isSyncedWithPlayer.value = true
-      console.log('🔄 Sync sans recalcul:', playerTime.toFixed(3) + 's')
-    }
-    
-    // Redémarrer le timer interne avec le nouveau temps
-    if (isPlaying.value) {
-      startInternalTimer()
     }
   }
 
@@ -374,46 +287,27 @@ export function usePlaybackCursor() {
     // NE PAS arrêter le timer interne ici - il continue de façon autonome
   }
 
-  // ============ GESTION DES TEMPOS ============
+  // ============ SUPPRIMÉ: GESTION DES TEMPOS ============
+  // Le curseur ne calcule plus les tempos - c'est MidiPlayer qui s'en charge
+  // Cette fonction est obsolète - MidiPlayer gère l'interpolation et les signatures
   function getTempoAtTime(time) {
-    const tempoEvents = midiStore.tempoEvents || []
-    
-    console.log('🎵 getTempoAtTime appelé:', {
-      time: time.toFixed(2) + 's',
-      tempoEventsCount: tempoEvents.length,
-      tempoEvents: tempoEvents.slice(0, 3) // Afficher les 3 premiers
-    })
-    
-    if (tempoEvents.length === 0) {
-      const defaultTempo = midiStore.midiInfo?.tempo || 120
-      console.log('🎵 Aucun événement tempo, utilisation par défaut:', defaultTempo)
-      return defaultTempo
-    }
-    
-    let tempo = midiStore.midiInfo?.tempo || 120
-    let activeEvent = null
-    
-    for (const tempoEvent of tempoEvents) {
-      if (tempoEvent.time <= time) {
-        tempo = tempoEvent.bpm
-        activeEvent = tempoEvent
-      } else {
-        break
-      }
-    }
-    
-    if (activeEvent) {
-      console.log('🎵 Tempo trouvé:', tempo, 'BPM à', activeEvent.time + 's')
-    }
-    
-    return tempo
+    console.warn('⚠️ OBSOLÈTE: getTempoAtTime ne devrait plus être utilisé - utiliser MidiPlayer')
+    return 120 // Fallback simple
   }
 
-  // Mise à jour automatique du tempo selon le temps actuel
-  watch(currentTime, (newTime) => {
-    const newTempo = getTempoAtTime(newTime)
-    if (Math.abs(currentTempo.value - newTempo) > 0.1) {
-      currentTempo.value = newTempo
+  // FONCTION SUPPRIMÉE: convertAdjustedTimeToOriginalTime - causait des problèmes de synchronisation
+
+  // FONCTION SUPPRIMÉE: calculateAdjustedTimeForCursor - causait des problèmes de synchronisation
+
+  // SUPPRIMÉ: Mise à jour automatique du tempo - MidiPlayer s'en charge
+
+  // NOUVEAU: Watcher pour les changements de zoom horizontal
+  watch(() => uiStore.horizontalZoom, (newZoom, oldZoom) => {
+    if (Math.abs(newZoom - oldZoom) > 0.1) {
+      // Le zoom a changé, forcer le recalcul de la position
+      // Déclencher une re-évaluation de totalWidthValue et pixelPosition
+      // qui utiliseront automatiquement le nouveau zoom
+      console.log('🔍 Zoom horizontal changé:', oldZoom, '→', newZoom)
     }
   })
 
@@ -429,7 +323,13 @@ export function usePlaybackCursor() {
     if (!isPlaying.value) {
       isPlaying.value = true
       isPaused.value = false
-      startInternalTimer()
+      
+      // Mode suiveur uniquement
+      
+      // CORRECTION FINALE: TOUJOURS mode suiveur, jamais de timer interne
+      console.log('🎵 CURSEUR EN MODE 100% PASSIF - aucun timer interne')
+      // Le curseur ne calcule jamais son propre temps - il suit uniquement MidiPlayer
+      
       console.log('▶️ Lecture démarrée par curseur - isPlaying maintenant:', isPlaying.value)
     } else {
       console.log('⚠️ startPlayback appelé mais déjà en cours de lecture')
@@ -466,10 +366,8 @@ export function usePlaybackCursor() {
     const clampedTime = Math.max(0, Math.min(totalDuration.value, time))
     currentTime.value = clampedTime
     
-    // Redémarrer le timer si en cours de lecture
-    if (isPlaying.value) {
-      startInternalTimer()
-    }
+    // CORRECTION FINALE: Jamais de timer interne même après seek
+    console.log('🎵 SEEK: Mode 100% passif - pas de timer interne')
     
     console.log('🎯 Seek vers:', clampedTime.toFixed(2) + 's')
   }
@@ -490,16 +388,7 @@ export function usePlaybackCursor() {
       visibility: shouldShowCursor.value ? 'visible' : 'hidden'
     }
     
-    // Log périodique du style pour diagnostic
-    if (Math.floor(Date.now() / 1000) % 3 === 0) { // Log toutes les 3 secondes
-      console.log('🎨 Style curseur:', {
-        left: style.left,
-        opacity: style.opacity,
-        visibility: style.visibility,
-        zIndex: style.zIndex,
-        shouldShow: shouldShowCursor.value
-      })
-    }
+    // Debug désactivé
     
     return style
   })
@@ -675,7 +564,6 @@ export function usePlaybackCursor() {
     
     // Utilitaires
     calculateScrollOffset,
-    getTempoAtTime,
     createTimeToPixelConverter,
     
     // Configuration
@@ -689,6 +577,10 @@ export function usePlaybackCursor() {
     
     // Valeurs calculées
     totalWidthValue,
-    timeToPixelFunction
+    timeToPixelFunction,
+    
+    // NOUVEAU: Accès au timer interne pour le forcer à s'arrêter
+    internalTimer,
+    stopInternalTimer
   }
 }

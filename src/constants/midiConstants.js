@@ -452,7 +452,7 @@ export const MidiUtils = {
 
   // Convertir un numéro de note MIDI en nom
   midiNoteToName(midiNote) {
-    const octave = Math.floor(midiNote / 12) - 1
+    const octave = Math.floor(midiNote / 12) - 2 // CORRECTION: Conformité DAW
     const noteIndex = midiNote % 12
     return `${NOTE_NAMES[noteIndex]}${octave}`
   },
@@ -469,7 +469,7 @@ export const MidiUtils = {
     
     if (noteIndex === -1) return null
     
-    return (parseInt(octave) + 1) * 12 + noteIndex
+    return (parseInt(octave) + 2) * 12 + noteIndex // CORRECTION: Ajuster pour le nouveau système d'octaves
   },
 
   // Obtenir le nom d'un contrôleur MIDI

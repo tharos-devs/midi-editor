@@ -5,12 +5,18 @@
       <GridRenderer 
         :show-measure-lines="true"
         :show-beat-lines="true"
-        :show-subdivision-lines="false"
+        :show-subdivision-lines="uiStore.snapToGrid"
         :show-signature-indicators="false"
         :show-measure-numbers="false" 
         :show-beat-labels="false"
         :show-subdivision-labels="false"
-      />
+      >
+        <GlobalPlaybackCursor
+          :container-height="100"
+          :total-width="totalWidth"
+          :show-debug-info="false"
+        />
+      </GridRenderer>
     </div>
 
     <div class="cc-curve-container" 
@@ -54,13 +60,16 @@
 
     </div>
 
-    <!-- Lignes de référence CC uniquement (labels déplacés vers MidiLaneInfos) -->
+    <!-- Lignes de référence CC (0, 32, 64, 96, 127) -->
     <div class="cc-reference-lines">
       <div
-        v-for="level in [32, 64, 96]"
+        v-for="level in [0, 32, 64, 96, 127]"
         :key="level"
         class="cc-reference-line"
-        :style="{ bottom: (level / 127) * 100 + '%' }"
+        :class="{
+          'cc-line-extreme': level === 0 || level === 127
+        }"
+        :style="{ bottom: Math.max(2, Math.min(98, (level / 127) * 100)) + '%' }"
       >
       </div>
     </div>
@@ -80,6 +89,7 @@ import { useMidiStore } from '@/stores/midi'
 import { useTimeSignature } from '@/composables/useTimeSignature'
 import { useSnapLogic } from '@/composables/useSnapLogic'
 import GridRenderer from '@/components/GridRenderer.vue'
+import GlobalPlaybackCursor from '@/components/GlobalPlaybackCursor.vue'
 
 const props = defineProps({
   ccNumber: {
@@ -155,16 +165,23 @@ const ccPoints = computed(() => {
   
   const trackCC = midiStore.midiCC.filter(cc => {
     const ccTrackId = parseInt(cc.trackId)
-    return ccTrackId === selectedTrackId && cc.controller === props.ccNumber
+    const ccController = parseInt(cc.controller) || parseInt(cc.number) || 0
+    const matches = ccTrackId === selectedTrackId && ccController === parseInt(props.ccNumber)
+    
+    // Debug désactivé pour performance
+    
+    return matches
   })
   
   const points = trackCC.map(cc => ({
     id: cc.id,
-    time: cc.time,
-    value: cc.value,
+    time: parseFloat(cc.time) || 0,
+    value: parseInt(cc.value) || 0,
     trackId: cc.trackId,
     lastModified: cc.lastModified
   })).sort((a, b) => a.time - b.time)
+  
+  // Debug désactivé
   
   return points
 })
@@ -628,19 +645,40 @@ const endLassoOrDrag = () => {
   document.removeEventListener('mouseup', endLassoOrDrag)
 }
 
-// Supprimer tous les points sélectionnés
+// Supprimer tous les points sélectionnés ET tous les points dans la zone temporelle
 const deleteSelectedPoints = () => {
   if (selectedPoints.value.length === 0) return
   
-  console.log(`🗑️ Suppression de ${selectedPoints.value.length} points sélectionnés`)
+  // Calculer la zone temporelle de la sélection
+  const selectedTimes = selectedPoints.value.map(p => p.time)
+  const minTime = Math.min(...selectedTimes)
+  const maxTime = Math.max(...selectedTimes)
   
-  selectedPoints.value.forEach(point => {
+  console.log(`🗑️ Suppression de ${selectedPoints.value.length} points sélectionnés`)
+  console.log(`📍 Zone temporelle: ${minTime.toFixed(3)}s à ${maxTime.toFixed(3)}s`)
+  
+  // Récupérer TOUS les points CC (pas seulement ceux affichés) dans la zone temporelle
+  const ourTrackId = parseInt(midiStore.selectedTrack)
+  const allCCPoints = midiStore.midiCC.filter(cc => 
+    parseInt(cc.trackId) === ourTrackId && 
+    parseInt(cc.controller) === props.ccNumber &&
+    parseFloat(cc.time) >= minTime &&
+    parseFloat(cc.time) <= maxTime
+  )
+  
+  console.log(`🗑️ Trouvé ${allCCPoints.length} points CC dans la zone temporelle (incluant cachés)`)
+  
+  // Supprimer TOUS les points dans la zone temporelle
+  allCCPoints.forEach(point => {
     midiStore.deleteControlChange(point.id)
+    console.log(`🗑️ Supprimé CC point ID=${point.id} temps=${point.time} valeur=${point.value}`)
   })
   
   selectedPoints.value = []
   selectedPoint.value = null
   emit('point-selected', null)
+  
+  console.log(`✅ Suppression terminée: ${allCCPoints.length} points supprimés au total`)
 }
 
 // Gérer les touches clavier pour la sélection multiple
@@ -742,7 +780,7 @@ onUnmounted(() => {
   width: 100%;
   height: 100%;
   z-index: 1;
-  opacity: 0.3;
+  opacity: 0.6;
 }
 
 .cc-curve-container {
@@ -830,7 +868,13 @@ onUnmounted(() => {
   position: absolute;
   left: 0;
   width: 100%;
-  border-top: 1px dashed #ccc;
+  border-top: 1px dashed #888;
+  opacity: 0.6;
+}
+
+.cc-reference-line.cc-line-extreme {
+  border-top: 2px dashed #888;
+  opacity: 0.8;
 }
 
 
@@ -869,4 +913,5 @@ onUnmounted(() => {
   height: 100%;
   border-left: 1px solid #e0e0e0;
 }
+
 </style>
