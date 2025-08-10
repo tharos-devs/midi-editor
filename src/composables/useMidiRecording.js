@@ -12,7 +12,8 @@ export function useMidiRecording() {
   const midiManager = useMidiManager()
   const midiPlayer = useMidiPlayer()
 
-  // État de l'enregistrement
+  // ===== ÉTAT INITIAL DE L'ENREGISTREMENT =====
+  // État de base
   const isRecording = ref(false)
   const recordingTrackId = ref(null)
   const recordedEvents = ref([])
@@ -26,6 +27,70 @@ export function useMidiRecording() {
   
   // ID de session d'enregistrement pour invalider les anciens listeners
   let recordingSessionId = 0
+
+  // Throttling pour les événements de mise à jour temps réel
+  let lastCCUpdateEvent = 0
+  let lastCCReactivity = 0
+  const CC_UPDATE_THROTTLE = 50 // Limiter à 20 FPS pour éviter la surcharge
+  const CC_REACTIVITY_THROTTLE = 100 // Limiter les triggerReactivity à 10 FPS
+
+  // ===== ÉTAT DYNAMIQUE DE SESSION =====
+  // Map pour tracker les notes en cours
+  const activeNotes = ref(new Map())
+  
+  // UNIFIED REPLACE SYSTEM: Single system for all event types
+  const activeReplaceZones = ref(new Map()) // key -> { startTime, trackId, type, eventKey }
+
+  // Variables globales nécessaires (restaurées pour compatibilité)
+  const initializeGlobalState = () => {
+    // Temps de début d'enregistrement
+    window.currentPlaybackTime = window.currentPlaybackTime || 0
+    window.recordStartTime = window.currentPlaybackTime
+    
+    // Pistes en cours d'enregistrement
+    window.recordingTrackIds = midiStore.tracks
+      .filter(track => track.record)
+      .map(track => track.id)
+    
+    // Trackers d'événements reçus par piste
+    window.eventTrackers = new Map() // trackId -> Set de types d'événements reçus
+  }
+
+  const cleanupGlobalState = () => {
+    // Nettoyage complet des variables globales
+    if (window.recordStartTime !== undefined) {
+      delete window.recordStartTime
+    }
+    if (window.recordingTrackIds !== undefined) {
+      delete window.recordingTrackIds
+    }
+    if (window.eventTrackers !== undefined) {
+      delete window.eventTrackers
+    }
+    // Note: window.currentPlaybackTime est maintenu par le player
+  }
+
+  // FONCTION DE RÉINITIALISATION COMPLÈTE
+  const resetRecordingState = () => {
+    // 1. Nettoyer l'état local
+    recordingBlocked.value = false
+    isRecording.value = false
+    recordingTrackId.value = null
+    recordedEvents.value.length = 0
+    
+    // 2. Nettoyer les états dynamiques
+    activeNotes.value.clear()
+    activeReplaceZones.value.clear()
+    
+    // 3. Nettoyer les variables globales
+    cleanupGlobalState()
+    
+    // 4. Incrémenter la session pour invalider les anciens listeners
+    recordingSessionId++
+    
+    // 5. Nettoyer les listeners MIDI
+    clearMidiInputListeners()
+  }
 
   // Fonctions utilitaires
   function createNoteId() {
@@ -57,9 +122,8 @@ export function useMidiRecording() {
       // Envoyer vers la sortie MIDI
       const success = midiManager.sendMidiMessage(outputId, modifiedData)
       
-      // Log minimal seulement en cas de problème
       if (!success) {
-        console.log(`❌ Monitoring MIDI échec: Track ${trackId} → ${outputId}`)
+        console.error(`❌ Monitoring MIDI échec: Track ${trackId} → ${outputId}`)
       }
     }
   }
@@ -77,164 +141,128 @@ export function useMidiRecording() {
     // MONITORING MIDI : Rediriger vers la sortie seulement si Monitor activé
     handleMidiMonitoring(trackId, data)
     
-    // VÉRIFICATIONS CRITIQUES : Plusieurs niveaux de protection avec logs détaillés
-    if (sessionId !== recordingSessionId) {
-      console.log(`🚫 MIDI ignoré: session obsolète (${sessionId} vs ${recordingSessionId})`)
-      return
-    }
+    // Décoder le message MIDI pour debug
+    const status = data[0] & 0xF0
+    const channel = data[0] & 0x0F
+    const param1 = data[1]
+    const param2 = data[2]
     
-    if (recordingBlocked.value) {
-      console.log(`🚫 MIDI ignoré: enregistrement bloqué (trackId=${trackId})`)
-      return
-    }
+    // CC messages received and processed
     
-    if (!isRecording.value) {
-      console.log(`🚫 MIDI ignoré: enregistrement arrêté (trackId=${trackId})`)
-      return
-    }
-    
-    // VÉRIFICATION CRITIQUE: Vérifier si le lecteur MIDI est en pause
-    if (midiPlayer.isPaused?.value) {
-      console.log(`🚫 MIDI ignoré: lecteur en pause (trackId=${trackId})`)
-      return
-    }
+    // VÉRIFICATIONS CRITIQUES
+    if (sessionId !== recordingSessionId) return
+    if (recordingBlocked.value) return
+    if (!isRecording.value) return
+    if (midiPlayer.isPaused?.value) return
     
     // Obtenir le temps actuel depuis une variable globale mise à jour par le player
     let recordTime = window.currentPlaybackTime || 0
 
-    // Décoder le message MIDI
-    const status = data[0] & 0xF0
-    const channel = data[0] & 0x0F
-    const note = data[1]
-    const velocity = data[2]
-    
     // ENREGISTREMENT : Seulement si la piste a Record activé ET enregistrement global en cours
     const track = midiStore.tracks.find(t => t.id === trackId)
     const shouldRecord = track?.record && isRecording.value && !recordingBlocked.value
     
     if (!shouldRecord) {
-      // Si on ne devrait pas enregistrer, ne pas traiter l'événement du tout
       return
     }
-    
-    // MODE REPLACE : Pas de suppression continue ici, seulement au moment de la réception d'événements
-    
-    console.log(`🔍 Debug Record: trackId=${trackId} track.record=${track?.record} isRecording=${isRecording.value} shouldRecord=${shouldRecord}`)
-    
-    console.log(`🎤 ENREGISTREMENT: Status=${status.toString(16)} Channel=${channel + 1} Note=${note} Vel=${velocity} Time=${recordTime.toFixed(3)}s`)
 
     switch (status) {
       case 0x90: // Note On
-        if (velocity > 0) {
-          handleNoteOn(trackId, channel, note, velocity, recordTime, timestamp)
+        if (param2 > 0) { // velocity > 0
+          handleNoteOn(trackId, channel, param1, param2, recordTime, timestamp)
         } else {
           // Velocity 0 = Note Off
-          handleNoteOff(trackId, channel, note, recordTime, timestamp)
+          handleNoteOff(trackId, channel, param1, recordTime, timestamp)
         }
         break
 
       case 0x80: // Note Off
-        handleNoteOff(trackId, channel, note, recordTime, timestamp)
+        handleNoteOff(trackId, channel, param1, recordTime, timestamp)
         break
 
       case 0xB0: // Control Change
-        handleControlChange(trackId, channel, data[1], data[2], recordTime, timestamp)
+        handleControlChange(trackId, channel, param1, param2, recordTime, timestamp)
         break
 
       case 0xE0: // Pitch Bend
-        const pitchValue = (data[2] << 7) + data[1] - 8192
+        const pitchValue = (param2 << 7) + param1 - 8192
         handlePitchBend(trackId, channel, pitchValue, recordTime, timestamp)
         break
     }
   }
 
-  // Map pour tracker les notes en cours
-  const activeNotes = ref(new Map())
-
   function handleNoteOn(trackId, channel, note, velocity, recordTime, timestamp) {
-    // VÉRIFICATION CRITIQUE: Bloquer si enregistrement arrêté
-    if (recordingBlocked.value || !isRecording.value) {
-      console.log(`🚫 handleNoteOn BLOQUÉ: recordingBlocked=${recordingBlocked.value}, isRecording=${isRecording.value}`)
-      return
-    }
+    if (recordingBlocked.value || !isRecording.value) return
     
     const noteKey = `${trackId}-${channel}-${note}`
     
-    // MODE REPLACE : Supprimer les événements existants au moment précis de la réception d'une note MIDI
+    // REPLACE MODE: Start replace zone
     if (projectStore.userPreferences.keyboard.recordingMode === 'replace') {
-      console.log(`🗑️ Replace: suppression notes existantes au moment de réception à ${recordTime.toFixed(3)}s`)
-      const timeWindow = 0.05 // 50ms de fenêtre
-      clearEventsAtTime(trackId, 'note', recordTime, timeWindow)
+      activeReplaceZones.value.set(noteKey, {
+        startTime: recordTime,
+        trackId: trackId,
+        type: 'note',
+        eventKey: noteKey,
+        note: note,
+        channel: channel
+      })
     }
     
-    // Vérifier si c'est le premier événement Note pour cette piste
+    // Marquer les événements reçus pour le tracking
     const eventTracker = window.eventTrackers?.get(trackId) || new Set()
-    const isFirstNoteEvent = !eventTracker.has('note')
-    
-    if (isFirstNoteEvent) {
-      console.log(`🎵 Premier événement Note reçu pour piste ${trackId} à ${recordTime.toFixed(3)}s`)
-      
-      // Marquer que cette piste reçoit maintenant des événements Note
+    if (!eventTracker.has('note')) {
       eventTracker.add('note')
       window.eventTrackers?.set(trackId, eventTracker)
     }
     
-    // Si une note identique est déjà active, la terminer d'abord
+    // If identical note is already active, finish it first
     if (activeNotes.value.has(noteKey)) {
       const existingNote = activeNotes.value.get(noteKey)
       const duration = Math.max(0.1, recordTime - existingNote.startTime)
       finalizeNote(existingNote.id, duration)
     }
 
-    // Créer une nouvelle note
+    // Create new note
     const noteId = createNoteId()
     const noteData = {
       id: noteId,
       trackId: trackId,
       midi: note,
-      velocity: velocity / 127, // Convertir en format 0-1
+      velocity: velocity / 127,
       time: recordTime,
       startTime: recordTime,
       channel: channel,
       timestamp: timestamp
     }
 
-    // Stocker la note active
     activeNotes.value.set(noteKey, noteData)
-
-    console.log(`🎵 Note On enregistrée: ${note} (${noteId}) à ${recordTime.toFixed(3)}s`)
   }
 
   function handleNoteOff(trackId, channel, note, recordTime, timestamp) {
-    // VÉRIFICATION CRITIQUE: Bloquer si enregistrement arrêté
-    if (recordingBlocked.value || !isRecording.value) {
-      console.log(`🚫 handleNoteOff BLOQUÉ: recordingBlocked=${recordingBlocked.value}, isRecording=${isRecording.value}`)
-      return
-    }
+    if (recordingBlocked.value || !isRecording.value) return
     
     const noteKey = `${trackId}-${channel}-${note}`
     
+    // REPLACE MODE: Clear events in time range and close zone
+    if (projectStore.userPreferences.keyboard.recordingMode === 'replace') {
+      const replaceZone = activeReplaceZones.value.get(noteKey)
+      if (replaceZone) {
+        clearEventsInTimeRange(trackId, replaceZone.startTime, recordTime, 'note', { note, channel })
+        activeReplaceZones.value.delete(noteKey)
+      }
+    }
+    
     if (activeNotes.value.has(noteKey)) {
       const noteData = activeNotes.value.get(noteKey)
-      const currentTime = window.currentPlaybackTime || 0
-      const duration = Math.max(0.1, currentTime - noteData.startTime)
+      const duration = Math.max(0.1, recordTime - noteData.startTime)
       
-      // Finaliser la note
       finalizeNote(noteData.id, duration)
-      
-      // Supprimer de la map des notes actives
       activeNotes.value.delete(noteKey)
-
-      console.log(`🎵 Note Off enregistrée: ${note} durée=${duration.toFixed(3)}s`)
     }
   }
 
   function finalizeNote(noteId, duration) {
-    // VÉRIFICATION CRITIQUE: Bloquer si enregistrement arrêté
-    if (recordingBlocked.value || !isRecording.value) {
-      console.log(`🚫 finalizeNote BLOQUÉ: recordingBlocked=${recordingBlocked.value}, isRecording=${isRecording.value}`)
-      return
-    }
+    if (recordingBlocked.value || !isRecording.value) return
     
     const noteData = [...activeNotes.value.values()].find(n => n.id === noteId)
     if (!noteData) return
@@ -249,21 +277,8 @@ export function useMidiRecording() {
       duration: duration
     }
 
-    // TRACE: Log avant ajout direct au store
-    console.log(`➕ DIRECT PUSH vers midiStore.notes:`, {
-      noteId: completeNote.id,
-      midi: completeNote.midi,
-      time: completeNote.time,
-      duration: completeNote.duration,
-      recordingBlocked: recordingBlocked.value,
-      isRecording: isRecording.value,
-      stack: new Error().stack.split('\n').slice(1, 3).join('\n')
-    })
-    
     // Ajouter au store
     midiStore.notes.push(completeNote)
-    
-    console.log(`✅ Note enregistrée: ${completeNote.midi} durée=${duration.toFixed(3)}s`)
     
     // Ajouter aux événements enregistrés pour le suivi
     recordedEvents.value.push({
@@ -277,44 +292,35 @@ export function useMidiRecording() {
   }
 
   function handleControlChange(trackId, channel, controller, value, recordTime, timestamp) {
-    // VÉRIFICATION CRITIQUE: Bloquer si enregistrement arrêté
-    if (recordingBlocked.value || !isRecording.value) {
-      console.log(`🚫 handleControlChange BLOQUÉ: recordingBlocked=${recordingBlocked.value}, isRecording=${isRecording.value}`)
-      return
-    }
+    if (recordingBlocked.value || !isRecording.value) return
     
-    // MODE REPLACE : Supprimer les événements existants au moment précis de la réception d'un CC MIDI
+    const ccKey = `${trackId}-${channel}-${controller}`
+    
+    // REPLACE MODE: Create or maintain replace zone
     if (projectStore.userPreferences.keyboard.recordingMode === 'replace') {
-      console.log(`🗑️ Replace: suppression CC${controller} existants au moment de réception à ${recordTime.toFixed(3)}s`)
-      const timeWindow = 0.05 // 50ms de fenêtre
-      clearEventsAtTime(trackId, 'cc', recordTime, timeWindow, controller)
+      if (!activeReplaceZones.value.has(ccKey)) {
+        activeReplaceZones.value.set(ccKey, {
+          startTime: recordTime,
+          trackId: trackId,
+          type: 'cc',
+          eventKey: ccKey,
+          controller: controller,
+          channel: channel
+        })
+      }
+      // Clear existing CC at this time point (small window)
+      clearEventsInTimeRange(trackId, recordTime - 0.02, recordTime + 0.02, 'cc', { controller, channel })
     }
     
-    // Vérifier si c'est le premier événement CC de ce numéro pour cette piste
+    // Marquer les événements CC reçus pour le tracking
     const eventTracker = window.eventTrackers?.get(trackId) || new Set()
-    const ccKey = `cc${controller}`
-    const isFirstCCEvent = !eventTracker.has(ccKey)
-    
-    if (isFirstCCEvent) {
-      console.log(`🎛️ Premier événement CC${controller} reçu pour piste ${trackId} à ${recordTime.toFixed(3)}s`)
-      
-      // Marquer que cette piste reçoit maintenant des événements CC de ce numéro
-      eventTracker.add(ccKey)
+    const ccTrackKey = `cc${controller}`
+    if (!eventTracker.has(ccTrackKey)) {
+      eventTracker.add(ccTrackKey)
       window.eventTrackers?.set(trackId, eventTracker)
     }
     
-    // Créer l'événement CC avec les bons types
-    const ccEvent = {
-      id: createNoteId(),
-      trackId: trackId, // Garder en number
-      controller: controller.toString(), // String pour cohérence avec CCLane
-      value: value.toString(), // String pour cohérence
-      time: recordTime.toString(), // String pour cohérence
-      channel: channel,
-      lastModified: Date.now()
-    }
-
-    // Utiliser la méthode du store au lieu de push direct
+    // Add new CC event
     midiStore.addCC({
       trackId: trackId,
       controller: controller.toString(),
@@ -323,38 +329,39 @@ export function useMidiRecording() {
       channel: channel
     })
 
-    console.log(`✅ CC enregistré: CC${controller}=${value}`)
-
-    // Ajouter aux événements enregistrés
     recordedEvents.value.push({
       type: 'cc',
       timestamp: Date.now(),
-      data: ccEvent
+      data: { trackId, controller, value, time: recordTime }
     })
+    
+    // RÉACTIVITÉ THROTTLÉE: Éviter les recalculations trop fréquentes
+    const now = performance.now()
+    if (now - lastCCReactivity > CC_REACTIVITY_THROTTLE) {
+      lastCCReactivity = now
+      midiStore.triggerReactivity('midi-recording-cc')
+    }
+    
+    // TEMPS RÉEL THROTTLÉ: Émettre événement seulement si pas trop fréquent
+    if (now - lastCCUpdateEvent > CC_UPDATE_THROTTLE) {
+      lastCCUpdateEvent = now
+      window.dispatchEvent(new CustomEvent('midi-cc-updated', {
+        detail: { controller, value, recordTime, trackId }
+      }))
+    }
   }
 
   function handlePitchBend(trackId, channel, pitchValue, recordTime, timestamp) {
-    // Pour l'instant, on peut logger les pitch bends
-    console.log(`🎚️ Pitch Bend: ${pitchValue} à ${recordTime.toFixed(3)}s`)
-    
     // TODO: Implémenter le stockage des pitch bends si nécessaire
   }
 
   // Configuration des listeners d'input MIDI (MONITORING + ENREGISTREMENT)
   function setupMidiInputListening() {
-    // Nettoyer les anciens listeners
     clearMidiInputListeners()
-
-    console.log('🎤 Configuration des listeners MIDI pour enregistrement/monitoring...')
-    console.log('🔍 État enregistrement:', { 
-      isRecording: isRecording.value, 
-      recordingBlocked: recordingBlocked.value 
-    })
 
     // Parcourir toutes les pistes pour configurer les inputs
     midiStore.tracks.forEach(track => {
       const inputId = track.midiInput
-      console.log(`📍 Piste ${track.id}: input="${inputId}" record=${track.record} monitor=${track.monitor}`)
       
       if (!inputId || inputId === 'none') {
         if (track.record && !recordingBlocked.value) {
@@ -369,11 +376,8 @@ export function useMidiRecording() {
       const shouldSetupMonitor = track.monitor
       
       if (!shouldSetupRecord && !shouldSetupMonitor) {
-        console.log(`⏭️ Piste ${track.id} ignorée (Record et Monitor désactivés ou enregistrement bloqué)`)
         return
       }
-
-      console.log(`🎧 Configuration input pour piste ${track.id} (record=${shouldSetupRecord}, monitor=${shouldSetupMonitor})...`)
 
       // Déterminer si on a besoin d'enregistrement ou seulement monitoring
       const monitoringOnly = !shouldSetupRecord && shouldSetupMonitor
@@ -381,7 +385,6 @@ export function useMidiRecording() {
       if (inputId === 'all') {
         // Écouter tous les inputs
         const availableInputs = midiManager.availableInputs?.value || []
-        console.log(`🎧 Piste ${track.id}: écoute TOUS les inputs (${availableInputs.length} disponibles)`)
         availableInputs.forEach(input => {
           setupInputListener(track.id, input.input, monitoringOnly)
         })
@@ -389,7 +392,6 @@ export function useMidiRecording() {
         // Écouter un input spécifique
         const input = midiManager.availableInputs?.value?.find(i => i.id === inputId)
         if (input?.input) {
-          console.log(`🎧 Piste ${track.id}: écoute input spécifique "${input.name}"`)
           setupInputListener(track.id, input.input, monitoringOnly)
         } else {
           console.error(`❌ Input MIDI "${inputId}" non trouvé pour piste ${track.id}`)
@@ -400,7 +402,6 @@ export function useMidiRecording() {
 
   // Configuration automatique du monitoring (appelé dès qu'une piste change d'input)
   function setupMidiMonitoring() {
-    console.log('🔊 Configuration du monitoring MIDI...')
     setupMidiInputListening()
   }
 
@@ -409,7 +410,6 @@ export function useMidiRecording() {
     
     // Éviter les doublons
     if (midiInputListeners.value.has(listenerKey)) {
-      console.log(`⚠️ Listener déjà configuré: ${listenerKey}`)
       return
     }
 
@@ -425,12 +425,10 @@ export function useMidiRecording() {
         
         handleMidiMonitoring(trackId, event.data)
       }
-      console.log(`🎧 Listener MONITORING configuré: piste ${trackId} <- input "${midiInput.name}"`)
     } else {
       // Listener complet (monitoring + enregistrement)
       const currentSessionId = recordingSessionId
       listener = (event) => handleMidiMessage(trackId, event, currentSessionId)
-      console.log(`🎤 Listener COMPLET configuré: piste ${trackId} <- input "${midiInput.name}" (session=${currentSessionId})`)
     }
     
     midiInput.addEventListener('midimessage', listener)
@@ -444,155 +442,157 @@ export function useMidiRecording() {
   }
 
   function clearMidiInputListeners() {
-    const listenerCount = midiInputListeners.value.size
-    console.log(`🧹 Nettoyage de ${listenerCount} listeners MIDI...`)
-    
     midiInputListeners.value.forEach((config, key) => {
-      console.log(`🧹 Suppression listener: ${key} (piste ${config.trackId})`)
       config.input.removeEventListener('midimessage', config.listener)
     })
     midiInputListeners.value.clear()
-    console.log(`✅ ${listenerCount} listeners MIDI nettoyés`)
   }
 
   // Armer/Désarmer l'enregistrement
   function setRecordArmed(armed) {
     isRecordArmed.value = armed
-    console.log(`🎤 Enregistrement ${armed ? 'armé' : 'désarmé'}`)
   }
 
   function toggleRecordArmed() {
     setRecordArmed(!isRecordArmed.value)
   }
 
-  // Supprimer les événements dans un petit intervalle au moment précis de la réception (mode Replace)
-  function clearEventsAtTime(trackId, eventType, currentTime, timeWindow, ccNumber = null) {
-    const fromTime = currentTime - timeWindow
-    const toTime = currentTime + timeWindow
+
+  // SIMPLIFIED: Clear events in time range for replace mode
+  function clearEventsInTimeRange(trackId, fromTime, toTime, eventType = 'all', params = {}) {
+    if (fromTime >= toTime) return
     
-    console.log(`🗑️ Replace instant: suppression ${eventType} dans fenêtre ${fromTime.toFixed(3)}s → ${toTime.toFixed(3)}s`)
+    let updated = false
     
-    if (eventType === 'note') {
-      // Supprimer les notes existantes dans la fenêtre temporelle
-      const notesToKeep = midiStore.notes.filter(note => {
-        // Garder si ce n'est pas la bonne piste
+    // Clear notes if specified or all
+    if (eventType === 'all' || eventType === 'note') {
+      const originalLength = midiStore.notes.length
+      midiStore.notes = midiStore.notes.filter(note => {
         if (note.trackId !== trackId) return true
+        if (params.note !== undefined && note.midi !== params.note) return true
+        if (params.channel !== undefined && note.channel !== params.channel) return true
         
-        // Garder si la note est complètement en dehors de la fenêtre
         const noteEndTime = note.time + (note.duration || 0)
         return noteEndTime <= fromTime || note.time >= toTime
       })
-      
-      const notesRemoved = midiStore.notes.length - notesToKeep.length
-      midiStore.notes = notesToKeep
-      
-      if (notesRemoved > 0) {
-        console.log(`🗑️ Replace instant: ${notesRemoved} notes supprimées de la piste ${trackId} à ${currentTime.toFixed(3)}s`)
-      }
-      
-    } else if (eventType === 'cc' && ccNumber !== null) {
-      // Supprimer les CC dans la fenêtre temporelle
-      const ccToKeep = midiStore.midiCC.filter(cc => {
-        // Garder si ce n'est pas la bonne piste
+      updated = updated || (midiStore.notes.length !== originalLength)
+    }
+    
+    // Clear CC if specified or all
+    if (eventType === 'all' || eventType === 'cc') {
+      const originalLength = midiStore.midiCC.length
+      midiStore.midiCC = midiStore.midiCC.filter(cc => {
         if (parseInt(cc.trackId) !== trackId) return true
+        if (params.controller !== undefined && parseInt(cc.controller) !== params.controller) return true
+        if (params.channel !== undefined && cc.channel !== params.channel) return true
         
-        // Garder si ce n'est pas le bon numéro de CC
-        if (parseInt(cc.controller) !== ccNumber) return true
-        
-        // Garder si le CC est en dehors de la fenêtre
         const ccTime = parseFloat(cc.time)
         return ccTime < fromTime || ccTime >= toTime
       })
-      
-      const ccRemoved = midiStore.midiCC.length - ccToKeep.length
-      midiStore.midiCC = ccToKeep
-      
-      if (ccRemoved > 0) {
-        console.log(`🗑️ Replace instant: ${ccRemoved} CC${ccNumber} supprimés de la piste ${trackId} à ${currentTime.toFixed(3)}s`)
-      }
+      updated = updated || (midiStore.midiCC.length !== originalLength)
     }
     
-    // Déclencher la réactivité seulement si quelque chose a changé
-    if (eventType === 'note' || eventType === 'cc') {
-      midiStore.triggerReactivity('selective-replace')
+    if (updated) {
+      midiStore.triggerReactivity('replace-clear')
     }
   }
 
-  // Ancienne fonction pour compatibilité (mode replace global - non utilisée maintenant)
-  function clearExistingEvents(startTime, endTime, mode = 'merge', recordingTrackIds = []) {
-    // Cette fonction n'est plus utilisée en mode replace sélectif
-    console.log(`🗑️ Ancienne fonction clearExistingEvents appelée - non utilisée en mode sélectif`)
-  }
+  // REMOVED: Complex atomic CC replace - functionality moved to clearEventsInTimeRange
 
-  // Démarrer l'enregistrement
+  // REMOVED: Replaced by unified clearEventsInTimeRange function
+
+  // REMOVED: Legacy function - no longer needed
+
+  // DÉMARRER L'ENREGISTREMENT avec état initial cohérent
   function startRecording(trackId = null, mode = 'merge') {
-    console.log(`🔴 DÉBUT ENREGISTREMENT...`)
+    // 🚧 GARDE: Empêcher les appels multiples simultanés
+    if (isRecording.value) {
+      console.warn('⚠️ RECORD START: Enregistrement déjà en cours, ignoré', {
+        currentSessionId: recordingSessionId,
+        requestedMode: mode
+      })
+      return false
+    }
     
-    // Incrémenter l'ID de session pour invalider les anciens listeners
-    recordingSessionId++
-    console.log(`🆔 Nouvelle session d'enregistrement: ${recordingSessionId}`)
+    console.log('🟢 RECORD START: Démarrage session', recordingSessionId + 1)
     
-    // Débloquer l'enregistrement et le démarrer
+    // 1. RÉINITIALISATION COMPLÈTE - Toujours partir du même état
+    resetRecordingState()
+    
+    // 2. RÉINITIALISER LES THROTTLES POUR PERFORMANCE OPTIMALE
+    lastCCUpdateEvent = 0
+    lastCCReactivity = 0
+    
+    // 3. INITIALISATION DE L'ÉTAT D'ENREGISTREMENT
     recordingBlocked.value = false
     isRecording.value = true
     recordingTrackId.value = trackId
-    recordedEvents.value = []
-    activeNotes.value.clear()
-
-    // Initialiser les trackers d'enregistrement sélectif pour tous les modes
-    window.recordStartTime = window.currentPlaybackTime || 0
-    // Collecter les IDs des pistes qui ont Record activé
-    window.recordingTrackIds = midiStore.tracks
-      .filter(track => track.record)
-      .map(track => track.id)
     
-    // Initialiser les trackers d'événements reçus (pour Merge et Replace)
-    window.eventTrackers = new Map() // trackId -> Set de types d'événements reçus
+    // 4. INITIALISATION DES VARIABLES GLOBALES
+    initializeGlobalState()
     
-    if (mode === 'replace') {
-      console.log(`🗑️ Mode Replace: Pistes armées pour enregistrement sélectif:`, window.recordingTrackIds)
-    } else {
-      console.log(`🎵 Mode Merge: Pistes armées pour enregistrement sélectif:`, window.recordingTrackIds)
-    }
-
-    // Configurer les listeners
+    // 5. CONFIGURATION DES LISTENERS MIDI
     setupMidiInputListening()
-
-    console.log(`🔴 Enregistrement démarré${trackId ? ` sur track ${trackId}` : ''} (mode: ${mode})`)
+    
+    console.log('🟢 RECORD START: État initialisé', { 
+      sessionId: recordingSessionId,
+      mode,
+      trackId,
+      recordingTracks: window.recordingTrackIds?.length || 0
+    })
+    
+    return true
   }
 
-  // Arrêter l'enregistrement
-  function stopRecording(mode = 'merge') {
-    console.log(`⏹️ STOP RECORDING: Arrêt de l'enregistrement en cours...`)
+  // SIMPLIFIED: Finalize replace zones
+  function finalizeReplaceZones() {
+    if (projectStore.userPreferences.keyboard.recordingMode !== 'replace') return
+    if (activeReplaceZones.value.size === 0) return
     
-    // CRITIQUE: BLOQUER l'enregistrement IMMÉDIATEMENT avant toute autre action
+    const stopTime = window.currentPlaybackTime || 0
+    
+    // Process CC zones (extend to stop time)
+    activeReplaceZones.value.forEach((zone, key) => {
+      if (zone.type === 'cc') {
+        clearEventsInTimeRange(
+          zone.trackId, 
+          zone.startTime, 
+          stopTime, 
+          'cc', 
+          { controller: zone.controller, channel: zone.channel }
+        )
+      }
+    })
+    
+    activeReplaceZones.value.clear()
+  }
+
+  // ARRÊTER L'ENREGISTREMENT et restaurer état monitoring
+  function stopRecording(mode = 'merge') {
+    // 🚧 GARDE: Vérifier qu'un enregistrement est bien en cours
+    if (!isRecording.value) {
+      console.warn('⚠️ RECORD STOP: Aucun enregistrement en cours, ignoré')
+      return []
+    }
+    
+    console.log('🔴 RECORD STOP: Finalisation en cours...', {
+      sessionId: recordingSessionId,
+      eventsRecorded: recordedEvents.value.length
+    })
+    
+    // 1. FINALISER LES ZONES DE REMPLACEMENT
+    finalizeReplaceZones()
+    
+    // 2. BLOQUER IMMÉDIATEMENT L'ENREGISTREMENT
     recordingBlocked.value = true
     isRecording.value = false
     
-    // Incrémenter l'ID de session pour invalider TOUS les listeners existants
-    recordingSessionId++
-    console.log(`🆔 Session invalidée: ${recordingSessionId} (tous anciens listeners ignorés)`)
-    
-    console.log(`🚫 Enregistrement BLOQUÉ - plus aucun événement ne sera traité`)
-    
-    // Calculer la zone temporelle d'enregistrement
-    const startTime = window.recordStartTime || 0
+    // 3. FINALISER LES NOTES ACTIVES
     const stopTime = window.currentPlaybackTime || 0
+    const eventsToSave = [...recordedEvents.value] // Copie pour retour
     
-    console.log(`⏹️ Zone d'enregistrement: ${startTime.toFixed(3)}s → ${stopTime.toFixed(3)}s`)
-    
-    // En mode Replace: la suppression a été faite au moment de la réception des premiers événements
-    if (mode === 'replace') {
-      console.log(`🗑️ Mode Replace: suppressions effectuées lors de la réception des événements (curseur qui passe)`)
-    }
-    
-    // Finaliser toutes les notes actives AVANT de bloquer complètement
-    console.log(`⏹️ Finalisation FORCÉE des notes actives à ${stopTime.toFixed(3)}s`)
-    
-    activeNotes.value.forEach((noteData, noteKey) => {
+    activeNotes.value.forEach((noteData) => {
       const duration = Math.max(0.1, stopTime - noteData.startTime)
-      
-      // Finaliser SANS vérifier recordingBlocked car on est en train d'arrêter
       const completeNote = {
         id: noteData.id,
         trackId: noteData.trackId,
@@ -602,57 +602,43 @@ export function useMidiRecording() {
         duration: duration
       }
       
-      // TRACE: Log avant ajout direct au store (finalisation forcée)
-      console.log(`➕ DIRECT PUSH FORCÉ vers midiStore.notes:`, {
-        noteId: completeNote.id,
-        midi: completeNote.midi,
-        time: completeNote.time,
-        duration: completeNote.duration,
-        recordingBlocked: recordingBlocked.value,
-        isRecording: isRecording.value,
-        reason: "finalisation_forcee_stop",
-        stack: new Error().stack.split('\n').slice(1, 3).join('\n')
-      })
-      
-      // Ajouter directement au store
       midiStore.notes.push(completeNote)
-      console.log(`🎵 Note finalisée FORCÉE: ${completeNote.midi} durée=${duration.toFixed(3)}s`)
-      
-      // Ajouter aux événements enregistrés
-      recordedEvents.value.push({
+      eventsToSave.push({
         type: 'note',
         timestamp: Date.now(),
         data: completeNote
       })
     })
-    activeNotes.value.clear()
     
-    // Déclencher la réactivité pour les notes finalisées
-    midiStore.triggerReactivity('midi-recording-note')
-    
-    // IMPORTANT: Nettoyer COMPLÈTEMENT les listeners d'enregistrement
-    console.log(`🧹 Nettoyage COMPLET des listeners d'enregistrement...`)
-    clearMidiInputListeners()
-    
-    // Nettoyer les trackers d'enregistrement sélectif IMMÉDIATEMENT
-    if (window.recordStartTime !== undefined) {
-      console.log(`🧹 Nettoyage des trackers d'enregistrement sélectif (mode: ${mode})`)
-      delete window.recordStartTime
-      delete window.recordingTrackIds
-      delete window.eventTrackers
-      delete window.replacementTrackers
-    }
-    
+    // 4. NETTOYER COMPLÈTEMENT L'ÉTAT
     recordingTrackId.value = null
     
-    // IMMEDIATE: Reconfigurer les listeners pour monitoring uniquement SANS délai
-    console.log(`🔄 Reconfiguration IMMÉDIATE des listeners pour monitoring uniquement`)
+    // 5. DÉCLENCHER RÉACTIVITÉ AVANT RESET
+    midiStore.triggerReactivity('midi-recording-stop')
+    
+    // 6. ÉMETTRE ÉVÉNEMENT POUR MISE À JOUR DES ONGLETS CC
+    // STOP: Émettre sans filtrage de contrôleur pour forcer toutes les lanes
+    window.dispatchEvent(new CustomEvent('midi-cc-updated', {
+      detail: { 
+        eventCount: eventsToSave.length,
+        forceAll: true  // Flag spécial pour forcer toutes les lanes
+      }
+    }))
+    
+    // 7. RESTAURER L'ÉTAT INITIAL POUR PROCHAIN ENREGISTREMENT
+    // Note: On ne fait PAS resetRecordingState() car on veut garder les listeners de monitoring
+    activeNotes.value.clear()
+    activeReplaceZones.value.clear()
+    recordedEvents.value.length = 0
+    cleanupGlobalState()
+    recordingSessionId++
+    
+    // 8. RECONFIGURER LES LISTENERS POUR MONITORING UNIQUEMENT
+    clearMidiInputListeners()
     setupMidiInputListening()
-
-    const eventCount = recordedEvents.value.length
-    console.log(`✅ Enregistrement complètement arrêté - ${eventCount} événements capturés (mode: ${mode})`)
-
-    return recordedEvents.value
+    
+    console.log('🔴 RECORD STOP: Terminé', { eventsCount: eventsToSave.length })
+    return eventsToSave
   }
 
   // Propriétés calculées
@@ -662,26 +648,13 @@ export function useMidiRecording() {
   // Gestionnaires d'événements globaux
   function handleRecordingStart(event) {
     const mode = event.detail?.mode || projectStore.userPreferences.keyboard.recordingMode || 'merge'
-    console.log('🎤 Événement de début d\'enregistrement reçu:', event.detail, 'mode:', mode)
     startRecording(null, mode)
   }
 
   function handleRecordingStop(event) {
-    console.log('🎤 Événement d\'arrêt d\'enregistrement reçu')
     if (isRecording.value) {
       const mode = event.detail?.mode || projectStore.userPreferences.keyboard.recordingMode || 'merge'
-      const events = stopRecording(mode)
-      
-      // Déclencher plusieurs réactivités pour s'assurer que tout se met à jour
-      midiStore.triggerReactivity('midi-recording-stop')
-      midiStore.forceCCUpdate() // Forcer spécifiquement la mise à jour des CC
-      
-      // Émettre un événement pour que les composants se mettent à jour
-      setTimeout(() => {
-        window.dispatchEvent(new CustomEvent('midi-cc-updated', {
-          detail: { eventCount: events.length }
-        }))
-      }, 100) // Petit délai pour laisser le temps au store de se stabiliser
+      stopRecording(mode)
     }
   }
 
@@ -700,7 +673,6 @@ export function useMidiRecording() {
     record: t.record,
     monitor: t.monitor
   })), () => {
-    console.log('🔄 Inputs MIDI ou états Record/Monitor changés, reconfiguration...')
     setupMidiMonitoring()
   }, { deep: true })
 
@@ -714,6 +686,9 @@ export function useMidiRecording() {
       stopRecording()
     }
   })
+
+  // Expose replace zones globally for UI components
+  window.activeReplaceZones = activeReplaceZones
 
   return {
     // État
