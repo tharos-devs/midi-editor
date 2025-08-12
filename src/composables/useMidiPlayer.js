@@ -150,6 +150,11 @@ export function useMidiPlayer() {
   // Signature des données pour détecter les changements
   const dataSignature = ref('')
 
+  // Gestion des articulations par piste
+  const lastProcessedArticulationTime = ref(0)
+  const triggeredArticulations = ref(new Set())
+  const articulationLatencyCompensation = ref(1) // 1ms par défaut
+
   const canSendMidi = computed(() => {
     const managerInitialized = midiManager.isInitialized?.value ?? false
     const midiSupported = midiManager.midiSupported?.value ?? false
@@ -167,20 +172,16 @@ export function useMidiPlayer() {
 
   const canPlay = computed(() => {
     // Permettre la lecture si :
-    // - Il y a un fichier MIDI chargé ET des événements de playback, OU
-    // - Il y a des notes dans le store (même sans fichier chargé), OU
+    // - Il y a un fichier MIDI chargé (même si MIDI pas encore prêt), OU
+    // - Il y a des notes dans le store, OU
     // - Nouveau projet vide (permettre navigation temporelle)
-    const hasLoadedFile = isLoaded.value && playbackEvents.value.length > 0
+    const hasLoadedFile = isLoaded.value
     const hasManualNotes = midiStore.notes.length > 0
     const isNewProject = !isLoaded.value && midiStore.notes.length === 0
     
-    // Pour MIDI: nécessite canSendMidi seulement s'il y a du contenu à jouer
-    if (hasLoadedFile || hasManualNotes) {
-      return canSendMidi.value
-    }
-    
-    // Pour projet vide: permettre navigation temporelle sans MIDI
-    return isNewProject || canSendMidi.value
+    // CORRECTION: Permettre la navigation temporelle même si MIDI pas prêt
+    // La lecture MIDI sera désactivée automatiquement dans executeEvent si canSendMidi est false
+    return hasLoadedFile || hasManualNotes || isNewProject
   })
 
   const currentTimeFormatted = computed(() => formatTime(currentTime.value))
@@ -237,6 +238,80 @@ export function useMidiPlayer() {
   }, { immediate: true, deep: true })
 
   // Utiliser la fonction existante de useTimeSignature pour obtenir la signature à un temps donné
+
+  // Obtenir les articulations avec leurs triggers pour toutes les pistes actives
+  function getArticulationsWithTriggers() {
+    if (!projectStore.articulationsByTrack || !projectStore.articulationTypes) {
+      return []
+    }
+
+    const result = []
+    const availableOutputs = midiManager.availableOutputs?.value ?? []
+
+    const articulationTypesCount = projectStore.articulationTypes?.length || 0
+    
+    console.log('🎵 DEBUG articulationTypes disponibles:', articulationTypesCount)
+
+    // Parcourir toutes les pistes pour trouver celles qui ont des articulations
+    const allTracks = midiStore.tracks || []
+    console.log('🎵 DEBUG Parcours de', allTracks.length, 'pistes')
+    
+    for (const track of allTracks) {
+      console.log('🎵 DEBUG vérification piste:', track.id)
+      
+      // Ignorer les pistes mutées ou inexistantes
+      if (!track || track.muted) continue
+      
+      // Vérifier les pistes solo
+      const soloTracks = midiStore.tracks.filter(t => t.solo)
+      if (soloTracks.length > 0 && !track.solo) continue
+
+      // Obtenir les articulations de cette piste via la fonction du store
+      const trackArticulations = projectStore.getArticulationsByTrack(track.id)
+      
+      trackArticulations.forEach(articulation => {
+        // Trouver le type d'articulation correspondant par UUID
+        const articulationTypes = projectStore.articulationTypes || []
+        const articulationType = articulationTypes.find(
+          type => type.uuid === articulation.typeId
+        )
+
+        console.log('🎵 DEBUG articulation:', articulation.name, 'typeId:', articulation.typeId, 'type trouvé:', !!articulationType)
+        if (articulationType) {
+          console.log('🎵 DEBUG triggers du type:', articulationType.triggers?.length || 0)
+          console.log('🎵 DEBUG triggers complets:', articulationType.triggers)
+        } else if (articulation.typeId) {
+          console.log('🎵 DEBUG types disponibles:', articulationTypes.map(t => ({ name: t.name, uuid: t.uuid })))
+          console.log('🎵 DEBUG articulation avec typeId mais type non trouvé - typeId supprimé?')
+        } else {
+          console.log('🎵 DEBUG articulation sans typeId assigné - utilisez Ctrl+click pour assigner un type')
+        }
+
+        if (articulationType && articulationType.triggers && articulationType.triggers.length > 0) {
+          // Debug de la piste et ses sorties
+          console.log('🎵 DEBUG Piste complète:', track)
+          console.log('🎵 DEBUG track.midiOutput:', track.midiOutput)
+          console.log('🎵 DEBUG availableOutputs:', availableOutputs.map(o => ({ name: o.name, id: o.id })))
+          
+          // Résoudre la sortie MIDI pour cette piste
+          const output = resolveMidiOutput(track.midiOutput, availableOutputs)
+          
+          console.log('🎵 DEBUG sortie MIDI résolue:', output?.name || 'aucune')
+          console.log('🎵 DEBUG output complet:', output)
+          
+          result.push({
+            ...articulation,
+            triggers: articulationType.triggers,
+            trackId: track.id,
+            track: track,
+            midiOutput: output
+          })
+        }
+      })
+    }
+
+    return result.sort((a, b) => a.time - b.time)
+  }
 
   // Calculer le tempo à un moment donné avec interpolation
   function getTempoAtTime(time) {
@@ -478,15 +553,10 @@ export function useMidiPlayer() {
     if (Math.floor(Date.now() / 1000) % 10 === 0) {
       console.log('🎬 PLAY appelé')
     }
+
     
-    // NOUVEAU: Vérifier si des pistes ont Record activé pour déclencher l'enregistrement
-    const recordingTracks = midiStore.tracks.filter(track => track.record)
-    if (recordingTracks.length > 0) {
-      console.log('🔴 Démarrage enregistrement auto car', recordingTracks.length, 'pistes en Record')
-      window.dispatchEvent(new CustomEvent('midi-recording-start', {
-        detail: { mode: projectStore.userPreferences.keyboard.recordingMode || 'merge' }
-      }))
-    }
+    // NOTE: L'enregistrement ne se déclenche plus automatiquement avec Play
+    // Utiliser le bouton Record dédié pour démarrer l'enregistrement
     
     // NOUVEAU: Faire toutes les opérations lourdes AVANT le réveil du navigateur
     console.log('🔄 Préparation des données MIDI...')
@@ -560,6 +630,9 @@ export function useMidiPlayer() {
 
     isPlaying.value = true
     stoppedAtEnd.value = false // Reset la flag quand on relance
+    
+    // Réinitialiser l'état des articulations au début de la lecture
+    resetArticulationState()
 
     // CORRECTION: Initialiser seulement si pas encore initialisé
     if (cursorStore.totalDuration === 0 || cursorStore.totalDuration !== totalDuration.value) {
@@ -568,20 +641,8 @@ export function useMidiPlayer() {
     }
     cursorStore.startPlayback()
 
-    // Émettre un événement pour démarrer l'enregistrement MIDI
-    const tracksWithInput = midiStore.tracks.filter(track => 
-      track.midiInput && track.midiInput !== 'none'
-    )
-    if (tracksWithInput.length > 0) {
-      // Émettre un événement personnalisé pour notifier le début d'enregistrement
-      window.dispatchEvent(new CustomEvent('midi-recording-start', {
-        detail: { 
-          trackCount: tracksWithInput.length,
-          mode: window.recordMode || 'merge'
-        }
-      }))
-      console.log(`🔴 Événement d'enregistrement MIDI émis pour ${tracksWithInput.length} piste(s)`)
-    }
+    // NOTE: L'enregistrement MIDI ne se déclenche plus automatiquement lors du play
+    // Utiliser le bouton Record dédié pour démarrer l'enregistrement
 
     // Démarrer le timer d'événements MIDI
     startEventScheduler()
@@ -655,8 +716,8 @@ export function useMidiPlayer() {
     }
 
     if (!canSendMidi.value) {
-      console.warn('⚠️ MIDI non disponible, impossible de préparer les événements')
-      return
+      console.warn('⚠️ MIDI non disponible, préparation des événements de navigation uniquement')
+      // Continuer pour permettre la navigation temporelle même sans MIDI
     }
     
 
@@ -665,8 +726,8 @@ export function useMidiPlayer() {
     const generationTime = Date.now()
 
     if (availableOutputs.length === 0) {
-      console.error('❌ Aucune sortie MIDI disponible pour la génération des événements')
-      return
+      console.warn('⚠️ Aucune sortie MIDI disponible, génération des événements de navigation uniquement')
+      // Continuer pour permettre la navigation temporelle même sans sorties MIDI
     }
 
     // Ajouter les événements de tempo (gardés pour affichage)
@@ -696,6 +757,8 @@ export function useMidiPlayer() {
       const resolvedOutput = resolveMidiOutput(track.midiOutput, availableOutputs)
 
       if (!resolvedOutput) {
+        // Si pas de sortie MIDI, ignorer cette piste pour le MIDI mais continuer pour la navigation
+        console.log(`⚠️ Piste ${track.id} ignorée (pas de sortie MIDI disponible)`)
         return
       }
 
@@ -885,11 +948,7 @@ export function useMidiPlayer() {
     lastEventsPrepareTime.value = generationTime
     dataSignature.value = generateDataSignature()
 
-    // Debug simplifié
-    if (events.length > 0) {
-      const noteEvents = events.filter(e => e.type === 'noteOn')
-      console.log(`🎼 Événements: ${events.length} total, ${noteEvents.length} notes`)
-    }
+    // Debug événements désactivé pour performance
 
     // Événements préparés
   }
@@ -900,8 +959,13 @@ export function useMidiPlayer() {
     isPlaying.value = false
     isPaused.value = true
     
-    // Pause l'enregistrement MIDI sans l'arrêter complètement
-    // (garde les listeners actifs pour continuer l'enregistrement lors de la reprise)
+    // Arrêter l'enregistrement MIDI lors de la pause (finalise les zones replace)
+    window.dispatchEvent(new CustomEvent('midi-recording-stop', {
+      detail: { 
+        mode: projectStore.userPreferences.keyboard.recordingMode || 'merge'
+      }
+    }))
+    console.log(`⏸️ Événement d'arrêt d'enregistrement MIDI émis lors de la pause`)
     
     // Pause du curseur global
     cursorStore.pausePlayback()
@@ -920,9 +984,13 @@ export function useMidiPlayer() {
     console.trace('⚠️ STACK TRACE - qui appelle stop() ?')
     isPlaying.value = false
     isPaused.value = false
-    currentTime.value = 0
+    // NE PAS remettre à 0 - garder la position d'arrêt
+    // currentTime.value = 0
     currentEventIndex.value = 0
     stoppedAtEnd.value = false // Reset la flag
+    
+    // Réinitialiser l'état des articulations lors de l'arrêt
+    resetArticulationState()
     
     // Émettre un événement pour arrêter l'enregistrement MIDI
     window.dispatchEvent(new CustomEvent('midi-recording-stop', {
@@ -938,13 +1006,11 @@ export function useMidiPlayer() {
     // Arrêter le scheduler d'événements
     stopEventScheduler()
     
-    // CORRECTION: Remettre le tempo initial - utiliser le premier tempo du morceau si disponible
-    const firstTempo = tempoEvents.value.length > 0 ? 
-      tempoEvents.value.sort((a, b) => a.time - b.time)[0].bpm : 
-      (midiStore.midiInfo?.tempo || 120)
-    currentTempo.value = firstTempo
+    // CORRECTION: Garder le tempo actuel au moment de l'arrêt
+    const currentTempoAtStop = getTempoAtTime(cursorStore.currentTime) || currentTempo.value || 120
+    currentTempo.value = currentTempoAtStop
     
-    console.log('🎵 Tempo initial au reset:', firstTempo, 'BPM')
+    console.log('🎵 Tempo maintenu à l\'arrêt:', currentTempoAtStop, 'BPM', 'à la position', cursorStore.currentTime.toFixed(3) + 's')
 
     stopAllNotes()
     resetAllControllers()
@@ -1015,6 +1081,10 @@ export function useMidiPlayer() {
     currentEventIndex.value = eventIndex
 
     applyCurrentMidiStateAtTime(clampedTime)
+    
+    // Réinitialiser l'état des articulations avec la nouvelle position
+    resetArticulationState()
+    lastProcessedArticulationTime.value = clampedTime
 
     if (wasPlaying) {
       play()
@@ -1088,17 +1158,12 @@ export function useMidiPlayer() {
       return startMusicalTime + realElapsedTime
     }
     
-    // Debug pour détecter des calculs anormaux
+    // Calcul optimisé - validation légère seulement
     const result = calculateMusicalTimeFromRealTimeInternal(startMusicalTime, realElapsedTime)
     
-    if (Math.abs(result - (startMusicalTime + realElapsedTime)) > 0.5) {
-      console.warn('⚠️ CALCUL TEMPS MUSICAL SUSPECT:', {
-        startMusicalTime: startMusicalTime.toFixed(3) + 's',
-        realElapsedTime: realElapsedTime.toFixed(3) + 's',
-        expectedSimple: (startMusicalTime + realElapsedTime).toFixed(3) + 's',
-        calculatedMusical: result.toFixed(3) + 's',
-        difference: (result - (startMusicalTime + realElapsedTime)).toFixed(3) + 's'
-      })
+    // Log seulement les erreurs vraiment critiques (>2s de différence)
+    if (Math.abs(result - (startMusicalTime + realElapsedTime)) > 2.0) {
+      console.warn('⚠️ Temps musical critique:', Math.abs(result - (startMusicalTime + realElapsedTime)).toFixed(1) + 's diff')
     }
     
     return result
@@ -1264,20 +1329,7 @@ export function useMidiPlayer() {
       const realTimeElapsed = accumulatedRealTime - playStartMusicTime
       
       // Debug pour voir la différence entre temps brut et temps accumulé
-      if (debugCycleCount < 50) {
-        const rawRealTimeElapsed = (now - playStartTime) / 1000
-        const timeDiff = Math.abs(realTimeElapsed - rawRealTimeElapsed)
-        if (timeDiff > 0.02) {
-          console.log(`🔧 CORRECTION TEMPS:`, {
-            cycle: debugCycleCount,
-            rawTime: rawRealTimeElapsed.toFixed(3) + 's',
-            accumulatedTime: realTimeElapsed.toFixed(3) + 's',
-            difference: timeDiff.toFixed(3) + 's',
-            rawDelta: rawDelta.toFixed(3) + 's',
-            safeDelta: safeDelta.toFixed(3) + 's'
-          })
-        }
-      }
+      // Debug temporel désactivé pour performance
       
       lastPerformanceTime = now
       
@@ -1286,16 +1338,9 @@ export function useMidiPlayer() {
       const currentPlayTime = calculateMusicalTimeFromRealTime(playStartMusicTime, realTimeElapsed)
       const afterCalc = performance.now()
       
-      // Debug des premiers cycles pour détecter le saut
-      if (debugCycleCount < 50) {
-        const calcTime = (afterCalc - beforeCalc).toFixed(2)
-        console.log(`🔄 CYCLE ${debugCycleCount}:`, {
-          realTimeElapsed: realTimeElapsed.toFixed(3) + 's',
-          playStartMusicTime: playStartMusicTime.toFixed(3) + 's',
-          currentPlayTime: currentPlayTime.toFixed(3) + 's',
-          delta: (currentPlayTime - currentTime.value).toFixed(3) + 's',
-          calcTime: calcTime + 'ms'
-        })
+      // Debug seulement en cas de problème majeur  
+      if (debugCycleCount < 5 && (afterCalc - beforeCalc) > 10) {
+        console.warn(`⚠️ CYCLE LENT ${debugCycleCount}: ${(afterCalc - beforeCalc).toFixed(1)}ms`)
         debugCycleCount++
       }
       
@@ -1304,22 +1349,22 @@ export function useMidiPlayer() {
       currentTime.value = currentPlayTime
       currentTempo.value = getTempoAtTime(currentPlayTime)
       
-      // Mettre à jour la variable globale pour l'enregistrement MIDI
+      // Mettre à jour les variables globales pour l'enregistrement MIDI
       window.currentPlaybackTime = currentPlayTime
+      window.currentTempo = currentTempo.value
       
       // Synchroniser le curseur store avec le temps musical calculé (qui tient compte du tempo)
       cursorStore.updateTime(currentPlayTime)
+      
+      // Vérifier et déclencher les articulations pendant la lecture
+      checkAndTriggerArticulations(currentPlayTime)
+      
       const afterUpdate = performance.now()
       
-      // Debug performance si le cycle prend plus de 10ms
+      // Performance monitoring ultra-léger
       const totalCycleTime = afterUpdate - cycleStartTime
-      if (totalCycleTime > 10 || debugCycleCount < 30) {
-        if (totalCycleTime > 10) {
-          console.warn(`⚠️ CYCLE LENT ${debugCycleCount}: ${totalCycleTime.toFixed(2)}ms`, {
-            calcTime: (afterCalc - beforeCalc).toFixed(2) + 'ms',
-            updateTime: (afterUpdate - beforeUpdate).toFixed(2) + 'ms'
-          })
-        }
+      if (totalCycleTime > 50) { // Seulement si vraiment critique (>50ms)
+        console.warn(`⚠️ CYCLE CRITIQUE: ${totalCycleTime.toFixed(0)}ms`)
       }
 
       // CORRECTION: Vérifier la fin de TimeLine plutôt que la durée MIDI
@@ -1408,6 +1453,11 @@ export function useMidiPlayer() {
   function executeEvent(event) {
     if (!isPlaying.value) return
 
+    // Vérifier si on peut envoyer du MIDI - ignorer silencieusement si pas possible
+    if (!canSendMidi.value && event.type !== 'tempo') {
+      return // Navigation temporelle fonctionne même sans MIDI
+    }
+
     // Vérifier les pistes mutées/solo avec données actuelles
     const track = midiStore.getTrackById(event.trackId)
     if (track && track.muted) return
@@ -1463,7 +1513,7 @@ export function useMidiPlayer() {
           // Mettre à jour le tempo pour l'affichage  
           currentTempo.value = event.bpm
           success = true
-          console.log(`🎵 Changement de tempo: ${event.bpm} BPM à ${event.time.toFixed(2)}s`)
+          // Log tempo désactivé pour performance
           break
       }
 
@@ -1638,6 +1688,285 @@ export function useMidiPlayer() {
     return availableOutputs[0] // Fallback
   }
 
+  // ============ FONCTIONS DE GESTION DES ARTICULATIONS ============
+
+  /**
+   * Vérifie et déclenche les articulations en cours de lecture
+   */
+  function checkAndTriggerArticulations(currentPlayTime) {
+    const articulationsWithTriggers = getArticulationsWithTriggers()
+    
+    // Debug: Log seulement s'il y a des articulations
+    if (articulationsWithTriggers.length > 0) {
+      console.log('🎵 checkAndTriggerArticulations à', currentPlayTime.toFixed(2) + 's, articulations trouvées:', articulationsWithTriggers.length)
+    }
+    
+    if (articulationsWithTriggers.length === 0) {
+      return
+    }
+
+    // Calculer le temps anticipé : déclencher la compensation AVANT l'articulation
+    const compensationTime = articulationLatencyCompensation.value / 1000 // ms -> s
+    
+    // Ne traiter que si le temps avance
+    if (currentPlayTime <= lastProcessedArticulationTime.value) {
+      return
+    }
+
+    articulationsWithTriggers.forEach(articulation => {
+      const articulationTime = articulation.time
+      const articulationEndTime = articulation.time + (articulation.duration || 0.1)
+      
+      // Temps de déclenchement anticipé : compensationTime AVANT l'articulation
+      const triggerTime = articulationTime - compensationTime
+
+      console.log('🎵 DEBUG articulation:', articulation.name, 'à', articulationTime.toFixed(3), 'trigger à', triggerTime.toFixed(3), 'current:', currentPlayTime.toFixed(3))
+
+      // Vérifier si on entre dans la zone d'articulation (avec anticipation)
+      if (
+        currentPlayTime >= triggerTime &&
+        currentPlayTime <= articulationEndTime &&
+        lastProcessedArticulationTime.value < articulationTime &&
+        !triggeredArticulations.value.has(articulation.id)
+      ) {
+        console.log('🎵 Déclenchement articulation:', articulation.name, 'à', articulationTime.toFixed(3) + 's')
+        console.log('🎵 Triggers:', articulation.triggers)
+        console.log('🎵 Canal MIDI:', articulation.track.channel, 'Sortie:', articulation.midiOutput.name)
+        triggerArticulationEvents(articulation)
+        triggeredArticulations.value.add(articulation.id)
+      }
+    })
+
+    lastProcessedArticulationTime.value = currentPlayTime
+  }
+
+  /**
+   * Déclenche les événements MIDI d'une articulation
+   */
+  function triggerArticulationEvents(articulation) {
+    if (!articulation.triggers || articulation.triggers.length === 0) {
+      console.warn('⚠️ Articulation sans triggers:', articulation.name)
+      return
+    }
+
+    if (!articulation.track || !articulation.midiOutput) {
+      console.warn('⚠️ Articulation sans piste ou sortie MIDI:', articulation.name)
+      console.log('🎯 DEBUG articulation.track:', articulation.track)
+      console.log('🎯 DEBUG articulation.midiOutput:', articulation.midiOutput)
+      return
+    }
+
+    if (articulation.midiOutput.state !== 'connected') {
+      console.warn('⚠️ Sortie MIDI non connectée pour l\'articulation:', articulation.name)
+      console.log('🎯 DEBUG midiOutput.state:', articulation.midiOutput.state)
+      console.log('🎯 DEBUG midiOutput complet:', articulation.midiOutput)
+      return
+    }
+
+    const midiChannel = articulation.track.channel || 0
+    const output = articulation.midiOutput
+
+    console.log('🎛️ Envoi triggers articulation', articulation.name, 'piste', articulation.track.name, 'canal', midiChannel, 'sortie', output.name)
+
+    // Envoyer chaque trigger avec un petit délai
+    articulation.triggers.forEach((trigger, index) => {
+      setTimeout(() => {
+        sendArticulationTriggerEvent(trigger, midiChannel, output)
+      }, index * 2) // 2ms entre chaque trigger
+    })
+  }
+
+  /**
+   * Envoie un événement MIDI selon le type de trigger
+   */
+  function sendArticulationTriggerEvent(trigger, channel, output) {
+    try {
+      switch (trigger.activation) {
+        case 'note':
+          sendArticulationNoteEvent(trigger.sequence, channel, output)
+          break
+          
+        case 'controller':
+          sendArticulationControllerEvent(trigger.sequence, channel, output)
+          break
+          
+        case 'program':
+          sendArticulationProgramChangeEvent(trigger.sequence, channel, output)
+          break
+          
+        default:
+          console.warn('⚠️ Type de trigger non supporté:', trigger.activation)
+      }
+    } catch (error) {
+      console.error('❌ Erreur envoi trigger MIDI:', error)
+    }
+  }
+
+  /**
+   * Envoie un événement Note On/Off pour articulation
+   */
+  function sendArticulationNoteEvent(noteString, channel, output) {
+    const noteNumber = parseArticulationNoteString(noteString)
+    if (noteNumber === null) {
+      console.warn('⚠️ Note invalide pour articulation:', noteString)
+      return
+    }
+
+    console.log('🎹 Envoi Note On articulation:', noteString, '(', noteNumber, ') canal', channel)
+    
+    try {
+      // Note On
+      const noteOnMessage = [0x90 + channel, noteNumber, 100] // Vélocité 100 pour les triggers
+      sendMidiMessage(output, noteOnMessage)
+
+      // Note Off après 50ms (trigger court)
+      setTimeout(() => {
+        const noteOffMessage = [0x80 + channel, noteNumber, 0]
+        sendMidiMessage(output, noteOffMessage)
+      }, 50)
+    } catch (error) {
+      console.error('❌ Erreur envoi note articulation:', error)
+    }
+  }
+
+  /**
+   * Fonction utilitaire pour envoyer un message MIDI
+   */
+  function sendMidiMessage(output, message) {
+    if (typeof output.send === 'function') {
+      output.send(message)
+    } else if (output.output && typeof output.output.send === 'function') {
+      output.output.send(message) // Structure wrapper utilisée dans useMidiManager
+    } else if (output.connection && typeof output.connection.send === 'function') {
+      output.connection.send(message)
+    } else if (output.port && typeof output.port.send === 'function') {
+      output.port.send(message)
+    } else {
+      throw new Error('Aucune méthode d\'envoi MIDI trouvée sur l\'objet output')
+    }
+  }
+
+  /**
+   * Envoie un Control Change pour articulation
+   */
+  function sendArticulationControllerEvent(controllerData, channel, output) {
+    if (!controllerData || typeof controllerData !== 'object') {
+      console.warn('⚠️ Données controller invalides pour articulation:', controllerData)
+      return
+    }
+
+    const controller = parseInt(controllerData.controller)
+    const value = parseInt(controllerData.value)
+
+    if (isNaN(controller) || isNaN(value)) {
+      console.warn('⚠️ CC invalide pour articulation:', controllerData)
+      return
+    }
+
+    console.log('🎛️ Envoi CC articulation', controller, '=', value, 'canal', channel)
+    
+    try {
+      const ccMessage = [0xB0 + channel, controller, value]
+      sendMidiMessage(output, ccMessage)
+    } catch (error) {
+      console.error('❌ Erreur envoi CC articulation:', error)
+    }
+  }
+
+  /**
+   * Envoie un Program Change pour articulation
+   */
+  function sendArticulationProgramChangeEvent(program, channel, output) {
+    const programNumber = parseInt(program)
+    if (isNaN(programNumber) || programNumber < 0 || programNumber > 127) {
+      console.warn('⚠️ Program Change invalide pour articulation:', program)
+      return
+    }
+
+    console.log('🎪 Envoi Program Change articulation:', programNumber, 'canal', channel)
+
+    try {
+      const pcMessage = [0xC0 + channel, programNumber]
+      sendMidiMessage(output, pcMessage)
+    } catch (error) {
+      console.error('❌ Erreur envoi Program Change articulation:', error)
+    }
+  }
+
+  /**
+   * Parse une chaîne de note (ex: "C4", "F#3") en numéro MIDI
+   */
+  function parseArticulationNoteString(noteString) {
+    if (!noteString || typeof noteString !== 'string') return null
+
+    console.log('🔍 DEBUG parseArticulationNoteString:', noteString)
+    const match = noteString.match(/^([A-G])([#b]?)(-?\d+)$/i)
+    console.log('🔍 DEBUG regex match:', match)
+    if (!match) return null
+
+    const [, noteName, accidental, octaveStr] = match
+    const octave = parseInt(octaveStr)
+    
+    console.log('🔍 DEBUG noteName:', noteName)
+    console.log('🔍 DEBUG accidental:', accidental)
+    console.log('🔍 DEBUG octaveStr:', octaveStr)
+    console.log('🔍 DEBUG octave parsed:', octave)
+
+    if (isNaN(octave)) {
+      console.log('🔍 DEBUG octave isNaN, returning null')
+      return null
+    }
+
+    // Conversion nom de note -> numéro MIDI
+    const noteValues = { 'C': 0, 'D': 2, 'E': 4, 'F': 5, 'G': 7, 'A': 9, 'B': 11 }
+    let noteValue = noteValues[noteName.toUpperCase()]
+    
+    console.log('🔍 DEBUG noteValue lookup:', noteName.toUpperCase(), '->', noteValue)
+
+    if (noteValue === undefined) {
+      console.log('🔍 DEBUG noteValue undefined, returning null')
+      return null
+    }
+
+    // Appliquer les altérations
+    if (accidental === '#') noteValue += 1
+    else if (accidental === 'b') noteValue -= 1
+
+    // Calculer le numéro MIDI - supporter les deux conventions
+    // Convention scientifique: C4 = 60, formule: (octave + 1) * 12 + noteValue
+    // Convention Yamaha: C3 = 60, formule: (octave + 2) * 12 + noteValue
+    const midiNumberScientific = (octave + 1) * 12 + noteValue
+    const midiNumberYamaha = (octave + 2) * 12 + noteValue
+    
+    console.log('🔍 DEBUG midiNumber scientifique (C4=60):', midiNumberScientific)
+    console.log('🔍 DEBUG midiNumber Yamaha (C3=60):', midiNumberYamaha)
+    
+    // Utiliser la convention qui donne un résultat valide
+    let midiNumber = midiNumberScientific
+    if (midiNumberScientific < 0 || midiNumberScientific > 127) {
+      if (midiNumberYamaha >= 0 && midiNumberYamaha <= 127) {
+        midiNumber = midiNumberYamaha
+        console.log('🔍 DEBUG utilisation convention Yamaha')
+      }
+    } else {
+      console.log('🔍 DEBUG utilisation convention scientifique')
+    }
+    
+    console.log('🔍 DEBUG midiNumber calculé:', midiNumber)
+    console.log('🔍 DEBUG valide (0-127)?', midiNumber >= 0 && midiNumber <= 127)
+
+    return (midiNumber >= 0 && midiNumber <= 127) ? midiNumber : null
+  }
+
+  /**
+   * Remet à zéro l'état des articulations
+   */
+  function resetArticulationState() {
+    lastProcessedArticulationTime.value = 0
+    triggeredArticulations.value.clear()
+    console.log('🔄 Reset état articulations')
+  }
+
   onUnmounted(() => {
     stop()
     stopEventScheduler()
@@ -1661,12 +1990,12 @@ export function useMidiPlayer() {
         // Envoyer All Notes Off (CC 123) sur le canal de la piste
         try {
           const allNotesOffMessage = [0xB0 + trackChannel, 123, 0] // Control Change: All Notes Off
-          output.connection.send(allNotesOffMessage)
+          sendMidiMessage(output, allNotesOffMessage)
           console.log(`🔇 All Notes Off envoyé sur piste ${trackId}, canal ${trackChannel}`)
           
           // Aussi envoyer All Sound Off (CC 120) pour être sûr
           const allSoundOffMessage = [0xB0 + trackChannel, 120, 0]
-          output.connection.send(allSoundOffMessage)
+          sendMidiMessage(output, allSoundOffMessage)
           console.log(`🔇 All Sound Off envoyé sur piste ${trackId}, canal ${trackChannel}`)
         } catch (error) {
           console.error(`❌ Erreur lors de l'arrêt des notes pour piste ${trackId}:`, error)
@@ -1698,6 +2027,33 @@ export function useMidiPlayer() {
     window.removeEventListener('track-muted', handleTrackMuted)
   })
 
+  // NOUVELLE FONCTION: Démarrer l'enregistrement sans lecture automatique
+  function record() {
+    console.log('🔴 RECORD: Démarrage enregistrement manuel')
+    
+    // Si pas encore en lecture, démarrer la lecture en mode enregistrement
+    if (!isPlaying.value) {
+      // Émettre l'événement de démarrage d'enregistrement AVANT de lancer la lecture
+      window.dispatchEvent(new CustomEvent('midi-recording-start', {
+        detail: { 
+          mode: projectStore.userPreferences.keyboard.recordingMode || 'merge',
+          manualRecord: true // Indiquer que c'est un enregistrement manuel
+        }
+      }))
+      
+      // Démarrer la lecture pour l'enregistrement
+      play()
+    } else {
+      // Si déjà en lecture, juste déclencher l'enregistrement
+      window.dispatchEvent(new CustomEvent('midi-recording-start', {
+        detail: { 
+          mode: projectStore.userPreferences.keyboard.recordingMode || 'merge',
+          manualRecord: true
+        }
+      }))
+    }
+  }
+
   const instance = {
     // État
     isPlaying,
@@ -1726,6 +2082,7 @@ export function useMidiPlayer() {
     pause,
     stop,
     stopAtEnd,
+    record,
     rewind,
     seekTo,
 
@@ -1738,6 +2095,10 @@ export function useMidiPlayer() {
     // Nouvelles fonctions
     maintainCurrentCCState,
     getTempoAtTime,
+
+    // Fonctions d'articulation
+    getArticulationsWithTriggers,
+    triggerArticulationEvents,
 
     // Utilitaires
     formatTime

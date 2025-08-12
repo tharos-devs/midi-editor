@@ -70,7 +70,8 @@ export const useProjectStore = defineStore('project', () => {
       showGrid: true,
       rulers: {
         showSignatureRuler: true,
-        showMarkerRuler: false
+        showMarkerRuler: false,
+        showArticulationRuler: true
       }
     },
     keyboard: {
@@ -87,6 +88,12 @@ export const useProjectStore = defineStore('project', () => {
 
   // Marqueurs et régions
   const markers = ref([])
+
+  // Articulations organisées par piste : { trackId: [articulations...] }
+  const articulationsByTrack = ref({})
+
+  // Types d'articulations configurés (expression map de Cubase)
+  const articulationTypes = ref([])
 
   // Paramètres audio
   const audioSettings = ref({
@@ -131,6 +138,7 @@ export const useProjectStore = defineStore('project', () => {
   const rulersVisibility = computed(() => userPreferences.value.display?.rulers || { showSignatureRuler: true, showMarkerRuler: false })
   const showSignatureRuler = computed(() => userPreferences.value.display?.rulers?.showSignatureRuler ?? true)
   const showMarkerRuler = computed(() => userPreferences.value.display?.rulers?.showMarkerRuler ?? false)
+  const showArticulationRuler = computed(() => userPreferences.value.display?.rulers?.showArticulationRuler ?? true)
 
   // ==========================================
   // WATCHERS POUR DÉTECTER LES CHANGEMENTS
@@ -197,6 +205,9 @@ export const useProjectStore = defineStore('project', () => {
           ticks: 0
         })
       }
+
+      // Les types d'articulation seront configurés via ArticulationEditor
+      console.log('🎵 Projet créé - Types d\'articulation à configurer via ArticulationEditor')
       
       // S'assurer qu'il y a les CC par défaut (CC1, CC7, CC11) pour la piste 0
       if (midiStore.tracks.length > 0) {
@@ -294,6 +305,7 @@ export const useProjectStore = defineStore('project', () => {
         uiState: projectFileManager.getDefaultUIState(),
         userPreferences: projectFileManager.getDefaultUserPreferences(),
         markers: [],
+        articulations: [],
         audioSettings: projectFileManager.getDefaultAudioSettings()
       }
 
@@ -349,6 +361,8 @@ export const useProjectStore = defineStore('project', () => {
         uiState: uiState.value,
         userPreferences: userPreferences.value,
         markers: markers.value,
+        articulationsByTrack: articulationsByTrack.value,
+        articulationTypes: articulationTypes.value,
         audioSettings: audioSettings.value
       }
 
@@ -510,7 +524,7 @@ export const useProjectStore = defineStore('project', () => {
     
     // Synchroniser la sélection entre les stores
     if (projectData.uiState?.selectedItems) {
-      midiStore.selectedTrack = projectData.uiState.selectedItems.trackId || midiStore.selectedTrack
+      midiStore.selectedTrack = (projectData.uiState.selectedItems.trackId !== null && projectData.uiState.selectedItems.trackId !== undefined) ? projectData.uiState.selectedItems.trackId : midiStore.selectedTrack
       if (projectData.uiState.selectedItems.noteIds && projectData.uiState.selectedItems.noteIds.length > 0) {
         midiStore.selectedNote = projectData.uiState.selectedItems.noteIds[0]
       }
@@ -525,6 +539,22 @@ export const useProjectStore = defineStore('project', () => {
     // Charger les marqueurs
     markers.value = projectData.markers || []
     
+    // Charger les articulations par piste
+    if (projectData.articulationsByTrack) {
+      articulationsByTrack.value = projectData.articulationsByTrack
+    } else if (projectData.articulations) {
+      // Migration : convertir les anciennes articulations globales vers la piste par défaut
+      const defaultTrackId = midiStore.tracks[0]?.id || 'track-0'
+      articulationsByTrack.value = {
+        [defaultTrackId]: projectData.articulations || []
+      }
+    } else {
+      articulationsByTrack.value = {}
+    }
+
+    // Charger les types d'articulations
+    articulationTypes.value = projectData.articulationTypes || []
+
     // Charger les paramètres audio
     audioSettings.value = {
       ...projectFileManager.getDefaultAudioSettings(),
@@ -600,6 +630,8 @@ export const useProjectStore = defineStore('project', () => {
     
     // Réinitialiser les autres données
     markers.value = []
+    articulationsByTrack.value = {}
+    articulationTypes.value = []
     audioSettings.value = projectFileManager.getDefaultAudioSettings()
     
     // Réinitialiser l'état
@@ -669,11 +701,15 @@ export const useProjectStore = defineStore('project', () => {
    * Ajoute un marqueur
    */
   function addMarker(time, name, color = '#4ECDC4') {
+    const tempo = 120 // Tempo par défaut
+    const eighthNoteDuration = (60 / tempo) / 2 // Durée d'une croche en secondes
+    
     const marker = {
       id: `marker-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       name: name || `Marqueur ${markers.value.length + 1}`,
       time: time,
-      color: color
+      color: color,
+      duration: eighthNoteDuration // Durée par défaut d'une croche
     }
     
     markers.value.push(marker)
@@ -712,6 +748,131 @@ export const useProjectStore = defineStore('project', () => {
     }
     return false
   }
+
+  /**
+   * Ajoute une articulation à une piste spécifique
+   */
+  function addArticulation(time, name, trackId = null, color = '#4ECDC4') {
+    // Utiliser la piste sélectionnée si aucune piste spécifiée
+    const targetTrackId = (trackId !== null && trackId !== undefined) ? trackId : midiStore.selectedTrack
+    console.log('🎯 addArticulation appelée:', { time, name, trackId, targetTrackId, selectedTrack: midiStore.selectedTrack })
+    
+    if (targetTrackId === null || targetTrackId === undefined) {
+      console.warn('⚠️ Aucune piste spécifiée ou sélectionnée pour ajouter l\'articulation')
+      return null
+    }
+
+    const tempo = 120 // Tempo par défaut
+    const eighthNoteDuration = (60 / tempo) / 2 // Durée d'une croche en secondes
+    
+    // S'assurer que le tableau existe pour cette piste
+    if (!articulationsByTrack.value[targetTrackId]) {
+      articulationsByTrack.value[targetTrackId] = []
+    }
+
+    const trackArticulations = articulationsByTrack.value[targetTrackId]
+    const articulation = {
+      id: `articulation-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      name: name || `Art ${trackArticulations.length + 1}`,
+      time: time,
+      color: color,
+      duration: eighthNoteDuration, // Durée par défaut d'une croche
+      trackId: targetTrackId,
+      typeId: null // UUID du type d'articulation - sera assigné par le dropdown
+    }
+    
+    trackArticulations.push(articulation)
+    trackArticulations.sort((a, b) => a.time - b.time)
+    
+    console.log('🎯 Articulation ajoutée:', articulation)
+    console.log('🎯 Articulations pour piste', targetTrackId + ':', trackArticulations.length)
+    console.log('🎯 État articulationsByTrack:', Object.keys(articulationsByTrack.value))
+    
+    markAsModified()
+    return articulation.id
+  }
+
+  /**
+   * Supprime une articulation
+   */
+  function removeArticulation(articulationId) {
+    for (const trackId in articulationsByTrack.value) {
+      const trackArticulations = articulationsByTrack.value[trackId]
+      const index = trackArticulations.findIndex(a => a.id === articulationId)
+      if (index !== -1) {
+        trackArticulations.splice(index, 1)
+        markAsModified()
+        return true
+      }
+    }
+    return false
+  }
+
+  /**
+   * Met à jour une articulation existante
+   */
+  function updateArticulation(articulationId, updates) {
+    for (const trackId in articulationsByTrack.value) {
+      const trackArticulations = articulationsByTrack.value[trackId]
+      const articulation = trackArticulations.find(a => a.id === articulationId)
+      if (articulation) {
+        Object.assign(articulation, updates)
+        if (updates.time !== undefined) {
+          // Trier à nouveau si le temps a changé
+          trackArticulations.sort((a, b) => a.time - b.time)
+        }
+        markAsModified()
+        return true
+      }
+    }
+    return false
+  }
+
+  /**
+   * Obtient les articulations d'une piste spécifique
+   */
+  function getArticulationsByTrack(trackId) {
+    const result = articulationsByTrack.value[trackId] || []
+    console.log('🎯 getArticulationsByTrack:', trackId, '→', result.length, 'articulations')
+    return result
+  }
+
+  /**
+   * Obtient toutes les articulations avec leurs pistes
+   */
+  function getAllArticulationsWithTracks() {
+    const result = []
+    for (const trackId in articulationsByTrack.value) {
+      const trackArticulations = articulationsByTrack.value[trackId]
+      trackArticulations.forEach(articulation => {
+        result.push({
+          ...articulation,
+          trackId: trackId
+        })
+      })
+    }
+    return result.sort((a, b) => a.time - b.time)
+  }
+
+  /**
+   * Met à jour les types d'articulations (expression map)
+   */
+  function updateArticulationTypes(articulationTypesData) {
+    articulationTypes.value = articulationTypesData || []
+    markAsModified()
+  }
+
+  /**
+   * Obtient les noms des types d'articulations disponibles
+   */
+  function getAvailableArticulationNames() {
+    return articulationTypes.value.map(type => type.name).filter(name => name && name.trim())
+  }
+
+  function getAvailableArticulationTypes() {
+    return articulationTypes.value.filter(type => type.name && type.name.trim())
+  }
+
 
   /**
    * Met à jour les préférences utilisateur
@@ -859,6 +1020,13 @@ export const useProjectStore = defineStore('project', () => {
       .slice(0, 5)
   })
 
+  const recentArticulations = computed(() => {
+    return getAllArticulationsWithTracks()
+      .slice()
+      .sort((a, b) => b.time - a.time)
+      .slice(0, 5)
+  })  
+
   // ==========================================
   // GESTION DES RACCOURCIS CLAVIER
   // ==========================================
@@ -909,6 +1077,8 @@ export const useProjectStore = defineStore('project', () => {
     uiState,
     userPreferences,
     markers,
+    articulationsByTrack,
+    articulationTypes,
     audioSettings,
     isLoaded,
     hasUnsavedChanges,
@@ -923,9 +1093,11 @@ export const useProjectStore = defineStore('project', () => {
     canSaveAs,
     projectInfo,
     recentMarkers,
+    recentArticulations,
     rulersVisibility,
     showSignatureRuler,
     showMarkerRuler,
+    showArticulationRuler,
 
     // Actions principales
     createNewProject,
@@ -944,6 +1116,14 @@ export const useProjectStore = defineStore('project', () => {
     addMarker,
     removeMarker,
     updateMarker,
+    addArticulation,
+    removeArticulation,
+    updateArticulation,
+    getArticulationsByTrack,
+    getAllArticulationsWithTracks,
+    updateArticulationTypes,
+    getAvailableArticulationNames,
+    getAvailableArticulationTypes,
     updateUserPreferences,
     updateProjectMetadata,
     toggleSignatureRuler,

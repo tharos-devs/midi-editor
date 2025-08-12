@@ -368,9 +368,15 @@ watch(() => cursor.pixelPosition.value, (newPosition, oldPosition) => {
   }
 })
 
+// Throttler pour éviter trop d'émissions tempo-change
+let tempoChangeTimeout = null
 watch(() => cursor.currentTempo.value, (newTempo, oldTempo) => {
   if (Math.abs(newTempo - oldTempo) > 0.1) {
-    emit('tempo-change', newTempo)
+    // Throttle les changements de tempo pour éviter surcharge
+    if (tempoChangeTimeout) clearTimeout(tempoChangeTimeout)
+    tempoChangeTimeout = setTimeout(() => {
+      emit('tempo-change', newTempo)
+    }, 100) // Max 10 changements par seconde
   }
 })
 

@@ -3,17 +3,14 @@ import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
-import 'element-plus/theme-chalk/dark/css-vars.css' // Ajout du thème dark
-import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import App from './App.vue'
-import { useSettingsStore } from './stores/settings'
 
 const app = createApp(App)
 const pinia = createPinia()
 
 app.use(pinia)
 app.use(ElementPlus)
-
+/*
 function applyCustomTheme(mode) {
   // Supprimer les anciens liens
   document.querySelectorAll('link[data-theme-custom]').forEach(link => link.remove())
@@ -26,8 +23,9 @@ function applyCustomTheme(mode) {
   link.setAttribute('data-theme-custom', 'true')
   document.head.appendChild(link)
 }
-
+*/
 // Appliquer le thème au démarrage (après app.use(pinia))
+/*
 const settingsStore = useSettingsStore()
 settingsStore.applyTheme()
 applyCustomTheme(settingsStore.theme)
@@ -42,5 +40,5 @@ app.config.globalProperties.$setElementTheme = (mode) => {
 for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
   app.component(key, component)
 }
-
+*/
 app.mount('#app')

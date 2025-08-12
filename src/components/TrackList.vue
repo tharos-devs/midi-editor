@@ -14,19 +14,7 @@
       class="track-instruments-column" 
       :style="{ width: uiStore.trackInstrumentWidth + 'px' }"
     >
-      <div class="track-instruments-header">
-        <h3>Pistes</h3>
-        <div class="header-controls">
-          <el-button
-            :icon="Plus"
-            size="small"
-            type="primary"
-            @click="addNewTrack"
-          >
-            Ajouter
-          </el-button>
-        </div>
-      </div>
+      <TrackToolbar />
 
       <div 
         class="track-instruments-content"
@@ -94,6 +82,7 @@ import { useUIStore } from '@/stores/ui'
 import TrackInfo from './TrackInfo.vue'
 import TrackInstrument from './TrackInstrument.vue'
 import TrackStatusBar from './TrackStatusBar.vue'
+import TrackToolbar from './TrackToolbar.vue'
 import { ElMessage } from 'element-plus'
 
 const midiStore = useMidiStore()
@@ -259,83 +248,6 @@ watch(() => dragState.isDragging, (isDragging) => {
     // console.log(`🏁 Fin du drag & drop (durée: ${dragDuration}ms)`)
   }
 })
-
-// Ajouter une nouvelle piste
-const addNewTrack = async () => {
-  const trackNumber = tracks.value.length + 1
-  const colors = [
-    '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7',
-    '#DDA0DD', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E9',
-    '#F39C12', '#E74C3C', '#9B59B6', '#3498DB', '#2ECC71',
-    '#1ABC9C', '#34495E', '#95A5A6', '#E67E22', '#C0392B'
-  ]
-  
-  try {
-    // Créer une nouvelle piste
-    const newTrack = {
-      id: Date.now(), // ID temporaire basé sur le timestamp
-      name: `Nouvelle Piste ${trackNumber}`,
-      channel: Math.min(trackNumber - 1, 15), // Canal MIDI (0-15)
-      instrument: { name: 'Acoustic Grand Piano', number: 0 },
-      notes: [],
-      controlChanges: {},
-      pitchBends: [],
-      volume: 100,
-      pan: 64,
-      bank: 0,
-      midiOutput: 'default',
-      muted: false,
-      solo: false,
-      color: colors[(trackNumber - 1) % colors.length]
-    }
-    
-    // Ajouter la piste au store
-    midiStore.tracks.push(newTrack)
-    
-    // Sélectionner la nouvelle piste
-    midiStore.selectTrack(newTrack.id)
-    
-    // Forcer la réactivité
-    midiStore.triggerReactivity()
-    
-    ElMessage.success({
-      message: `Piste "${newTrack.name}" créée avec succès`,
-      duration: 2000
-    })
-    
-    // console.log(`✅ Nouvelle piste créée:`, newTrack)
-    
-  } catch (error) {
-    // console.error('❌ Erreur lors de la création de la piste:', error)
-    ElMessage.error({
-      message: 'Erreur lors de la création de la piste',
-      duration: 3000
-    })
-  }
-}
-
-// Fonction utilitaire pour obtenir le nom d'une piste
-const getTrackName = (trackId) => {
-  const track = tracks.value.find(t => t.id === trackId)
-  return track ? track.name : `Piste ${trackId}`
-}
-
-// Debug: surveiller les changements d'ordre des pistes
-if (process.env.NODE_ENV === 'development') {
-  watch(tracks, (newTracks, oldTracks) => {
-    if (oldTracks && newTracks.length === oldTracks.length) {
-      const oldOrder = oldTracks.map(t => t.id).join(',')
-      const newOrder = newTracks.map(t => t.id).join(',')
-      /*
-      if (oldOrder !== newOrder) {
-        // console.log('🔄 Ordre des pistes changé:')
-        // console.log('Ancien:', oldTracks.map((t, i) => `${i + 1}.${t.name}`))
-        // console.log('Nouveau:', newTracks.map((t, i) => `${i + 1}.${t.name}`)
-      }
-      */
-    }
-  }, { deep: true })
-}
 </script>
 
 <style scoped>
@@ -361,28 +273,6 @@ if (process.env.NODE_ENV === 'development') {
   transition: none; /* Suppression de la transition pour éviter l'effet élastique */
 }
 
-.track-instruments-header {
-  padding: 16px;
-  border-bottom: 1px solid var(--border-color);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: var(--lane-bg);
-  color: var(--panel-fg);
-  flex-shrink: 0;
-}
-
-.track-instruments-header h3 {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.header-controls {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
 
 .track-instruments-content {
   flex: 1;

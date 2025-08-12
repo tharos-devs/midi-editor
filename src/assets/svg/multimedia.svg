@@ -1,0 +1,127 @@
+<svg viewBox="0 0 800 400" xmlns="http://www.w3.org/2000/svg">
+  <!-- Play Button -->
+  <g id="play-button" transform="translate(50, 50)">
+    <rect width="60" height="60" fill="none" stroke="#000" stroke-width="2"/>
+    <polygon points="22,18 22,42 42,30" fill="#000"/>
+    <text x="30" y="75" text-anchor="middle" font-family="Arial" font-size="10">PLAY</text>
+  </g>
+
+  <!-- Stop Button -->
+  <g id="stop-button" transform="translate(150, 50)">
+    <rect width="60" height="60" fill="none" stroke="#000" stroke-width="2"/>
+    <rect x="18" y="18" width="24" height="24" fill="#000"/>
+    <text x="30" y="75" text-anchor="middle" font-family="Arial" font-size="10">STOP</text>
+  </g>
+
+  <!-- Record Button -->
+  <g id="record-button" transform="translate(250, 50)">
+    <rect width="60" height="60" fill="none" stroke="#000" stroke-width="2"/>
+    <circle cx="30" cy="30" r="12" fill="#000"/>
+    <text x="30" y="75" text-anchor="middle" font-family="Arial" font-size="10">REC</text>
+  </g>
+
+  <!-- Rewind Button -->
+  <g id="rewind-button" transform="translate(350, 50)">
+    <rect width="60" height="60" fill="none" stroke="#000" stroke-width="2"/>
+    <polygon points="32,18 20,30 32,42" fill="#000"/>
+    <polygon points="42,18 30,30 42,42" fill="#000"/>
+    <text x="30" y="75" text-anchor="middle" font-family="Arial" font-size="10">REW</text>
+  </g>
+
+  <!-- Forward Button -->
+  <g id="forward-button" transform="translate(450, 50)">
+    <rect width="60" height="60" fill="none" stroke="#000" stroke-width="2"/>
+    <polygon points="18,18 30,30 18,42" fill="#000"/>
+    <polygon points="28,18 40,30 28,42" fill="#000"/>
+    <text x="30" y="75" text-anchor="middle" font-family="Arial" font-size="10">FWD</text>
+  </g>
+
+  <!-- Loop Button -->
+  <g id="loop-button" transform="translate(550, 50)">
+    <rect width="60" height="60" fill="none" stroke="#000" stroke-width="2"/>
+    <!-- Demi-cercle du haut avec flèche vers le bas à droite -->
+    <path d="M18,30 Q18,18 30,18 Q42,18 42,30" fill="none" stroke="#000" stroke-width="2"/>
+    <polygon points="42,28 47,33 37,33" fill="#000"/>
+    <!-- Demi-cercle du bas avec flèche vers le haut à gauche -->
+    <path d="M42,30 Q42,42 30,42 Q18,42 18,30" fill="none" stroke="#000" stroke-width="2"/>
+    <polygon points="18,32 13,27 23,27" fill="#000"/>
+    <text x="30" y="75" text-anchor="middle" font-family="Arial" font-size="10">LOOP</text>
+  </g>
+
+  <!-- Beginning Button -->
+  <g id="beginning-button" transform="translate(650, 50)">
+    <rect width="60" height="60" fill="none" stroke="#000" stroke-width="2"/>
+    <rect x="18" y="18" width="6" height="24" fill="#000"/>
+    <polygon points="40,18 24,30 40,42" fill="#000"/>
+    <text x="30" y="75" text-anchor="middle" font-family="Arial" font-size="10">BEGIN</text>
+  </g>
+
+  <!-- End Button -->
+  <g id="end-button" transform="translate(50, 150)">
+    <rect width="60" height="60" fill="none" stroke="#000" stroke-width="2"/>
+    <rect x="36" y="18" width="6" height="24" fill="#000"/>
+    <polygon points="20,18 36,30 20,42" fill="#000"/>
+    <text x="30" y="75" text-anchor="middle" font-family="Arial" font-size="10">END</text>
+  </g>
+
+  <!-- Versions individuelles sans cadre pour utilisation directe -->
+  <text x="400" y="200" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold">Versions sans cadre :</text>
+
+  <!-- Play Icon Only -->
+  <g id="play-icon" transform="translate(50, 230)">
+    <polygon points="10,8 10,32 28,20" fill="#000"/>
+    <text x="19" y="50" text-anchor="middle" font-family="Arial" font-size="8">PLAY</text>
+  </g>
+
+  <!-- Stop Icon Only -->
+  <g id="stop-icon" transform="translate(120, 230)">
+    <rect x="8" y="8" width="24" height="24" fill="#000"/>
+    <text x="20" y="50" text-anchor="middle" font-family="Arial" font-size="8">STOP</text>
+  </g>
+
+  <!-- Record Icon Only -->
+  <g id="record-icon" transform="translate(190, 230)">
+    <circle cx="20" cy="20" r="12" fill="#000"/>
+    <text x="20" y="50" text-anchor="middle" font-family="Arial" font-size="8">REC</text>
+  </g>
+
+  <!-- Rewind Icon Only -->
+  <g id="rewind-icon" transform="translate(260, 230)">
+    <polygon points="22,8 10,20 22,32" fill="#000"/>
+    <polygon points="32,8 20,20 32,32" fill="#000"/>
+    <text x="21" y="50" text-anchor="middle" font-family="Arial" font-size="8">REW</text>
+  </g>
+
+  <!-- Forward Icon Only -->
+  <g id="forward-icon" transform="translate(330, 230)">
+    <polygon points="8,8 20,20 8,32" fill="#000"/>
+    <polygon points="18,8 30,20 18,32" fill="#000"/>
+    <text x="19" y="50" text-anchor="middle" font-family="Arial" font-size="8">FWD</text>
+  </g>
+
+  <!-- Loop Icon Only -->
+  <g id="loop-icon" transform="translate(400, 230)">
+    <!-- Demi-cercle du haut avec flèche vers le bas à droite -->
+    <path d="M8,20 Q8,8 20,8 Q32,8 32,20" fill="none" stroke="#000" stroke-width="2"/>
+    <polygon points="32,18 37,23 27,23" fill="#000"/>
+    <!-- Demi-cercle du bas avec flèche vers le haut à gauche -->
+    <path d="M32,20 Q32,32 20,32 Q8,32 8,20" fill="none" stroke="#000" stroke-width="2"/>
+    <polygon points="8,22 3,17 13,17" fill="#000"/>
+    <text x="20" y="50" text-anchor="middle" font-family="Arial" font-size="8">LOOP</text>
+  </g>
+
+  <!-- Beginning Icon Only -->
+  <g id="beginning-icon" transform="translate(470, 230)">
+    <rect x="8" y="8" width="5" height="24" fill="#000"/>
+    <polygon points="30,8 13,20 30,32" fill="#000"/>
+    <text x="20" y="50" text-anchor="middle" font-family="Arial" font-size="8">BEGIN</text>
+  </g>
+
+  <!-- End Icon Only -->
+  <g id="end-icon" transform="translate(540, 230)">
+    <rect x="27" y="8" width="5" height="24" fill="#000"/>
+    <polygon points="10,8 27,20 10,32" fill="#000"/>
+    <text x="20" y="50" text-anchor="middle" font-family="Arial" font-size="8">END</text>
+  </g>
+
+</svg>

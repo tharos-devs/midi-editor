@@ -1,3 +1,5 @@
+https://claude.ai/share/ae1c7359-a77e-4e48-93f5-3f21f1531854
+
 x déselectionne une signature quand on clic dans un espace vide
 x au chargement de la page, simuler nouvau projet avec creation d'une nouvelle piste et des 3 midi cc lane par defaut CC1, CC7, CC11
 à revoir en mode edition inline, on ne peut pas utilse les touches delete ou backspace pour corriger une saisie
@@ -20,11 +22,9 @@ x les changements de tempo ne sont lus pendant la lecture
 x les textes dans TransportControls bougent pendant la lecture. ne pas toucher à la mise en forme, juste regler le probleme de texte qui bouge
 x quand ajout d'un nouveau midi cc (nouvel onglet), les evenements midi cc de cet onglet ne sont pas envoyés sur le canal et la sortie midi de la piste
 x Mettra la largeur des barres de velocités à 6px au lieu de 8px
-
 x autoscroll toujours a la meme vitesse. voir /logs.txt
 x quand on se positionne sur la timeline avec un clic, l'indicateur de tempo dans TransportControls ne se met pas à jour en fonction du tempo correspondant à la position temporelle
 x dans TempoLane et CCLane le curseur de defilement n'est pas visible
-logs TempoLane a supprimer comme: DEBUG%, %DRAG%, %UPDATE%, TEMPO% 
 x dans TempoLane, avec le mode lasso + drag vertical effet magnetique quand on bouge et qu'on retourne vers la valeur de départ
 x ajouter interploation lineaire de certians midi cc uniquement. voir les pratiques dans les DAW
 x décaler la numerotation des toutes les notes dans PianoKeys: C-1 devient C-2 pour etre en phase avec les pratiques des DAW
@@ -32,31 +32,36 @@ x MarkerRuler: gérer le déplacement des marqueurs avec le drag horizontal
 x Dans MidiNotes, quand le snap est activé, l'indicateur de snap affiche une barre à droite de la note
 x Dans MidiNotes, imprecision de la zone de sélection pour déplacer ou agrandir les notes. souris forme pointer, on frag à droite et ça agrandi les notes, alors que quand souris = pointer c'est pour déplacer
 x Sur TimeLine ajouter 2 drapeaux pour sélectionner la zone de loop. Chaque drapeau peut etre déplace avec un drag horizontal. Faire joue le morceau dans la boucle, quand le bouton loop dans TransportControls est activé
-Dans MidiNote afficher les notes avec du svg pour encore + de performance. 
-Bouton Panic dans Toolbar. réinitialiser tous les midi cc, envoyer des noteoff
-Gérer l'input Midi. Dans TrackInfo ajouter une liste déroulante pour sélectionner le périphérique d'entrée, avec l'option d'écouter sur tous les inputs + Enregistrer en temps réel lors de la lecteur du morceau l'activité midi noteon, noteoff, midicc, dans le store. Raffraichir les lanes quand arret du morceau. si affichage en temps réel encore mieux
-Enregistrer en temps réel lors de la lecteur du morceau l'activité midi noteon, noteoff, midicc, dans le store. Raffraichir les lanes quand arret du morceau. si affichage en temps réel encore mieux
-
-Supprimer et nettoyer le cache de la gestion des notes et des velocités. on utilise plus de cache les calculs
-
-Composant TrackVisibily
-Composant MidiMonitor
+x Gérer l'input Midi. Dans TrackInfo ajouter une liste déroulante pour sélectionner le périphérique d'entrée, avec l'option d'écouter sur tous les inputs + Enregistrer en temps réel lors de la lecteur du morceau l'activité midi noteon, noteoff, midicc, dans le store. Raffraichir les lanes quand arret du morceau. si affichage en temps réel encore mieux
+x Enregistrer en temps réel lors de la lecteur du morceau l'activité midi noteon, noteoff, midicc, dans le store. Raffraichir les lanes quand arret du morceau. si affichage en temps réel encore mieux
 
 ==================
 
-ajoute un indicateur d'activité midi dans TrackInstrument devant le nom de la piste sous forme de puce qui passe au vert quand une activité midi en input est détectée
-
-
-
+x ajoute un indicateur d'activité midi dans TrackInstrument devant le nom de la piste sous forme de puce qui passe au vert quand une activité midi en input est détectée
 x supprime le bouton armer dans TransportControls
-
 x dans TrackInfo et TrackInstrument ajoute un bouton Record 'R' et Monitor 'I' à droite de Solo pour activer ou non l'enregistrement et le monitoring de la piste
-xtoutes les pistes qui ont Record activé écoutent l'input midi pour enregistrer, celle qui ont Monitor activé envoie les events sur l'output en temps réel
-xsi on clique sur Record, ça active aussi le Monitoring
+x toutes les pistes qui ont Record activé écoutent l'input midi pour enregistrer, celle qui ont Monitor activé envoie les events sur l'output en temps réel
+x si on clique sur Record, ça active aussi le Monitoring
+x le mode d'enregistrement replace doit supprimer les events midi entre la position de debut et de fin d'enregistrement
+x dans les cc lane, quand on selectionne une zone et qu'on fait delete, les points sont supprimés mais d'autres apparaissent. l'interpolation doit masquer des cc qui ont été enregistrés. avec la suppression l'interpolation et recalculer et fait apparaitre les points. à faire: supprimer tous les points dans la zone de selection meme ceux qui ne sont pas affichés
+x corrige le mode replace: efface les événements MIDI existants sur la portion temporelle que traverse le curseur et les remplace instantanément par ceux joués. si aucun événement MIDI n’est joué pendant le passage du curseur, les événements existants sur cette portion sont simplement effacés et remplacés par du vide. 
 
-bugs:
-le mode d'enregistrement replace doit supprimer les events midi entre la position de debut et de fin d'enregistrement
-dans les cc lane, quand on selectionne une zone et qu'on fait delete, les points sont supprimés mais d'autres apparaissent. l'interpolation doit masquer des cc qui ont été enregistrés. avec la suppression l'interpolation et recalculer et fait apparaitre les points. à faire: supprimer tous les points dans la zone de selection meme ceux qui ne sont pas affichés
+==================
+j'ai ajouté un bouton record dans TransportControls avec l'appel de la fonction handleRecord. Implementer la fonction Record dans useMidiPlayer, et changer le mode de fonction du du bouton Play pour ne faire que play et pause
+en fonction des variations de tempo et des changements de signatures, la vitesse de defilement n'est pas constante. peut on mettre une vitesse constante pas trop rapide si tempo rapide à 200
 
+toujours de probleme avec le mode replace apres plusieurs passe d'enregistrement. voir /logs.txt
 
-corrige le mode replace: efface les événements MIDI existants sur la portion temporelle que traverse le curseur et les remplace instantanément par ceux joués. si aucun événement MIDI n’est joué pendant le passage du curseur, les événements existants sur cette portion sont simplement effacés et remplacés par du vide. 
+le mode replace est terminé, peux tu finaliser le nettoyage des logs et voir si des optimisations de code peuvent etre faites  
+le mode replace ne marche pas au niveau des notes. implementer EXACTEMENT la meme logique que pour les midi cc    
+quand le mode loop est activé, ralentissement à l'enregistrement et probleme de fluidité
+
+==================
+
+Supprimer et nettoyer le cache de la gestion des notes et des velocités. on utilise plus de cache les calculs
+Dans MidiNote afficher les notes avec du svg pour encore + de performance. 
+Bouton Panic dans Toolbar. réinitialiser tous les midi cc, envoyer des noteoff
+logs TempoLane a supprimer comme: DEBUG%, %DRAG%, %UPDATE%, TEMPO% 
+
+Composant TrackVisibily
+Composant MidiMonitor

@@ -1,10 +1,10 @@
-// composables/useMarkers.js
+// composables/useArticulations.js
 import { computed } from 'vue'
 import { useProjectStore } from '@/stores/project'
 import { useUIStore } from '@/stores/ui'
 import { useMidiStore } from '@/stores/midi'
 
-export function useMarkers() {
+export function useArticulations() {
   const projectStore = useProjectStore()
   const uiStore = useUIStore()
   const midiStore = useMidiStore()
@@ -40,18 +40,22 @@ export function useMarkers() {
     return (ticks / ppq) * (60 / tempo)
   }
 
-  // Calculer les marqueurs avec leurs positions et largeurs en pixels
-  const markersWithPositions = computed(() => {
-    return projectStore.markers.map(marker => {
+  // Calculer les articulations avec leurs positions et largeurs en pixels pour la piste sélectionnée
+  const articulationsWithPositions = computed(() => {
+    const selectedTrackId = midiStore.selectedTrack
+    if (selectedTrackId === null || selectedTrackId === undefined) return []
+
+    const trackArticulations = projectStore.getArticulationsByTrack(selectedTrackId)
+    return trackArticulations.map(articulation => {
       // Durée par défaut d'une croche si pas de durée définie - utiliser le tempo du projet
       const tempo = midiStore.getCurrentTempo || 120
       const eighthNoteDuration = (60 / tempo) / 2
-      const duration = marker.duration || eighthNoteDuration
+      const duration = articulation.duration || eighthNoteDuration
       const pixelWidth = Math.max(8, timeToPixels(duration)) // Largeur minimum de 8px
       
       return {
-        ...marker,
-        pixelPosition: timeToPixels(marker.time),
+        ...articulation,
+        pixelPosition: timeToPixels(articulation.time),
         pixelWidth: pixelWidth
       }
     })
@@ -66,16 +70,19 @@ export function useMarkers() {
   })
 
   // Trouver le marqueur le plus proche d'une position en pixels
-  const getMarkerAtPixel = (pixelX, tolerance = 10) => {
-    return markersWithPositions.value.find(marker => 
-      Math.abs(marker.pixelPosition - pixelX) <= tolerance
+  const getArticulationAtPixel = (pixelX, tolerance = 10) => {
+    return articulationsWithPositions.value.find(articulation => 
+      Math.abs(articulation.pixelPosition - pixelX) <= tolerance
     )
   }
 
   return {
     // État
-    markers: computed(() => projectStore.markers),
-    markersWithPositions,
+    articulations: computed(() => {
+      const selectedTrackId = midiStore.selectedTrack
+      return (selectedTrackId !== null && selectedTrackId !== undefined) ? projectStore.getArticulationsByTrack(selectedTrackId) : []
+    }),
+    articulationsWithPositions,
     totalWidth,
     
     // Conversions
@@ -83,11 +90,15 @@ export function useMarkers() {
     pixelsToTime,
     
     // Utilitaires
-    getMarkerAtPixel,
+    getArticulationAtPixel,
     
-    // Actions du store
-    addMarker: projectStore.addMarker,
-    removeMarker: projectStore.removeMarker,
-    updateMarker: projectStore.updateMarker
+    // Actions du store (wrapper pour inclure la piste)
+    addArticulation: (time, name, color) => {
+      const result = projectStore.addArticulation(time, name, midiStore.selectedTrack, color)
+      console.log('🎯 useArticulations addArticulation:', { time, name, trackId: midiStore.selectedTrack, color, result })
+      return result
+    },
+    removeArticulation: projectStore.removeArticulation,
+    updateArticulation: projectStore.updateArticulation
   }
 }

@@ -38,7 +38,15 @@ export const useMidiStore = defineStore('midi', () => {
     tracksVersion.value++
     ccVersion.value++
 
-    // Forcer Vue à détecter le changement avec une nouvelle référence
+    // OPTIMISATION: Éviter les recopies coûteuses pendant l'enregistrement MIDI
+    if (reason === 'midi-recording-cc') {
+      // Pendant l'enregistrement CC, seulement incrémenter les versions
+      // Les composants utilisent des caches optimisés, pas besoin de recopie
+      console.log('🚀 PERF: triggerReactivity throttlé pour recording CC')
+      return
+    }
+
+    // Forcer Vue à détecter le changement avec une nouvelle référence (seulement si nécessaire)
     notes.value = [...notes.value]
     tracks.value = tracks.value.map(track => ({ ...track }))  // Shallow copy des tracks
     midiCC.value = [...midiCC.value]
@@ -584,24 +592,34 @@ export const useMidiStore = defineStore('midi', () => {
 
   // ✅ ACTIONS DE MODIFICATION DES CONTROL CHANGES AJOUTÉES
 
-  function addControlChange(ccData) {
+  function addControlChange(ccData, context = 'manual') {
+    // ID plus unique pour éviter les doublons dans l'enregistrement rapide
+    const timestamp = Date.now()
+    const microTime = Math.floor(performance.now() * 1000) // microsecondes
+    const random = Math.floor(Math.random() * 1000000)
+    const uniqueId = `cc-${timestamp}-${microTime}-${random}`
+    
     const newCC = {
-      id: Date.now() + Math.random(),
+      id: uniqueId,
       ...ccData,
-      lastModified: Date.now()
+      lastModified: timestamp
     }
 
     midiCC.value.push(newCC)
     
-    // console.log(`➕ Control Change ajouté:`, newCC)
-    triggerReactivity(`add-cc-${newCC.id}`)
+    // OPTIMISATION: Utiliser triggerReactivity optimisé pendant l'enregistrement
+    if (context === 'recording') {
+      triggerReactivity('midi-recording-cc')
+    } else {
+      triggerReactivity(`add-cc-${newCC.id}`)
+    }
     
     return newCC.id
   }
 
   // Alias pour compatibilité avec CCLane
-  function addCC(ccData) {
-    return addControlChange(ccData)
+  function addCC(ccData, context = 'manual') {
+    return addControlChange(ccData, context)
   }
 
   async function updateControlChange(ccId, updates) {

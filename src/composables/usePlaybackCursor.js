@@ -16,6 +16,10 @@ export function usePlaybackCursor() {
   const isPaused = ref(false)
   const currentTempo = ref(120)
   
+  // CACHE PERFORMANCE pour timeToPixelsWithSignatures
+  const positionCache = ref(new Map())
+  const lastCacheClean = ref(0)
+  
   // CORRECTION MAJEURE: Timer interne pour le défilement autonome
   const internalTimer = ref(null)
   const lastUpdateTime = ref(0)
@@ -176,13 +180,43 @@ export function usePlaybackCursor() {
       
       // CURSEUR 100% PASSIF - utilise les fonctions métier existantes
       
-      // 1. PRIORITÉ: timeToPixelsWithSignatures (gère tempo + signatures)
+      // 1. PRIORITÉ: timeToPixelsWithSignatures avec CACHE DE PERFORMANCE
       if (typeof timeToPixelsWithSignatures === 'function') {
+        // Cache avec précision de 0.01s pour éviter les calculs répétés
+        const cacheKey = Math.round(timeValue * 100) / 100
+        
+        if (positionCache.value.has(cacheKey)) {
+          return Math.max(0, positionCache.value.get(cacheKey))
+        }
+        
+        const perfStart = performance.now()
         const position = timeToPixelsWithSignatures(timeValue)
+        const perfEnd = performance.now()
+        const duration = perfEnd - perfStart
+        
+        // Stocker dans le cache
+        positionCache.value.set(cacheKey, position)
+        
+        // Nettoyer le cache périodiquement pour éviter la fuite mémoire
+        const now = Date.now()
+        if (now - lastCacheClean.value > 5000) { // Toutes les 5s
+          if (positionCache.value.size > 1000) {
+            positionCache.value.clear()
+            console.log('🧹 CURSEUR: Cache position nettoyé')
+          }
+          lastCacheClean.value = now
+        }
+        
+        // Debug des performances
+        if (duration > 1) {
+          console.warn(`⚡ PERF CURSEUR timeToPixels: ${duration.toFixed(1)}ms pour ${timeValue.toFixed(2)}s`)
+        }
+        
         // Debug occasionnel pour vérifier quelle fonction est utilisée
         if (Math.floor(timeValue * 10) % 200 === 0 && timeValue > 0) {
-          console.log('✅ CURSEUR utilise timeToPixelsWithSignatures:', timeValue.toFixed(2) + 's → ' + position.toFixed(1) + 'px')
+          console.log(`✅ CURSEUR: ${timeValue.toFixed(2)}s → ${position.toFixed(1)}px (cache:${positionCache.value.size})`)
         }
+        
         return Math.max(0, position)
       }
       

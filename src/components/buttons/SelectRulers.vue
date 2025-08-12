@@ -1,7 +1,9 @@
 <template>
-  <div class="selectrulers-container" :style="{ marginTop: '10px', marginLeft: Number(uiStore.pianoKeysWidth - 35) + 'px' }">
+  <div class="selectrulers-container">
     <el-dropdown trigger="click" @command="handleSelectCommand">
-      <el-icon size="large" class="icon-ruler"><List /></el-icon>
+      <el-button style="height: 40px;">
+        <el-icon size="large" ><List /></el-icon>
+      </el-button>
       <template #dropdown>
         <el-dropdown-menu>
           <el-dropdown-item 
@@ -34,7 +36,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted } from 'vue'
+import { computed } from 'vue'
 import { List, Check, Refrigerator, LocationInformation } from '@element-plus/icons-vue'
 import { useUIStore } from '@/stores/ui'
 import { useProjectStore } from '@/stores/project'
@@ -43,25 +45,11 @@ const uiStore = useUIStore()
 const projectStore = useProjectStore()
 
 function handleSelectCommand(val) {
-  console.log('🎯 SelectRulers: Clic sur', val)
-  console.log('🎯 projectStore disponible:', !!projectStore)
-  console.log('🎯 État avant:', {
-    showSignature: projectStore.showSignatureRuler,
-    showMarker: projectStore.showMarkerRuler
-  })
-  
   if (val === 'signatures') {
-    console.log('🎼 Toggle Signature Ruler')
     projectStore.toggleSignatureRuler()
   } else if (val === 'marker') {
-    console.log('📍 Toggle Marker Ruler')
     projectStore.toggleMarkerRuler()
   }
-  
-  console.log('🎯 État après:', {
-    showSignature: projectStore.showSignatureRuler,
-    showMarker: projectStore.showMarkerRuler
-  })
 }
 
 // Computed pour les options sélectionnées basé sur le store
@@ -69,9 +57,7 @@ const selectedOptions = computed(() => {
   const selected = []
   const showSig = projectStore.showSignatureRuler
   const showMark = projectStore.showMarkerRuler
-  
-  console.log('🔍 SelectRulers computed:', { showSig, showMark })
-  
+
   if (showSig) {
     selected.push('signatures')
   }
@@ -79,7 +65,6 @@ const selectedOptions = computed(() => {
     selected.push('marker')
   }
   
-  console.log('🔍 Selected options:', selected)
   return selected
 })
 
@@ -95,32 +80,14 @@ const options = [
     icon: Refrigerator
   }
 ]
-
-onMounted(() => {
-  console.log('🚀 SelectRulers monté')
-  console.log('🚀 projectStore:', projectStore)
-  console.log('🚀 showSignatureRuler exists:', 'showSignatureRuler' in projectStore)
-  console.log('🚀 toggleSignatureRuler exists:', 'toggleSignatureRuler' in projectStore)
-  console.log('🚀 Valeurs initiales:', {
-    showSignature: projectStore.showSignatureRuler,
-    showMarker: projectStore.showMarkerRuler
-  })
-})
 </script>
 
 <style scoped>
-
 .dropdown-item-with-check {
   display: grid;
   grid-template-columns: 25px 20px 1fr;
   align-items: left;
   width: 100%;
-}
-.icon-ruler {
-  margin: 3px;
-}
-.icon-ruler:hover {
-  opacity: 0.7;
 }
 .label-column {
   margin-left: 3px;

@@ -31,7 +31,7 @@ export function useMidiRecording() {
   // Throttling pour les événements de mise à jour temps réel
   let lastCCUpdateEvent = 0
   let lastCCReactivity = 0
-  const CC_UPDATE_THROTTLE = 50 // Limiter à 20 FPS pour éviter la surcharge
+  const CC_UPDATE_THROTTLE = 50 // 20 FPS - réduire la fréquence d'événements
   const CC_REACTIVITY_THROTTLE = 100 // Limiter les triggerReactivity à 10 FPS
 
   // ===== ÉTAT DYNAMIQUE DE SESSION =====
@@ -85,11 +85,10 @@ export function useMidiRecording() {
     // 3. Nettoyer les variables globales
     cleanupGlobalState()
     
-    // 4. Incrémenter la session pour invalider les anciens listeners
-    recordingSessionId++
-    
-    // 5. Nettoyer les listeners MIDI
+    // 4. Nettoyer les listeners MIDI
     clearMidiInputListeners()
+    
+    // Note: recordingSessionId sera incrémenté dans startRecording()
   }
 
   // Fonctions utilitaires
@@ -292,24 +291,18 @@ export function useMidiRecording() {
   }
 
   function handleControlChange(trackId, channel, controller, value, recordTime, timestamp) {
-    if (recordingBlocked.value || !isRecording.value) return
+    const perfStart = performance.now()
+    
+    if (recordingBlocked.value || !isRecording.value) {
+      return
+    }
     
     const ccKey = `${trackId}-${channel}-${controller}`
     
-    // REPLACE MODE: Create or maintain replace zone
-    if (projectStore.userPreferences.keyboard.recordingMode === 'replace') {
-      if (!activeReplaceZones.value.has(ccKey)) {
-        activeReplaceZones.value.set(ccKey, {
-          startTime: recordTime,
-          trackId: trackId,
-          type: 'cc',
-          eventKey: ccKey,
-          controller: controller,
-          channel: channel
-        })
-      }
-      // Clear existing CC at this time point (small window)
-      clearEventsInTimeRange(trackId, recordTime - 0.02, recordTime + 0.02, 'cc', { controller, channel })
+    // REPLACE MODE DÉSACTIVÉ: Cause trop de problèmes de performance
+    // Mode merge uniquement pendant l'enregistrement pour performance maximale
+    if (false && projectStore.userPreferences.keyboard.recordingMode === 'replace') {
+      // Code replace désactivé temporairement
     }
     
     // Marquer les événements CC reçus pour le tracking
@@ -320,14 +313,14 @@ export function useMidiRecording() {
       window.eventTrackers?.set(trackId, eventTracker)
     }
     
-    // Add new CC event
-    midiStore.addCC({
+    // Add new CC event OPTIMISÉ POUR L'ENREGISTREMENT
+    const newCCId = midiStore.addCC({
       trackId: trackId,
       controller: controller.toString(),
       time: recordTime,
       value: value,
       channel: channel
-    })
+    }, 'recording') // Paramètre pour indiquer le contexte d'enregistrement
 
     recordedEvents.value.push({
       type: 'cc',
@@ -348,6 +341,22 @@ export function useMidiRecording() {
       window.dispatchEvent(new CustomEvent('midi-cc-updated', {
         detail: { controller, value, recordTime, trackId }
       }))
+    }
+    
+    // PROFILING AVANCÉ: Mesurer tous les temps
+    const perfEnd = performance.now()
+    const duration = perfEnd - perfStart
+    
+    // Compter le nombre total de CC pour correlation avec performance
+    const totalCCCount = midiStore.midiCC.length
+    
+    if (duration > 2) { // Seuil abaissé pour plus de détails
+      console.warn(`⚡ PERF CC${controller}: ${duration.toFixed(1)}ms (${totalCCCount} CC total) - LENT!`)
+    }
+    
+    // Log périodique pour tracker la dégradation
+    if (totalCCCount % 200 === 0) {
+      console.log(`📈 PERF TREND CC${controller}: ${duration.toFixed(1)}ms @ ${totalCCCount} CC total`)
     }
   }
 
@@ -458,7 +467,7 @@ export function useMidiRecording() {
   }
 
 
-  // SIMPLIFIED: Clear events in time range for replace mode
+  // OPTIMISÉ: Clear events in time range - éviter le filtrage complet du tableau
   function clearEventsInTimeRange(trackId, fromTime, toTime, eventType = 'all', params = {}) {
     if (fromTime >= toTime) return
     
@@ -478,18 +487,40 @@ export function useMidiRecording() {
       updated = updated || (midiStore.notes.length !== originalLength)
     }
     
-    // Clear CC if specified or all
+    // OPTIMISATION CC: Utiliser findIndex + splice au lieu de filter complet
     if (eventType === 'all' || eventType === 'cc') {
-      const originalLength = midiStore.midiCC.length
-      midiStore.midiCC = midiStore.midiCC.filter(cc => {
-        if (parseInt(cc.trackId) !== trackId) return true
-        if (params.controller !== undefined && parseInt(cc.controller) !== params.controller) return true
-        if (params.channel !== undefined && cc.channel !== params.channel) return true
+      const perfStart = performance.now()
+      let removedCount = 0
+      
+      // SOLUTION OPTIMISÉE: Parcours inverse pour éviter les problèmes d'index lors des suppressions
+      for (let i = midiStore.midiCC.length - 1; i >= 0; i--) {
+        const cc = midiStore.midiCC[i]
+        
+        if (parseInt(cc.trackId) !== trackId) continue
+        if (params.controller !== undefined && parseInt(cc.controller) !== params.controller) continue
+        if (params.channel !== undefined && cc.channel !== params.channel) continue
         
         const ccTime = parseFloat(cc.time)
-        return ccTime < fromTime || ccTime >= toTime
-      })
-      updated = updated || (midiStore.midiCC.length !== originalLength)
+        
+        // Si le CC est dans la zone de temps à supprimer
+        if (ccTime >= fromTime && ccTime < toTime) {
+          midiStore.midiCC.splice(i, 1)
+          removedCount++
+        }
+      }
+      
+      const perfEnd = performance.now()
+      const duration = perfEnd - perfStart
+      
+      if (removedCount > 0) {
+        updated = true
+        console.log(`🗑️ REPLACE MODE: Supprimé ${removedCount} CC en ${duration.toFixed(1)}ms (${fromTime.toFixed(3)}s-${toTime.toFixed(3)}s)`)
+      }
+      
+      // Log performance si lent
+      if (duration > 1) {
+        console.warn(`⚡ PERF clearEventsInTimeRange: ${duration.toFixed(1)}ms pour ${midiStore.midiCC.length} CC - OPTIMIZE!`)
+      }
     }
     
     if (updated) {
@@ -514,24 +545,26 @@ export function useMidiRecording() {
       return false
     }
     
-    console.log('🟢 RECORD START: Démarrage session', recordingSessionId + 1)
+    // 1. Incrémenter AVANT la réinitialisation pour nouvelle session
+    recordingSessionId++
+    console.log('🟢 RECORD START: Démarrage session', recordingSessionId)
     
-    // 1. RÉINITIALISATION COMPLÈTE - Toujours partir du même état
+    // 2. RÉINITIALISATION COMPLÈTE - Toujours partir du même état
     resetRecordingState()
     
-    // 2. RÉINITIALISER LES THROTTLES POUR PERFORMANCE OPTIMALE
+    // 3. RÉINITIALISER LES THROTTLES POUR PERFORMANCE OPTIMALE
     lastCCUpdateEvent = 0
     lastCCReactivity = 0
     
-    // 3. INITIALISATION DE L'ÉTAT D'ENREGISTREMENT
+    // 4. INITIALISATION DE L'ÉTAT D'ENREGISTREMENT
     recordingBlocked.value = false
     isRecording.value = true
     recordingTrackId.value = trackId
     
-    // 4. INITIALISATION DES VARIABLES GLOBALES
+    // 5. INITIALISATION DES VARIABLES GLOBALES
     initializeGlobalState()
     
-    // 5. CONFIGURATION DES LISTENERS MIDI
+    // 6. CONFIGURATION DES LISTENERS MIDI
     setupMidiInputListening()
     
     console.log('🟢 RECORD START: État initialisé', { 
@@ -544,27 +577,36 @@ export function useMidiRecording() {
     return true
   }
 
-  // SIMPLIFIED: Finalize replace zones
+  // Finalize replace zones - CORRECT: sauvegarder les nouveaux CC avant suppression
   function finalizeReplaceZones() {
     if (projectStore.userPreferences.keyboard.recordingMode !== 'replace') return
     if (activeReplaceZones.value.size === 0) return
     
     const stopTime = window.currentPlaybackTime || 0
     
-    // Process CC zones (extend to stop time)
+    // Process CC zones (extend to stop time) - NETTOYAGE EN BLOC OPTIMISÉ
     activeReplaceZones.value.forEach((zone, key) => {
       if (zone.type === 'cc') {
-        clearEventsInTimeRange(
-          zone.trackId, 
-          zone.startTime, 
-          stopTime, 
-          'cc', 
-          { controller: zone.controller, channel: zone.channel }
-        )
+        const perfStart = performance.now()
+        
+        // OPTIMISATION: Suppression en bloc des anciens CC dans la zone de temps
+        clearEventsInTimeRange(zone.trackId, zone.startTime, stopTime, 'cc', { 
+          controller: zone.controller, 
+          channel: zone.channel 
+        })
+        
+        const perfEnd = performance.now()
+        console.log(`🔧 Finalisation zone CC${zone.controller}: ${zone.startTime.toFixed(3)}s à ${stopTime.toFixed(3)}s - nettoyé en ${(perfEnd - perfStart).toFixed(1)}ms`)
       }
     })
     
     activeReplaceZones.value.clear()
+    
+    // FORCER la mise à jour de l'interface après finalizeReplaceZones
+    console.log('🔄 Émission midi-cc-updated FORCÉ après replace')
+    window.dispatchEvent(new CustomEvent('midi-cc-updated', {
+      detail: { forceAll: true, eventCount: midiStore.midiCC.length }
+    }))
   }
 
   // ARRÊTER L'ENREGISTREMENT et restaurer état monitoring

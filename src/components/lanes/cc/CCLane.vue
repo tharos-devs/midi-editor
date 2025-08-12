@@ -20,10 +20,12 @@
     </div>
 
     <div class="cc-curve-container" 
+         ref="ccLaneRef"
+         :class="{ 'brush-mode': isBrushing }"
          @dblclick="addPoint" 
-         @mousedown="startLassoOrDrag"
-         @mousemove="updateLasso"
-         @mouseup="endLassoOrDrag">
+         @mousedown="handleContainerMouseDown"
+         @mousemove="isBrushing ? onBrushMove : updateLasso"
+         @mouseup="isBrushing ? stopBrush : endLassoOrDrag">
 
       <!-- Rectangle de sélection lasso -->
       <div v-if="isLassoMode" class="lasso-selection" :style="lassoStyle"></div>
@@ -31,7 +33,7 @@
       <!-- Points de contrôle CC - Optimisés avec suppression lignes droites -->
       <div
         v-for="point in ccPointsDisplayed"
-        :key="`cc-${ccNumber}-${point.id}`"
+        :key="point.id"
         class="cc-point"
         :style="ccPointStyle(point)"
         @mousedown="startDrag(point, $event)"
@@ -43,11 +45,11 @@
       ></div>
 
 
-      <!-- Courbe CC optimisée avec polyline -->
+      <!-- Courbe CC simple (max 100 derniers points) -->
       <svg class="cc-curve-svg" :viewBox="`0 0 ${totalWidth} 100`" preserveAspectRatio="none">
         <polyline
-          v-if="ccPolylinePoints"
-          :points="ccPolylinePoints"
+          v-if="currentSegmentPoints"
+          :points="currentSegmentPoints"
           fill="none"
           :stroke="ccColor"
           stroke-width="2"
@@ -83,9 +85,11 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick, inject } from 'vue'
 import { useUIStore } from '@/stores/ui'
 import { useMidiStore } from '@/stores/midi'
+import { useProjectStore } from '@/stores/project'
+import { usePlaybackCursor } from '@/composables/usePlaybackCursor'
 import { useTimeSignature } from '@/composables/useTimeSignature'
 import { useSnapLogic } from '@/composables/useSnapLogic'
 import GridRenderer from '@/components/GridRenderer.vue'
@@ -112,12 +116,22 @@ const emit = defineEmits(['point-selected'])
 
 const uiStore = useUIStore()
 const midiStore = useMidiStore()
+const projectStore = useProjectStore()
+const playbackCursor = usePlaybackCursor()
 const timeSignature = useTimeSignature()
 const { snapTimeToGrid } = useSnapLogic()
+
+// Accès aux zones de remplacement depuis l'enregistrement MIDI
+const activeReplaceZones = ref(window.activeReplaceZones || new Map())
 const selectedPoint = ref(null)
 const selectedPoints = ref([]) // Points sélectionnés en mode lasso
 const isDragging = ref(false)
 const dragTempPoints = ref(null) // Points temporaires pendant le drag
+
+// Refs pour le mode brush
+const ccLaneRef = ref(null)
+const isBrushing = ref(false)
+const isCommandPressed = ref(false)
 
 // Variables pour le mode lasso
 const isLassoMode = ref(false)
@@ -158,76 +172,143 @@ const lassoStyle = computed(() => {
 // Identifiant unique pour cette instance de CCLane  
 const instanceId = `CCLane-${props.ccNumber}-${Math.random().toString(36).substring(2, 11)}`
 
-const ccPoints = computed(() => {
-  if (midiStore.selectedTrack === null || midiStore.selectedTrack === undefined) return []
+// FENÊTRE GLISSANTE VRAIMENT DÉCOUPLÉE - Cache rotatif de 50 points maximum
+const WINDOW_SIZE = 50
+const rotatingCache = ref({
+  points: [], // Buffer rotatif de max 50 points
+  isActive: false,
+  lastKnownStoreSize: 0
+})
+
+// CACHE AUTO-ALIMENTÉ - OPTIMISÉ POUR TEMPS RÉEL !
+const addPointToCache = (newPoint) => {
+  const point = {
+    id: String(newPoint.id),
+    time: parseFloat(newPoint.time) || 0,
+    value: parseInt(newPoint.value) || 0,
+    trackId: newPoint.trackId
+  }
+  
+  const cache = rotatingCache.value.points
+  
+  // EN TEMPS RÉEL: Les points arrivent chronologiquement → ajout simple à la fin
+  cache.push(point)
+  
+  // Maintenir la taille du cache à 50 max (fenêtre glissante)
+  if (cache.length > WINDOW_SIZE) {
+    cache.shift() // Supprimer le plus ancien
+  }
+  
+  console.log(`📥 CACHE ADD CC${props.ccNumber}: +1 point → ${cache.length}/${WINDOW_SIZE} points`)
+  
+  // Debug rotation seulement quand le cache est plein
+  if (cache.length >= WINDOW_SIZE) {
+    const firstPoint = cache[0]
+    const lastPoint = cache[cache.length - 1]
+    console.log(`🔄 ROTATION CC${props.ccNumber}: Premier=${firstPoint?.time?.toFixed(3)}s Dernier=${lastPoint?.time?.toFixed(3)}s`)
+  }
+}
+
+// FONCTION SIMPLIFIÉE pour recalcul initial seulement
+const updateSlidingWindow = () => {
+  console.log(`🚀 TOP updateSlidingWindow CC${props.ccNumber} - RECALCUL INITIAL SEULEMENT`)
+  
+  if (midiStore.selectedTrack === null) {
+    rotatingCache.value.points = []
+    rotatingCache.value.lastKnownStoreSize = 0
+    resetSVGIncremental() // RESET SVG quand pas de piste
+    console.log(`❌ updateSlidingWindow CC${props.ccNumber} - PAS DE PISTE SÉLECTIONNÉE`)
+    return
+  }
   
   const selectedTrackId = parseInt(midiStore.selectedTrack)
+  const ccController = parseInt(props.ccNumber)
   
-  const trackCC = midiStore.midiCC.filter(cc => {
+  // ACCÈS AU STORE: Seulement pour le chargement initial
+  const storeSnapshot = [...midiStore.midiCC]
+  const trackCC = storeSnapshot.filter(cc => {
     const ccTrackId = parseInt(cc.trackId)
-    const ccController = parseInt(cc.controller) || parseInt(cc.number) || 0
-    const matches = ccTrackId === selectedTrackId && ccController === parseInt(props.ccNumber)
-    
-    // Debug désactivé pour performance
-    
-    return matches
+    const ccControllerNum = parseInt(cc.controller) || parseInt(cc.number) || 0
+    return ccTrackId === selectedTrackId && ccControllerNum === ccController
   })
   
-  const points = trackCC.map(cc => ({
-    id: cc.id,
+  const allPoints = trackCC.map(cc => ({
+    id: String(cc.id),
     time: parseFloat(cc.time) || 0,
     value: parseInt(cc.value) || 0,
-    trackId: cc.trackId,
-    lastModified: cc.lastModified
+    trackId: cc.trackId
   })).sort((a, b) => a.time - b.time)
   
-  // Debug désactivé
+  // INITIALISER le cache avec les 50 derniers
+  rotatingCache.value.points = allPoints.length > WINDOW_SIZE ? 
+    allPoints.slice(-WINDOW_SIZE) : allPoints
   
-  return points
+  console.log(`🪟 CACHE INITIAL CC${props.ccNumber}: ${allPoints.length} en store → ${rotatingCache.value.points.length} en cache`)
+  
+  // RESET SVG INCRÉMENTAL pour recommencer proprement
+  resetSVGIncremental()
+  
+  console.log(`✅ FIN updateSlidingWindow CC${props.ccNumber} - RECALCUL INITIAL TERMINÉ`)
+}
+
+// Points pour le rendu - STATIQUE, pas de computed réactif
+const ccPoints = computed(() => {
+  return rotatingCache.value.points
 })
 
 
 
-// Points optimisés : supprimer les points redondants pour les lignes droites
-const ccPointsOptimized = computed(() => {
-  const points = ccPoints.value
-  if (points.length <= 2) return points
-
-  // Optimisation: supprimer les points qui forment des lignes droites
-  const optimizedPoints = [points[0]] // Toujours garder le premier point
+// Points affichés - TOUTE LA COURBE, pas seulement la fenêtre glissante
+const ccPointsDisplayed = computed(() => {
+  let points = []
   
-  for (let i = 1; i < points.length - 1; i++) {
-    const prevPoint = points[i - 1]
-    const currentPoint = points[i]
-    const nextPoint = points[i + 1]
+  // MODE DRAG: Utiliser les points temporaires
+  if (isDragging.value && dragTempPoints.value) {
+    points = dragTempPoints.value
+  } else {
+    // MODE NORMAL: Utiliser TOUS les points du store (comme la courbe SVG)
+    if (midiStore.selectedTrack === null) {
+      return []
+    }
     
-    // Calculer si les 3 points forment une ligne droite
-    const slope1 = (currentPoint.value - prevPoint.value) / (currentPoint.time - prevPoint.time)
-    const slope2 = (nextPoint.value - currentPoint.value) / (nextPoint.time - currentPoint.time)
+    const selectedTrackId = parseInt(midiStore.selectedTrack)
+    const ccController = parseInt(props.ccNumber)
     
-    // Si les pentes sont différentes ou si c'est un point important, le garder
-    if (Math.abs(slope1 - slope2) > 0.01 || currentPoint.value === 0 || currentPoint.value === 127) {
-      optimizedPoints.push(currentPoint)
+    // MÊME LOGIQUE que updateSVGCurve pour cohérence
+    points = midiStore.midiCC
+      .filter(cc => {
+        const ccTrackId = parseInt(cc.trackId)
+        const ccControllerNum = parseInt(cc.controller || cc.number)
+        return ccTrackId === selectedTrackId && ccControllerNum === ccController
+      })
+      .map(cc => ({
+        id: String(cc.id),
+        time: parseFloat(cc.time) || 0,
+        value: parseInt(cc.value) || 0,
+        trackId: cc.trackId
+      }))
+      .sort((a, b) => a.time - b.time)
+  }
+  
+  // DÉDOUBLONNER par ID pour éviter l'erreur "Duplicate keys"
+  const uniquePoints = []
+  const seenIds = new Set()
+  let duplicatesFound = 0
+  
+  for (const point of points) {
+    if (!seenIds.has(point.id)) {
+      seenIds.add(point.id)
+      uniquePoints.push(point)
+    } else {
+      duplicatesFound++
     }
   }
   
-  // Toujours garder le dernier point
-  if (points.length > 1) {
-    optimizedPoints.push(points[points.length - 1])
+  if (duplicatesFound > 0) {
+    console.warn(`⚠️ CC${props.ccNumber} DOUBLONS DÉTECTÉS: ${duplicatesFound} points dupliqués supprimés`)
   }
   
-  return optimizedPoints
-})
-
-// Points affichés : logique simplifiée et claire
-const ccPointsDisplayed = computed(() => {
-  // MODE DRAG: Utiliser les points temporaires
-  if (isDragging.value && dragTempPoints.value) {
-    return dragTempPoints.value.sort((a, b) => a.time - b.time)
-  }
-  
-  // MODE NORMAL: Utiliser les points optimisés du store
-  return ccPointsOptimized.value
+  return uniquePoints
 })
 
 const totalWidth = computed(() => {
@@ -235,28 +316,166 @@ const totalWidth = computed(() => {
 })
 
 const ccPointStyle = (point) => {
+  // Calcul direct simple - pas de cache compliqué
   const pixelX = timeSignature.timeToPixelsWithSignatures(point.time)
+  const bottomPercent = (point.value / 127) * 100
+  
   const adjustedPosition = Math.round(pixelX) - 1
-    
+  
   return {
     left: adjustedPosition + 'px',
-    bottom: (point.value / 127) * 100 + '%'
+    bottom: bottomPercent + '%',
+    position: 'absolute'
   }
 }
 
-// Génération optimisée de la polyline pour performance maximale
-const ccPolylinePoints = computed(() => {
-  const displayedPoints = ccPointsDisplayed.value
-  if (displayedPoints.length < 2) return null
+// SUPPRIMÉ - remplacé par memoizedPointsOptimized
+
+// SYSTÈME DE DESSIN INCRÉMENTAL - Segments fixes + segment en cours
+const svgSegments = ref([]) // Segments terminés (fixes)
+const currentSegmentPoints = ref('') // Segment en cours (temps réel)
+let currentSegmentBuffer = [] // Buffer pour le segment en cours
+let lastRenderedPointCount = 0 // Nombre de points déjà rendus
+
+// DESSIN INCRÉMENTAL: Ajouter seulement les nouveaux points
+const updateSVGIncremental = () => {
+  if (midiStore.selectedTrack === null) {
+    svgSegments.value = []
+    currentSegmentPoints.value = ''
+    currentSegmentBuffer = []
+    lastRenderedPointCount = 0
+    return
+  }
   
-  const points = displayedPoints.map(point => {
-    const x = timeSignature.timeToPixelsWithSignatures(point.time)
-    const y = 100 - (point.value / 127) * 100
-    return `${x.toFixed(1)},${y.toFixed(1)}`
-  }).join(' ')
+  const selectedTrackId = parseInt(midiStore.selectedTrack)
+  const allPoints = midiStore.midiCC
+    .filter(cc => {
+      const ccTrackId = parseInt(cc.trackId)
+      const ccController = parseInt(cc.controller || cc.number)
+      return ccTrackId === selectedTrackId && ccController === parseInt(props.ccNumber)
+    })
+    .sort((a, b) => parseFloat(a.time) - parseFloat(b.time))
   
-  return points
-})
+  if (allPoints.length < 2) {
+    svgSegments.value = []
+    currentSegmentPoints.value = ''
+    currentSegmentBuffer = []
+    lastRenderedPointCount = 0
+    return
+  }
+  
+  console.log(`🎨 INCRÉMENTAL CC${props.ccNumber}: ${allPoints.length} total, ${lastRenderedPointCount} déjà rendus`)
+  
+  // NOUVEAUX POINTS: Seulement ceux pas encore rendus
+  const newPoints = allPoints.slice(lastRenderedPointCount)
+  
+  if (newPoints.length === 0) {
+    console.log(`🎨 INCRÉMENTAL CC${props.ccNumber}: Aucun nouveau point`)
+    return
+  }
+  
+  console.log(`🎨 INCRÉMENTAL CC${props.ccNumber}: ${newPoints.length} nouveaux points à dessiner`)
+  
+  // PROFILING: Mesurer seulement les nouveaux points
+  const svgStart = performance.now()
+  
+  // Ajouter les nouveaux points au buffer du segment courant
+  newPoints.forEach(point => {
+    const x = Math.round(timeSignature.timeToPixelsWithSignatures(point.time) * 10) / 10
+    const y = Math.round((100 - (point.value / 127) * 100) * 10) / 10
+    currentSegmentBuffer.push({ x, y, point })
+  })
+  
+  // Construire le segment en cours avec tous les points du buffer
+  if (currentSegmentBuffer.length > 0) {
+    // Si c'est le premier point du segment, inclure le dernier point du segment précédent pour continuité
+    let segmentPoints = [...currentSegmentBuffer]
+    
+    // Si on a des segments précédents, prendre le dernier point pour continuité
+    if (svgSegments.value.length > 0 && lastRenderedPointCount > 0) {
+      const lastSegment = svgSegments.value[svgSegments.value.length - 1]
+      if (lastSegment && lastSegment.lastPoint) {
+        segmentPoints = [lastSegment.lastPoint, ...segmentPoints]
+      }
+    }
+    
+    currentSegmentPoints.value = segmentPoints.map(p => `${p.x},${p.y}`).join(' ')
+  }
+  
+  // TOUS LES 50 POINTS: Finaliser le segment courant et en commencer un nouveau
+  if (currentSegmentBuffer.length >= 50) {
+    console.log(`🎯 SEGMENT COMPLET CC${props.ccNumber}: ${currentSegmentBuffer.length} points → Finalisation`)
+    
+    // Finaliser le segment courant
+    if (currentSegmentPoints.value) {
+      const lastPoint = currentSegmentBuffer[currentSegmentBuffer.length - 1]
+      svgSegments.value.push({
+        id: `segment-${svgSegments.value.length}-${Date.now()}`,
+        points: currentSegmentPoints.value,
+        lastPoint: lastPoint // Pour continuité avec le segment suivant
+      })
+    }
+    
+    // Réinitialiser pour le prochain segment
+    currentSegmentPoints.value = ''
+    currentSegmentBuffer = []
+  }
+  
+  // Mettre à jour le compteur
+  lastRenderedPointCount = allPoints.length
+  
+  const svgEnd = performance.now()
+  const svgDuration = svgEnd - svgStart
+  
+  if (svgDuration > 2) {
+    console.warn(`⚡ PERF INCRÉMENTAL CC${props.ccNumber}: ${svgDuration.toFixed(1)}ms pour ${newPoints.length} nouveaux points - LENT!`)
+  }
+}
+
+// RÉINITIALISATION complète (changement de piste, etc.)
+const resetSVGIncremental = () => {
+  console.log(`🔄 RESET SVG INCRÉMENTAL CC${props.ccNumber}`)
+  svgSegments.value = []
+  currentSegmentPoints.value = ''
+  currentSegmentBuffer = []
+  lastRenderedPointCount = 0
+}
+
+// VERSION SIMPLE: SVG sans complexité pour performance maximale
+const updateSVGSimple = () => {
+  if (midiStore.selectedTrack === null) {
+    currentSegmentPoints.value = ''
+    return
+  }
+  
+  const selectedTrackId = parseInt(midiStore.selectedTrack)
+  
+  // SEULEMENT LES 100 DERNIERS POINTS pour éviter la lenteur
+  const allPoints = midiStore.midiCC
+    .filter(cc => {
+      const ccTrackId = parseInt(cc.trackId)
+      const ccController = parseInt(cc.controller || cc.number)
+      return ccTrackId === selectedTrackId && ccController === parseInt(props.ccNumber)
+    })
+    .sort((a, b) => parseFloat(a.time) - parseFloat(b.time))
+    .slice(-100) // Seulement les 100 derniers points
+  
+  if (allPoints.length < 2) {
+    currentSegmentPoints.value = ''
+    return
+  }
+  
+  console.log(`🎨 SVG SIMPLE CC${props.ccNumber}: ${allPoints.length} points (max 100)`)
+  
+  // Conversion directe sans optimisation complexe
+  const svgPoints = allPoints.map(point => {
+    const x = Math.round(timeSignature.timeToPixelsWithSignatures(point.time))
+    const y = Math.round(100 - (point.value / 127) * 100)
+    return `${x},${y}`
+  })
+  
+  currentSegmentPoints.value = svgPoints.join(' ')
+}
 
 let dragStartX = 0
 let dragStartY = 0
@@ -264,6 +483,38 @@ let originalTime = 0
 let originalValue = 0
 
 const startDrag = (point, event) => {
+  console.log('🎯 CCLane startDrag APPELÉ!', point.id, { metaKey: event.metaKey, ctrlKey: event.ctrlKey })
+  
+  // Mode brush (CMD/Ctrl + clic) - gérer directement ici
+  if (event.metaKey || event.ctrlKey) {
+    console.log('🎨 CCLane startDrag: Mode brush détecté - activation directe')
+    event.preventDefault()
+    event.stopPropagation()
+    
+    // Activer le mode brush
+    isBrushing.value = true
+    isCommandPressed.value = true
+    lastBrushedPointId = null
+    
+    // Calculer la nouvelle valeur CC depuis la position Y
+    const newCC = calculateCCFromPosition(event.clientY)
+    updateCCPoint(point.id, newCC)
+    lastBrushedPointId = point.id
+    
+    // Émettre la sélection
+    emit('point-selected', {
+      id: String(point.id),
+      value: Math.round(newCC),
+      type: `cc${props.ccNumber}`
+    })
+    
+    // CRUCIAL: Ajouter les listeners pour le brush
+    document.addEventListener('mousemove', onBrushMove)
+    document.addEventListener('mouseup', stopBrush)
+    
+    return
+  }
+  
   console.log('🎯 START DRAG - Point cliqué:', {
     pointId: point.id,
     pointTime: point.time,
@@ -303,8 +554,8 @@ const startDrag = (point, event) => {
   originalTime = point.time
   originalValue = point.value
 
-  // Créer une copie des points OPTIMISÉS pour la manipulation temporaire
-  const basePoints = ccPointsOptimized.value
+  // Créer une copie des points du cache pour la manipulation temporaire
+  const basePoints = ccPoints.value
   dragTempPoints.value = [...basePoints]
   
   console.log('🎯 START DRAG - Copie créée:', {
@@ -364,7 +615,7 @@ const onDrag = (event) => {
     selectedPoints.value.forEach(selectedP => {
       const tempPointIndex = dragTempPoints.value.findIndex(p => p.id === selectedP.id)
       if (tempPointIndex !== -1) {
-        const originalPoint = ccPointsOptimized.value.find(p => p.id === selectedP.id)
+        const originalPoint = ccPoints.value.find(p => p.id === selectedP.id)
         if (originalPoint) {
           let newPointTime = originalPoint.time + deltaTime
           let newPointValue = originalPoint.value + deltaValue
@@ -558,6 +809,259 @@ const deletePoint = (point, event) => {
 // FONCTIONS POUR LE MODE LASSO ET SÉLECTION MULTIPLE
 // ===========================================
 
+// Variables pour le mode brush
+let lastBrushedPointId = null
+let lastBrushedTime = null
+
+// Fonction pour trouver un point CC à une position donnée
+const findItemAtPosition = (clientX, clientY) => {
+  if (!ccLaneRef.value) return null
+  
+  const rect = ccLaneRef.value.getBoundingClientRect()
+  const relativeX = clientX - rect.left
+  const relativeY = clientY - rect.top
+  const tolerance = 10 // pixels
+  
+  for (const point of ccPointsDisplayed.value) {
+    try {
+      const pointX = timeSignature.timeToPixelsWithSignatures
+        ? timeSignature.timeToPixelsWithSignatures(point.time)
+        : point.time * 240 // fallback
+      
+      const pointY = (1 - (point.value / 127)) * rect.height
+      
+      const distance = Math.sqrt(
+        Math.pow(relativeX - pointX, 2) + 
+        Math.pow(relativeY - pointY, 2)
+      )
+      
+      if (distance <= tolerance) {
+        return point
+      }
+    } catch (error) {
+      continue
+    }
+  }
+  return null
+}
+
+// Calculer la valeur CC depuis la position Y
+const calculateCCFromPosition = (clientY) => {
+  if (!ccLaneRef.value) return 64
+  
+  const rect = ccLaneRef.value.getBoundingClientRect()
+  const mouseY = clientY - rect.top
+  const relativeY = mouseY / rect.height
+  
+  // Convertir en CC (plage 0-127, inversé car Y=0 est en haut)
+  const ccValue = Math.round((1 - relativeY) * 127)
+  return Math.max(0, Math.min(127, ccValue))
+}
+
+// Gestionnaire des touches pour le curseur brush
+const handleKeyDown = (event) => {
+  if ((event.metaKey || event.ctrlKey) && !isCommandPressed.value) {
+    isCommandPressed.value = true
+    if (ccLaneRef.value) {
+      ccLaneRef.value.classList.add('brush-mode')
+    }
+  }
+}
+
+const handleKeyUp = (event) => {
+  if ((!event.metaKey && !event.ctrlKey) || event.key === 'Meta' || event.key === 'Control') {
+    isCommandPressed.value = false
+    if (ccLaneRef.value) {
+      ccLaneRef.value.classList.remove('brush-mode')
+    }
+  }
+}
+
+// Écouter les événements clavier
+onMounted(() => {
+  document.addEventListener('keydown', handleKeyDown)
+  document.addEventListener('keyup', handleKeyUp)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('keydown', handleKeyDown)
+  document.removeEventListener('keyup', handleKeyUp)
+})
+
+// Gestionnaire principal des événements de container  
+const handleContainerMouseDown = (event) => {
+  console.log('🎛️ CCLane handleContainerMouseDown appelé', { metaKey: event.metaKey, ctrlKey: event.ctrlKey })
+  console.log('🎛️ CCLane selectedTrack:', midiStore.selectedTrack)
+  
+  // Mode brush (CMD/Ctrl + clic)
+  if (event.metaKey || event.ctrlKey) {
+    console.log('🎨 CCLane: Mode brush activé dans handleContainer!')
+    event.preventDefault()
+    event.stopPropagation()
+    
+    isBrushing.value = true
+    isCommandPressed.value = true
+    lastBrushedPointId = null
+    
+    // Créer un nouveau point CC à la position du clic
+    const rect = ccLaneRef.value.getBoundingClientRect()
+    const relativeX = event.clientX - rect.left
+    const clickTime = timeSignature.pixelsToTimeWithSignatures 
+      ? timeSignature.pixelsToTimeWithSignatures(relativeX)
+      : relativeX / 240 // fallback
+    
+    const newCC = calculateCCFromPosition(event.clientY)
+    
+    // MODE REPLACE : Supprimer les CC existants à ce moment précis
+    if (projectStore.userPreferences?.keyboard?.recordingMode === 'replace') {
+      const timeWindow = 0.05 // 50ms de tolérance
+      const ccToKeep = midiStore.midiCC.filter(cc => {
+        if (parseInt(cc.trackId) !== midiStore.selectedTrack) return true
+        if (parseInt(cc.controller) !== parseInt(props.ccNumber)) return true
+        
+        const ccTime = parseFloat(cc.time)
+        return Math.abs(ccTime - clickTime) > timeWindow
+      })
+      
+      if (ccToKeep.length < midiStore.midiCC.length) {
+        midiStore.midiCC = ccToKeep
+      }
+    }
+    
+    // Ajouter le point au store
+    const newPointId = midiStore.addCC({
+      trackId: midiStore.selectedTrack,
+      controller: props.ccNumber,
+      time: clickTime,
+      value: Math.round(newCC),
+      channel: midiStore.tracks.find(t => t.id === midiStore.selectedTrack)?.channel || 0
+    })
+    
+    console.log('🎨 ✅ BRUSH POINT CRÉÉ:', { id: newPointId, time: clickTime, value: Math.round(newCC) })
+    lastBrushedPointId = newPointId
+    
+    // Vérifier si le point apparaît dans les points visibles
+    nextTick(() => {
+      const visibleCount = ccPointsDisplayed.value?.length || 0
+      console.log('🎨 Points CC visibles après création:', visibleCount)
+      console.log('🎨 Dernier point créé visible?', ccPointsDisplayed.value?.find(p => p.id === newPointId))
+    })
+    
+    emit('point-selected', {
+      id: String(newPointId),
+      value: Math.round(newCC),
+      type: `cc${props.ccNumber}`
+    })
+    
+    // Ajouter les listeners pour le brush
+    document.addEventListener('mousemove', onBrushMove)
+    document.addEventListener('mouseup', stopBrush)
+    
+    return
+  }
+  
+  // Logique normale (lasso/drag)
+  startLassoOrDrag(event)
+}
+
+// Fonctions pour le mode brush
+const onBrushMove = (event) => {
+  if (!isBrushing.value) return
+  
+  console.log('🖌️ CCLane onBrushMove appelé!')
+  
+  try {
+    if (event.cancelable) {
+      event.preventDefault()
+    }
+  } catch (e) {
+    // Ignore l'erreur si preventDefault n'est pas possible
+  }
+  
+  // Créer un nouveau point CC à chaque mouvement de souris
+  const rect = ccLaneRef.value.getBoundingClientRect()
+  const relativeX = event.clientX - rect.left
+  const currentTime = timeSignature.pixelsToTimeWithSignatures 
+    ? timeSignature.pixelsToTimeWithSignatures(relativeX)
+    : relativeX / 240 // fallback
+  
+  const newCC = calculateCCFromPosition(event.clientY)
+  
+  // Créer un point seulement si on a bougé suffisamment (éviter trop de points)
+  // En mode replace, augmenter la densité des points pour une meilleure capture
+  const minTimeDistance = projectStore.userPreferences?.keyboard?.recordingMode === 'replace' ? 0.05 : 0.1 // secondes minimum entre les points
+  const shouldCreatePoint = !lastBrushedTime || Math.abs(currentTime - lastBrushedTime) >= minTimeDistance
+  
+  if (shouldCreatePoint) {
+    // MODE REPLACE : Supprimer les CC existants à ce moment précis
+    if (projectStore.userPreferences?.keyboard?.recordingMode === 'replace') {
+      const timeWindow = 0.05 // 50ms de tolérance
+      const ccToKeep = midiStore.midiCC.filter(cc => {
+        if (parseInt(cc.trackId) !== midiStore.selectedTrack) return true
+        if (parseInt(cc.controller) !== parseInt(props.ccNumber)) return true
+        
+        const ccTime = parseFloat(cc.time)
+        return Math.abs(ccTime - currentTime) > timeWindow
+      })
+      
+      if (ccToKeep.length < midiStore.midiCC.length) {
+        midiStore.midiCC = ccToKeep
+      }
+    }
+    console.log('🖌️ Brush: Création point CC en mouvement', { currentTime, newCC, ccNumber: props.ccNumber })
+    
+    const newPointId = midiStore.addCC({
+      trackId: midiStore.selectedTrack,
+      controller: props.ccNumber,
+      time: currentTime,
+      value: Math.round(newCC),
+      channel: midiStore.tracks.find(t => t.id === midiStore.selectedTrack)?.channel || 0
+    })
+    
+    console.log('🖌️ ✅ BRUSH MOVE POINT CRÉÉ:', { id: newPointId, time: currentTime, value: Math.round(newCC) })
+    
+    lastBrushedPointId = newPointId
+    lastBrushedTime = currentTime
+    
+    emit('point-selected', {
+      id: String(newPointId),
+      value: Math.round(newCC),
+      type: `cc${props.ccNumber}`
+    })
+  }
+}
+
+const stopBrush = (event) => {
+  if (event) {
+    try {
+      if (event.cancelable) {
+        event.preventDefault()
+      }
+    } catch (e) {
+      // Ignore l'erreur si preventDefault n'est pas possible
+    }
+  }
+  
+  document.removeEventListener('mousemove', onBrushMove)
+  document.removeEventListener('mouseup', stopBrush)
+  
+  isBrushing.value = false
+  isCommandPressed.value = false
+  lastBrushedPointId = null
+  lastBrushedTime = null
+}
+
+// Fonction pour mettre à jour un point CC
+const updateCCPoint = (pointId, time, value) => {
+  const clampedValue = Math.max(0, Math.min(127, value))
+  console.log(`🎛️ CCLane updateCCPoint: ${pointId} -> ${clampedValue}`)
+  
+  midiStore.updateCC(pointId, {
+    time: time,
+    value: clampedValue
+  })
+}
+
 // Démarrer le lasso ou le drag selon ce qui est cliqué
 const startLassoOrDrag = (event) => {
   // Si on clique sur un point, ne pas faire de lasso
@@ -695,25 +1199,16 @@ const handleKeydown = (event) => {
   }
 }
 
-// WATCH pour traquer les changements du store après drag
-watch(() => midiStore.midiCC, (newCC, oldCC) => {
-  console.log('🎛️ STORE CHANGE détecté:', {
-    oldLength: oldCC?.length || 0,
-    newLength: newCC?.length || 0,
-    timestamp: Date.now()
-  })
-  
-  // Vérifier si notre CC specifique a changé
-  const ourTrackId = parseInt(midiStore.selectedTrack)
-  const ourCC = newCC.filter(cc => 
-    parseInt(cc.trackId) === ourTrackId && cc.controller === props.ccNumber
-  )
-  
-  if (ourCC.length > 0) {
-    console.log('🎛️ CC' + props.ccNumber + ' updated in store:', 
-      ourCC.slice(0, 2).map(cc => ({ id: cc.id, time: cc.time, value: cc.value })))
+// Watcher optimisé - seulement pour les changements majeurs
+watch(() => midiStore.midiCC.length, (newLength, oldLength) => {
+  // Réaction seulement aux changements significatifs de taille
+  if (Math.abs(newLength - oldLength) > 5) {
+    // Auto-optimisation si trop de CC
+    if (newLength > 1000) {
+      midiStore.optimizeMidiCC()
+    }
   }
-}, { deep: true })
+}, { flush: 'post' })
 
 // Gérer la mise à jour manuelle de la valeur d'un point depuis l'interface
 const handleManualPointValueUpdate = async (event) => {
@@ -739,18 +1234,95 @@ const handleManualPointValueUpdate = async (event) => {
   }
 }
 
-onMounted(() => {
-  // Nettoyer automatiquement le store au premier chargement
-  if (ccPoints.value.length > 20) { // Seulement si beaucoup de points
-    console.log(`🧹 Auto-nettoyage du store CC${props.ccNumber}: ${ccPoints.value.length} points`)
-    midiStore.optimizeMidiCC()
+// SYSTÈME DE BATCH AVEC COMPTEUR VISIBLE
+let pointsSinceLastUpdate = 0
+const BATCH_SIZE = 50
+
+// Buffer pour accumuler les nouveaux points
+let pendingPoints = []
+
+// Throttling pour la mise à jour SVG
+let lastSVGUpdate = 0
+
+function handleMidiCCUpdated(event) {
+  const shouldUpdate = event.detail?.forceAll || 
+                      event.detail?.controller === parseInt(props.ccNumber)
+  
+  if (shouldUpdate) {
+    if (event.detail?.forceAll) {
+      // ARRÊT ENREGISTREMENT: Traiter les points en attente
+      console.log(`🔄 FORCE UPDATE CC${props.ccNumber} (arrêt enregistrement) - ${pendingPoints.length} points en attente`)
+      
+      // Traiter tous les points en attente
+      pendingPoints.forEach(point => addPointToCache(point))
+      pendingPoints = []
+      pointsSinceLastUpdate = 0
+      
+      updateSVGSimple()  // Mettre à jour SVG simple
+      return
+    }
+    
+    // TEMPS RÉEL SIMPLE: Throttling agressif pour performance maximale
+    if (event.detail && event.detail.controller === parseInt(props.ccNumber)) {
+      console.log(`🎨 CC${props.ccNumber} TEMPS RÉEL: Nouveau point reçu`)
+      
+      // THROTTLE SVG AGRESSIF: Mettre à jour SVG seulement tous les 500ms (2 FPS)
+      const now = performance.now()
+      const SVG_UPDATE_THROTTLE = 500 // 500ms = 2 FPS pour performance maximale
+      
+      if (!lastSVGUpdate || now - lastSVGUpdate > SVG_UPDATE_THROTTLE) {
+        console.log(`🎨 CC${props.ccNumber} SVG UPDATE: ${now - (lastSVGUpdate || 0)}ms depuis dernière mise à jour`)
+        updateSVGSimple()  // Version simplifiée
+        lastSVGUpdate = now
+      } else {
+        console.log(`🎨 CC${props.ccNumber} SVG SKIP: Throttlé (${now - lastSVGUpdate}ms < ${SVG_UPDATE_THROTTLE}ms)`)
+      }
+      
+      // Garder le système de cache pour les optimisations internes
+      const selectedTrackId = parseInt(midiStore.selectedTrack)
+      const ccController = parseInt(props.ccNumber)
+      
+      // Créer un point directement depuis l'événement
+      const newPoint = {
+        id: `temp-${Date.now()}-${Math.random().toString(36).substring(2,8)}`,
+        trackId: selectedTrackId,
+        controller: ccController,
+        time: event.detail.recordTime || performance.now() / 1000,
+        value: event.detail.value || 64
+      }
+      
+      pendingPoints.push(newPoint)
+      pointsSinceLastUpdate++
+      console.log(`📊 CC${props.ccNumber} COMPTEUR: ${pointsSinceLastUpdate}/${BATCH_SIZE} points (${pendingPoints.length} en attente)`)
+      
+      // DÉCLENCHEMENT BATCH: Seulement pour le cache rotatif (optimisation interne)
+      if (pointsSinceLastUpdate >= BATCH_SIZE) {
+        console.log(`🎯 CC${props.ccNumber} DÉCLENCHEMENT BATCH CACHE: ${pointsSinceLastUpdate} points → TRAITEMENT DU BUFFER DE ${pendingPoints.length} POINTS`)
+        
+        // Traiter TOUT le buffer d'un coup (pour le cache)
+        pendingPoints.forEach(point => addPointToCache(point))
+        console.log(`✅ CC${props.ccNumber} BATCH CACHE TERMINÉ: Cache maintenant à ${rotatingCache.value.points.length}/${WINDOW_SIZE} points`)
+        
+        pendingPoints = []
+        pointsSinceLastUpdate = 0
+      }
+    }
   }
+}
+
+onMounted(() => {
+  // INITIALISER la fenêtre glissante ET courbe SVG simple au montage
+  updateSlidingWindow()
+  updateSVGSimple()
   
   // Ajouter les listeners clavier pour le lasso
   document.addEventListener('keydown', handleKeydown)
   
   // Écouter les événements de mise à jour manuelle de valeur
   document.addEventListener('update-point-value', handleManualPointValueUpdate)
+  
+  // TEMPS RÉEL: Écouter les mises à jour CC pendant l'enregistrement
+  window.addEventListener('midi-cc-updated', handleMidiCCUpdated)
 })
 
 
@@ -758,8 +1330,13 @@ onUnmounted(() => {
   // Nettoyer les event listeners et les données temporaires
   document.removeEventListener('mousemove', onDrag)
   document.removeEventListener('mouseup', stopDrag)
+  document.removeEventListener('mousemove', onBrushMove)
+  document.removeEventListener('mouseup', stopBrush)
   document.removeEventListener('keydown', handleKeydown)
   document.removeEventListener('update-point-value', handleManualPointValueUpdate)
+  
+  // Nettoyer le listener d'enregistrement temps réel
+  window.removeEventListener('midi-cc-updated', handleMidiCCUpdated)
   
   dragTempPoints.value = null
 })
@@ -786,8 +1363,12 @@ onUnmounted(() => {
 .cc-curve-container {
   position: relative;
   height: 100%;
-  cursor: crosshair;
+  cursor: default;
   z-index: 5;
+}
+
+.cc-curve-container.brush-mode {
+  cursor: crosshair;
 }
 
 /* Empêcher le changement de curseur pendant le drag */

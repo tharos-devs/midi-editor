@@ -175,11 +175,24 @@ export function useTimeSignature() {
       }
     }
     
-    // 2. Vérifier les Control Changes (CC)
+    // 2. OPTIMISATION CRITIQUE: Éviter parcours CC complet pendant enregistrement
     if (midiStore.midiCC?.length) {
-      for (const cc of midiStore.midiCC) {
-        if (cc.time > lastTime) {
-          lastTime = cc.time
+      const ccCount = midiStore.midiCC.length
+      if (ccCount > 1000) {
+        // Performance: ne vérifier que les 100 derniers CC si l'array est très grand
+        const recentCC = midiStore.midiCC.slice(-100)
+        for (const cc of recentCC) {
+          if (cc.time > lastTime) {
+            lastTime = cc.time
+          }
+        }
+        console.log(`🚀 PERF getLastMidiEventTime: ${ccCount} CC → parcours optimisé 100 derniers`)
+      } else {
+        // Array petit, parcours normal
+        for (const cc of midiStore.midiCC) {
+          if (cc.time > lastTime) {
+            lastTime = cc.time
+          }
         }
       }
     }
@@ -396,25 +409,56 @@ export function useTimeSignature() {
     if (timeInSeconds <= 0) return 0
     
     const measures = measuresWithSignatures.value
+    if (measures.length === 0) return 0
     
-    for (let i = 0; i < measures.length; i++) {
-      const measure = measures[i]
+    // OPTIMISATION: Recherche binaire CORRIGÉE pour éviter les problèmes aux frontières
+    let left = 0
+    let right = measures.length - 1
+    let foundMeasure = null
+    let iterations = 0
+    const maxIterations = Math.ceil(Math.log2(measures.length)) + 2
+    
+    while (left <= right && iterations < maxIterations) {
+      iterations++
+      const mid = Math.floor((left + right) / 2)
+      const measure = measures[mid]
       
-      if (timeInSeconds >= measure.startTime && timeInSeconds < measure.endTime) {      
-        const timeInMeasure = timeInSeconds - measure.startTime
-        const measureProgress = timeInMeasure / (measure.endTime - measure.startTime)
-        const pixelsInMeasure = measureProgress * measure.measureWidth
-        const result = measure.startPixel + pixelsInMeasure
-
-        return result
+      // CORRECTION: Gestion précise des frontières avec tolérance flottante
+      const EPSILON = 1e-10
+      const inRange = timeInSeconds >= measure.startTime - EPSILON && 
+                     timeInSeconds < measure.endTime + EPSILON
+      
+      if (inRange) {
+        foundMeasure = measure
+        break
+      } else if (timeInSeconds < measure.startTime - EPSILON) {
+        right = mid - 1
+      } else {
+        left = mid + 1
       }
     }
     
+    // NOUVEAU: Fallback si la recherche binaire échoue (problème détecté!)
+    if (!foundMeasure && iterations >= maxIterations) {
+      console.warn('⚠️ BINARY SEARCH TIMEOUT at time', timeInSeconds.toFixed(3), 
+                   'measures:', measures.length, 'iterations:', iterations)
+      // Revenir à la recherche linéaire comme fallback
+      foundMeasure = measures.find(m => timeInSeconds >= m.startTime && timeInSeconds < m.endTime)
+    }
+    
+    if (foundMeasure) {
+      const timeInMeasure = timeInSeconds - foundMeasure.startTime
+      const measureDuration = foundMeasure.endTime - foundMeasure.startTime
+      const measureProgress = measureDuration > 0 ? timeInMeasure / measureDuration : 0
+      const pixelsInMeasure = measureProgress * foundMeasure.measureWidth
+      return foundMeasure.startPixel + pixelsInMeasure
+    }
+    
     // Si le temps dépasse toutes les mesures, extrapoler
-    if (measures.length > 0 && timeInSeconds >= measures[measures.length - 1].endTime) {
+    if (timeInSeconds >= measures[measures.length - 1].endTime) {
       const lastMeasure = measures[measures.length - 1]
       const extraTime = timeInSeconds - lastMeasure.endTime
-      const extraPixels = timeToPixels(extraTime) // Utiliser la conversion simple pour l'extrapolation
+      const extraPixels = timeToPixels(extraTime)
       return lastMeasure.startPixel + lastMeasure.measureWidth + extraPixels
     }
     
@@ -425,23 +469,60 @@ export function useTimeSignature() {
     if (pixels <= 0) return 0
     
     const measures = measuresWithSignatures.value
+    if (measures.length === 0) return 0
     
-    for (let i = 0; i < measures.length; i++) {
-      const measure = measures[i]
+    // OPTIMISATION: Recherche binaire CORRIGÉE pour éviter les problèmes aux frontières
+    let left = 0
+    let right = measures.length - 1
+    let foundMeasure = null
+    let iterations = 0
+    const maxIterations = Math.ceil(Math.log2(measures.length)) + 2
+    
+    while (left <= right && iterations < maxIterations) {
+      iterations++
+      const mid = Math.floor((left + right) / 2)
+      const measure = measures[mid]
+      const measureEnd = measure.startPixel + measure.measureWidth
       
-      if (pixels >= measure.startPixel && pixels < measure.startPixel + measure.measureWidth) {
-        const pixelsInMeasure = pixels - measure.startPixel
-        const measureProgress = pixelsInMeasure / measure.measureWidth
-        const timeInMeasure = measureProgress * (measure.endTime - measure.startTime)
-        return measure.startTime + timeInMeasure
+      // CORRECTION: Gestion précise des frontières avec tolérance flottante
+      const EPSILON = 1e-10
+      const inRange = pixels >= measure.startPixel - EPSILON && 
+                     pixels < measureEnd + EPSILON
+      
+      if (inRange) {
+        foundMeasure = measure
+        break
+      } else if (pixels < measure.startPixel - EPSILON) {
+        right = mid - 1
+      } else {
+        left = mid + 1
       }
     }
     
+    // NOUVEAU: Fallback si la recherche binaire échoue
+    if (!foundMeasure && iterations >= maxIterations) {
+      console.warn('⚠️ BINARY SEARCH TIMEOUT at pixel', pixels.toFixed(1), 
+                   'measures:', measures.length, 'iterations:', iterations)
+      // Revenir à la recherche linéaire comme fallback
+      foundMeasure = measures.find(m => {
+        const measureEnd = m.startPixel + m.measureWidth
+        return pixels >= m.startPixel && pixels < measureEnd
+      })
+    }
+    
+    if (foundMeasure) {
+      const pixelsInMeasure = pixels - foundMeasure.startPixel
+      const measureProgress = foundMeasure.measureWidth > 0 ? pixelsInMeasure / foundMeasure.measureWidth : 0
+      const measureDuration = foundMeasure.endTime - foundMeasure.startTime
+      const timeInMeasure = measureProgress * measureDuration
+      return foundMeasure.startTime + timeInMeasure
+    }
+    
     // Si les pixels dépassent toutes les mesures, extrapoler
-    if (measures.length > 0 && pixels >= measures[measures.length - 1].startPixel + measures[measures.length - 1].measureWidth) {
-      const lastMeasure = measures[measures.length - 1]
+    const lastMeasure = measures[measures.length - 1]
+    if (pixels >= lastMeasure.startPixel + lastMeasure.measureWidth) {
       const extraPixels = pixels - (lastMeasure.startPixel + lastMeasure.measureWidth)
-      const extraTime = pixelsToTime(extraPixels) // Utiliser la conversion simple pour l'extrapolation
+      const extraTime = pixelsToTime(extraPixels)
       return lastMeasure.endTime + extraTime
     }
     
@@ -535,16 +616,57 @@ export function useTimeSignature() {
 
   const pixelsToMeasure = (pixels) => {
     const measures = measuresWithSignatures.value
-    for (let i = 0; i < measures.length; i++) {
-      const measure = measures[i]
-      if (pixels >= measure.startPixel && pixels < measure.startPixel + measure.measureWidth) {
+    if (measures.length === 0) return null
+    
+    // OPTIMISATION: Recherche binaire CORRIGÉE pour éviter les problèmes aux frontières
+    let left = 0
+    let right = measures.length - 1
+    let iterations = 0
+    const maxIterations = Math.ceil(Math.log2(measures.length)) + 2
+    
+    while (left <= right && iterations < maxIterations) {
+      iterations++
+      const mid = Math.floor((left + right) / 2)
+      const measure = measures[mid]
+      const measureEnd = measure.startPixel + measure.measureWidth
+      
+      // CORRECTION: Gestion précise des frontières avec tolérance flottante
+      const EPSILON = 1e-10
+      const inRange = pixels >= measure.startPixel - EPSILON && 
+                     pixels < measureEnd + EPSILON
+      
+      if (inRange) {
         return {
           measure: measure.number,
-          beatPosition: (pixels - measure.startPixel) / measure.beatWidth,
+          beatPosition: measure.beatWidth > 0 ? (pixels - measure.startPixel) / measure.beatWidth : 0,
           signature: measure.timeSignature
+        }
+      } else if (pixels < measure.startPixel - EPSILON) {
+        right = mid - 1
+      } else {
+        left = mid + 1
+      }
+    }
+    
+    // NOUVEAU: Fallback si la recherche binaire échoue
+    if (iterations >= maxIterations) {
+      console.warn('⚠️ BINARY SEARCH TIMEOUT at pixel', pixels.toFixed(1), 
+                   'measures:', measures.length, 'iterations:', iterations)
+      // Revenir à la recherche linéaire comme fallback
+      const foundMeasure = measures.find(m => {
+        const measureEnd = m.startPixel + m.measureWidth
+        return pixels >= m.startPixel && pixels < measureEnd
+      })
+      
+      if (foundMeasure) {
+        return {
+          measure: foundMeasure.number,
+          beatPosition: foundMeasure.beatWidth > 0 ? (pixels - foundMeasure.startPixel) / foundMeasure.beatWidth : 0,
+          signature: foundMeasure.timeSignature
         }
       }
     }
+    
     return null
   }
 
@@ -581,6 +703,7 @@ export function useTimeSignature() {
     })
     return beatLines
   })
+
 
   return {
     // États et propriétés calculées

@@ -86,7 +86,7 @@ export const usePlaybackCursorStore = defineStore('playbackCursor', () => {
     console.trace('⚠️ STACK TRACE - qui appelle stopPlayback ?')
     isPlaying.value = false
     isPaused.value = false
-    currentTime.value = 0
+    // Ne pas remettre currentTime.value = 0 - garder la position actuelle
     
     stopTimer() // Nettoyer l'ancien timer s'il existe
   }
@@ -261,12 +261,9 @@ export const usePlaybackCursorStore = defineStore('playbackCursor', () => {
       const cursorOffsetFromLeft = containerWidth * 0.3
       const newScrollLeft = Math.max(0, cursorPixelPos - cursorOffsetFromLeft)
       
-      console.log(`📍 Auto-scroll: ${currentScrollLeft.toFixed(0)}px → ${newScrollLeft.toFixed(0)}px (curseur: ${cursorPixelPos.toFixed(0)}px, largeur: ${containerWidth}px)`)
-      
       // Approche plus directe: forcer le scroll sur TOUS les éléments immédiatement
       document.querySelectorAll('.sync-scroll-x').forEach(element => {
         element.scrollLeft = newScrollLeft
-        console.log(`🔧 Scroll forcé sur ${element.className}: ${newScrollLeft}px`)
       })
       
       // Forcer aussi le ScrollController
@@ -323,12 +320,23 @@ export const usePlaybackCursorStore = defineStore('playbackCursor', () => {
     }
   })
 
+  // OPTIMISATION: Throttling très léger des mises à jour 
+  let lastUpdateTime = 0
+  const UPDATE_THROTTLE = 8 // ms - Limiter à ~120 FPS pour plus de fluidité
+
   // Fonction pour mettre à jour le temps depuis MidiPlayer
   function updateTime(time) {
-    // Debug pour détecter les sauts anormaux
-    const oldTime = currentTime.value
-    const timeDiff = Math.abs(time - oldTime)
+    const now = performance.now()
     
+    // THROTTLING: Ne mettre à jour que si assez de temps s'est écoulé
+    // Exception: toujours mettre à jour si changement significatif (>0.1s)
+    const timeDiff = Math.abs(time - currentTime.value)
+    if (now - lastUpdateTime < UPDATE_THROTTLE && timeDiff < 0.1) {
+      return // Skip cette mise à jour pour éviter les lags
+    }
+    
+    // Debug pour détecter les sauts anormaux (seulement pour gros sauts)
+    const oldTime = currentTime.value
     if (timeDiff > 0.5 && oldTime > 0) {
       console.warn('⚠️ SAUT TEMPOREL DÉTECTÉ:', {
         ancien: oldTime.toFixed(3) + 's',
@@ -338,6 +346,7 @@ export const usePlaybackCursorStore = defineStore('playbackCursor', () => {
     }
     
     currentTime.value = time
+    lastUpdateTime = now
   }
 
   return {

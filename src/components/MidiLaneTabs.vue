@@ -148,11 +148,28 @@ function getAvailableCC(selectedTrack = null) {
   // CORRECTION: Convertir les types pour la comparaison
   const selectedTrackId = parseInt(trackToUse)
 
-  // Récupérer tous les CC de la piste sélectionnée
-  const trackCC = midiStore.midiCC.filter(cc => {
-    const ccTrackId = parseInt(cc.trackId)
-    return ccTrackId === selectedTrackId
-  })
+  // OPTIMISATION: Éviter filtrage complet pendant enregistrement
+  let trackCC = []
+  const totalCC = midiStore.midiCC.length
+  
+  if (totalCC > 1000) {
+    // Pendant l'enregistrement massif, utiliser une approche optimisée
+    // Les nouveaux CC sont généralement à la fin du tableau
+    const recentCC = midiStore.midiCC.slice(-200)
+    const existingCC = midiStore.midiCC.slice(0, Math.min(200, totalCC - 200))
+    
+    trackCC = [...existingCC, ...recentCC].filter(cc => {
+      const ccTrackId = parseInt(cc.trackId)
+      return ccTrackId === selectedTrackId
+    })
+    console.log(`🚀 PERF getAvailableCC: ${totalCC} CC → parcours optimisé (400 points)`)
+  } else {
+    // Array petit, filtrage normal
+    trackCC = midiStore.midiCC.filter(cc => {
+      const ccTrackId = parseInt(cc.trackId)
+      return ccTrackId === selectedTrackId
+    })
+  }
   
   // Extraire les numéros de CC uniques
   const ccNumbers = [...new Set(trackCC.map(cc => {
@@ -161,18 +178,20 @@ function getAvailableCC(selectedTrack = null) {
     return parseInt(controller)
   }).filter(num => !isNaN(num)))]
   
-  // Debug réduit
-  if (trackCC.length > 0) {
-    console.log(`🎛️ Piste ${selectedTrackId}: ${ccNumbers.length} types CC détectés`)
-  }
+  // Debug réduit pour performance
 
   return ccNumbers.sort((a, b) => a - b)
 }
 
 // Gestionnaires d'événements MIDI
 function handleMidiCCUpdated(event) {
-  console.log('🎛️ MidiLaneTabs: CC mis à jour, forcer le recalcul des lanes')
-  forceUpdate.value++
+  // OPTIMISATION: Éviter les recalculs pendant l'enregistrement temps réel
+  // Seulement recalculer si c'est un événement forcé (stop enregistrement) ou nouveau CC
+  if (event.detail?.forceAll || event.detail?.eventCount < 10) {
+    forceUpdate.value++
+    console.log('🎛️ TABS: Recalcul forcé des lanes CC -', event.detail)
+  }
+  // Sinon, ignorer les mises à jour temps réel pour performance
 }
 
 const activeTab = ref('velocity') // Utiliser l'ID au lieu d'un index - démarrer sur Vélocité

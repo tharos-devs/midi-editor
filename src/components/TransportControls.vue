@@ -11,46 +11,53 @@
 
       <div class="transport-buttons">
         <!-- Bouton Rewind -->
-        <el-button
-          :icon="DArrowLeft"
-          :disabled="!canPlay"
-          @click="handleRewind"
-          title="Retour au début (R)"
-          circle
-          size="small"
+        <MediaButton 
+          @click="handleRewind"        
+          :disbaled="!canPlay"
+          icon="begin-icon"           
+          title="Retour au début (B)"
+          style="width: 40px; height: 40px;"
         />
 
         <!-- Bouton Stop -->
-        <el-button
-          :icon="SwitchButton"
-          :disabled="!canPlay"
-          @click="handleStop"
+        <MediaButton 
+          @click="handleStop"        
+          :disbaled="!canPlay"
+          color="#21BCFF"
+          icon="stop-icon"           
           title="Arrêter (S)"
-          circle
-          size="small"
-          type="danger"
+          style="width: 40px; height: 40px;"
         />
 
         <!-- Bouton Play/Pause -->
-        <el-button
-          :icon="isPlaying ? VideoPause : VideoPlay"
-          :disabled="!canPlay"
-          @click="handlePlayPause"
-          :title="isPlaying ? 'Pause (Espace)' : 'Lecture (Espace)'"
-          circle
-          type="primary"
+        <MediaButton 
+          @click="handlePlayPause"        
+          :disbaled="!canPlay"
+          hoverColor="#05DF72"
+          icon="play-icon"           
+          tooltip="Lancer la lecture"
+          style="width: 40px; height: 40px;"
         />
 
-        <!-- Bouton Loop (optionnel) -->
-        <el-button
-          :icon="Refresh"
-          :disabled="!canPlay"
-          @click="toggleLoop"
-          :title="isLooping ? 'Désactiver la boucle (L)' : 'Activer la boucle (L)'"
-          :type="isLooping ? 'success' : 'default'"
-          circle
-          size="small"
+        <!-- Bouton Record -->
+        <MediaButton 
+          @click="handleRecord"        
+          :disbaled="!canPlay"
+          :color="isRecording ? '#ff4444' : '#000000'"
+          :hoverColor="isRecording ? '#ff6666' : '#888888'"
+          icon="record-icon"           
+          tooltip="Lancer l'enregistrement"
+          style="width: 40px; height: 40px;"
         />
+
+        <!-- Bouton Loop  -->
+        <MediaButton 
+          @click="toggleLoop"
+          :disabled="!canPlay"
+          :title="isLooping ? 'Désactiver la boucle (L)' : 'Activer la boucle (L)'"
+          icon="loop-icon"           
+          style="width: 40px; height: 40px;"
+        />        
 
         <!-- Mode d'enregistrement -->
         <el-select
@@ -72,10 +79,10 @@
         <span class="total-time">{{ totalDurationFormatted }}</span>
       </div>
 
-      <!-- Indicateur de tempo (optionnel) -->
+      <!-- Indicateur de tempo -->
       <div v-if="showTempo" class="tempo-display">
-        <el-icon><Timer /></el-icon>
-        <span>{{ Math.round(currentTempo) }} BPM</span>
+        <span class="tempo-value">{{ Math.round(currentTempo) }}</span>
+        <span class="tempo-label">Tempo</span>
       </div>
 
       <!-- Contrôle vitesse curseur -->
@@ -123,16 +130,9 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch, provide } from 'vue'
-import { 
-  VideoPlay, 
-  VideoPause, 
-  SwitchButton, 
-  DArrowLeft, 
-  Refresh, 
-  Timer,
-} from '@element-plus/icons-vue'
 import { useMidiPlayer } from '@/composables/useMidiPlayer'
 import { useMidiManager } from '@/composables/useMidiManager'
+import { useMidiRecording } from '@/composables/useMidiRecording'
 import { useMidiStore } from '@/stores/midi'
 import { useProjectStore } from '@/stores/project'
 import { useUIStore } from '@/stores/ui'
@@ -141,7 +141,7 @@ import { useTimeSignature } from '@/composables/useTimeSignature'
 import { usePlaybackMarkerStore } from '@/stores/playbackMarker'
 import { usePlaybackCursorStore } from '@/stores/playbackCursor'
 import { useKeyboardEvents } from '@/composables/useKeyboardEvents'
-
+import MediaButton from '@/components/buttons/MediaButton.vue'
 // Props
 const props = defineProps({
   showProgressBar: {
@@ -165,6 +165,7 @@ const props = defineProps({
 // Composables
 const midiPlayer = useMidiPlayer()
 const midiManager = useMidiManager()
+const midiRecording = useMidiRecording()
 const midiStore = useMidiStore()
 const projectStore = useProjectStore()
 const uiStore = useUIStore()
@@ -247,10 +248,14 @@ const {
   play,
   pause,
   stop,
+  record,
   rewind,
   seekTo,
   toggleLoop
 } = midiPlayer
+
+// Destructurer l'état d'enregistrement
+const { isRecording } = midiRecording
 
 // Computed pour le tempo - UTILISE DIRECTEMENT MidiPlayer
 const currentTempo = computed(() => {
@@ -359,7 +364,9 @@ function handleRewind() {
   rewind()
 }
 
-
+function handleRecord() {
+  record()
+}
 
 function handlePlaybackRateChange(newRate) {
   playbackRate.value = newRate
@@ -525,11 +532,20 @@ onUnmounted(() => {
 
 .tempo-display {
   display: flex;
-  align-items: center;
-  gap: 4px;
+  flex-direction: column; /* Changement clé : empile verticalement */
+  align-items: center;    /* Centre horizontalement */
+  min-width: 70px;
+}
+
+.tempo-value {
   font-size: 18px;
   color: var(--el-text-color-regular);
-  min-width: 70px;
+  line-height: 1.2;
+}
+
+.tempo-label {
+  font-size: 12px;        /* Plus petit que la valeur */
+  color: var(--el-text-color-secondary); /* Couleur plus discrète */
 }
 
 .position-display {

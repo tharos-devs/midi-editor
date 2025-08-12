@@ -149,7 +149,7 @@ export function useKeyboardEvents() {
     // Transport
     play: (callback, options) => onKey('Space', callback, { description: 'Play/Pause', ...options }),
     stop: (callback, options) => onKey('KeyS', callback, { description: 'Stop', ...options }),
-    rewind: (callback, options) => onKey('KeyR', callback, { description: 'Rewind', ...options }),
+    rewind: (callback, options) => onKey('KeyB', callback, { description: 'Rewind', ...options }),
     loop: (callback, options) => onKey('KeyL', callback, { description: 'Toggle Loop', ...options }),
     marker: (callback, options) => onKey('KeyP', callback, { description: 'Toggle Playback Marker', ...options }),
     record: (callback, options) => onKey('KeyF', callback, { description: 'Toggle Record Armed', ...options }),

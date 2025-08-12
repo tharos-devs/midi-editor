@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>MIDI Performance Test</title>
+</head>
+<body>
+    <h1>Test de Performance MIDI</h1>
+    <p>Ouvrir la console et les DevTools Performance tab</p>
+    <button onclick="startTest()">Démarrer Test Performance</button>
+    <div id="results"></div>
+
+<script>
+// Test simple pour identifier le type de goulot d'étranglement
+function startTest() {
+    console.log('🚀 Début test performance...')
+    
+    // Test 1: Manipulation d'array massif (simule midiCC)
+    console.time('Array operations')
+    let testArray = []
+    
+    // Simuler l'ajout progressif de CC comme dans l'enregistrement
+    for (let i = 0; i < 5000; i++) {
+        // Ajouter un élément
+        testArray.push({ id: i, time: i * 0.01, value: Math.random() * 127 })
+        
+        // Simulations des opérations coûteuses identifiées
+        if (i % 50 === 0) {
+            // Test getLastMidiEventTime (parcours complet)
+            let maxTime = 0
+            for (const item of testArray) {
+                if (item.time > maxTime) maxTime = item.time
+            }
+            
+            // Test filtrage (getAvailableCC)
+            const filtered = testArray.filter(item => item.id % 10 === 0)
+            
+            // Mesurer si la performance se dégrade
+            if (i > 1000 && i % 500 === 0) {
+                console.log(`Iteration ${i}: Array length ${testArray.length}, Max time: ${maxTime}`)
+            }
+        }
+    }
+    console.timeEnd('Array operations')
+    
+    // Test 2: Création/destruction d'objets (simule events)
+    console.time('Object creation')
+    for (let i = 0; i < 10000; i++) {
+        const event = new CustomEvent('test-event', {
+            detail: { controller: 1, value: i % 127, time: i * 0.01 }
+        })
+        // Simuler dispatch
+        if (i % 100 === 0) {
+            window.dispatchEvent(event)
+        }
+    }
+    console.timeEnd('Object creation')
+    
+    // Test 3: SVG manipulation (simule curve drawing)
+    console.time('SVG creation')
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+    svg.setAttribute('width', '1000')
+    svg.setAttribute('height', '200')
+    
+    for (let i = 0; i < 1000; i++) {
+        const polyline = document.createElementNS('http://www.w3.org/2000/svg', 'polyline')
+        let points = ''
+        for (let j = 0; j < 50; j++) {
+            points += `${j * 10},${Math.random() * 200} `
+        }
+        polyline.setAttribute('points', points)
+        polyline.setAttribute('stroke', 'blue')
+        polyline.setAttribute('fill', 'none')
+        svg.appendChild(polyline)
+        
+        if (i % 100 === 0) {
+            // Forcer le rendu
+            svg.getBoundingClientRect()
+        }
+    }
+    document.body.appendChild(svg)
+    console.timeEnd('SVG creation')
+    
+    console.log('✅ Test terminé - vérifier les temps dans la console')
+    document.getElementById('results').innerHTML = 'Test terminé - voir console'
+}
+
+// Listener pour mesurer les events
+let eventCount = 0
+window.addEventListener('test-event', () => {
+    eventCount++
+})
+</script>
+</body>
+</html>

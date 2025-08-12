@@ -1,20 +1,6 @@
 <template>
   <div class="tool-bar">
     <div class="tool-group">
-      <el-button
-        :icon="InfoFilled"
-        size="small"
-        :type="uiStore.showTrackInfo ? 'primary' : 'default'"
-        @click="uiStore.toggleTrackInfo()"
-        title="Afficher/Masquer les informations de piste"
-      >
-       {{ uiStore.showTrackInfo ? 'Masquer' : 'Afficher' }} Info Piste
-      </el-button>
-    </div>
-
-    <div class="tool-separator"></div>
-
-    <div class="tool-group">
       <SnapToGrid />
     </div>
 
@@ -34,13 +20,10 @@
 </template>
 
 <script setup>
-import { InfoFilled } from '@element-plus/icons-vue'
 import { useMidiManager } from '@/composables/useMidiManager' 
-import { useUIStore } from '@/stores/ui'
 import SnapToGrid from './SnapToGrid.vue'
 
 const midiManager = useMidiManager()
-const uiStore = useUIStore()
 
 async function reconnectMidi() {
   console.log('🔄 Reconnexion MIDI forcée...')

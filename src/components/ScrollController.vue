@@ -61,7 +61,9 @@ function handleScroll(event) {
 let continuousScrollAnimationId = null
 let targetScrollLeft = null
 let lastScrollUpdate = 0
-const SCROLL_UPDATE_THROTTLE = 20 // 50fps - plus réactif pour éviter les problèmes de suivi
+// OPTIMISATION: Throttle plus agressif pendant l'enregistrement MIDI
+const SCROLL_UPDATE_THROTTLE_RECORDING = 100 // 10fps pendant enregistrement
+const SCROLL_UPDATE_THROTTLE_NORMAL = 20 // 50fps pendant lecture normale
 
 // Animation continue pour scroll fluide
 function updateContinuousScroll() {
@@ -91,9 +93,17 @@ function updateContinuousScroll() {
 watch(() => cursorStore.pixelPosition, (newPixelPosition, oldPixelPosition) => {
   if (!scrollContainer.value) return
   
-  // Throttling pour éviter trop de calculs
+  // PROFILING CRITICAL: Mesurer les performances de l'auto-scroll
+  const scrollPerfStart = performance.now()
+  
+  // OPTIMISATION: Throttling adaptatif selon le contexte
   const now = performance.now()
-  if (cursorStore.isPlaying && now - lastScrollUpdate < SCROLL_UPDATE_THROTTLE) {
+  
+  // Détection si on est en enregistrement (plus de throttling)
+  const isRecording = window.recordingActive || false // À ajuster selon votre logique
+  const throttleDelay = isRecording ? SCROLL_UPDATE_THROTTLE_RECORDING : SCROLL_UPDATE_THROTTLE_NORMAL
+  
+  if (cursorStore.isPlaying && now - lastScrollUpdate < throttleDelay) {
     return
   }
   lastScrollUpdate = now
@@ -153,10 +163,7 @@ watch(() => cursorStore.pixelPosition, (newPixelPosition, oldPixelPosition) => {
     } else {
       // Logique normale
       newScrollLeft = Math.min(idealScrollLeft, maxScrollLeft)
-      // Debug réduit
-      if (Math.floor(newPixelPosition / 500) % 2 === 0) {
-        console.log('🔧 Auto-scroll:', newPixelPosition.toFixed(0) + 'px → ' + newScrollLeft.toFixed(0) + 'px')
-      }
+      // Debug auto-scroll désactivé pour performance
     }
   }
   
@@ -183,10 +190,7 @@ watch(() => cursorStore.pixelPosition, (newPixelPosition, oldPixelPosition) => {
       })
     }
     
-    // Log réduit pour éviter le spam
-    if (Math.floor(newPixelPosition / 100) % 10 === 0) {
-      console.log(`📍 ScrollController: Auto-scroll vers ${newScrollLeft.toFixed(0)}px (curseur: ${newPixelPosition.toFixed(0)}px)`)
-    }
+    // Auto-scroll log désactivé pour performance
     
     // Émettre l'événement pour synchroniser tous les composants
     emit('scroll-change', {
@@ -194,6 +198,13 @@ watch(() => cursorStore.pixelPosition, (newPixelPosition, oldPixelPosition) => {
       source: 'auto-scroll',
       cursorPosition: newPixelPosition
     })
+  }
+  
+  // PROFILING: Mesurer le temps total de l'auto-scroll
+  const scrollPerfEnd = performance.now()
+  const scrollDuration = scrollPerfEnd - scrollPerfStart
+  if (scrollDuration > 5) {
+    console.warn(`⚡ PERF SCROLL: ${scrollDuration.toFixed(1)}ms pour curseur à ${newPixelPosition.toFixed(0)}px - LENT!`)
   }
 })
 

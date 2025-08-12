@@ -20,10 +20,12 @@
     </div>
 
     <div class="tempo-curve-container" 
+         ref="tempoLaneRef"
+         :class="{ 'brush-mode': isBrushing }"
          @dblclick="addPoint" 
-         @mousedown="startLassoOrDrag"
-         @mousemove="updateLasso"
-         @mouseup="endLassoOrDrag">
+         @mousedown="handleContainerMouseDown"
+         @mousemove="isBrushing ? onBrushMove : updateLasso"
+         @mouseup="isBrushing ? stopBrush : endLassoOrDrag">
 
       <!-- Rectangle de sélection lasso -->
       <div v-if="isLassoMode" class="lasso-selection" :style="lassoStyle"></div>
@@ -105,6 +107,11 @@ const timeSignature = useTimeSignature()
 const { snapTimeToGrid } = useSnapLogic()
 const selectedPoint = ref(null)
 
+// Refs pour le mode brush
+const tempoLaneRef = ref(null)
+const isBrushing = ref(false)
+const isCommandPressed = ref(false)
+
 // Tempo minimum comme les DAW professionnels (Logic Pro, Cubase, etc.)
 const MIN_TEMPO_BPM = 10
 const selectedPoints = ref([]) // Points sélectionnés en mode lasso
@@ -156,8 +163,6 @@ const tempoPoints = computed(() => {
     lastModified: tempo.lastModified
   })).sort((a, b) => a.time - b.time)
   
-  console.log('🎵 DEBUG TempoLane: tempoEvents du store:', midiStore.tempoEvents.length, midiStore.tempoEvents.map(t => `${t.time}s=${t.bpm}BPM`))
-  console.log('🎵 DEBUG TempoLane: points mappés:', points.length, points.map(p => `${p.time}s=${p.bpm}BPM`))
   
   return points
 })
@@ -250,6 +255,38 @@ let originalValue = 0
 // Variables pour le drag
 
 const startDrag = (point, event) => {
+  console.log('🎯 TempoLane startDrag APPELÉ!', point.id, { metaKey: event.metaKey, ctrlKey: event.ctrlKey })
+  
+  // Mode brush (CMD/Ctrl + clic) - gérer directement ici
+  if (event.metaKey || event.ctrlKey) {
+    console.log('🎨 TempoLane startDrag: Mode brush détecté - activation directe')
+    event.preventDefault()
+    event.stopPropagation()
+    
+    // Activer le mode brush
+    isBrushing.value = true
+    isCommandPressed.value = true
+    lastBrushedPointId = null
+    
+    // Calculer la nouvelle valeur BPM depuis la position Y
+    const newBPM = calculateBPMFromPosition(event.clientY)
+    updateTempoPoint(point.id, newBPM)
+    lastBrushedPointId = point.id
+    
+    // Émettre la sélection
+    emit('point-selected', {
+      id: String(point.id),
+      value: Math.round(newBPM),
+      type: 'tempo'
+    })
+    
+    // CRUCIAL: Ajouter les listeners pour le brush
+    document.addEventListener('mousemove', onBrushMove)
+    document.addEventListener('mouseup', stopBrush)
+    
+    return
+  }
+  
   // Si le point fait partie de la sélection multiple, démarrer un drag de groupe
   const isPartOfMultiSelection = selectedPoints.value.some(p => p.id === point.id)
   
@@ -330,11 +367,9 @@ const onDrag = (event) => {
     if (deltaY > 20 && deltaY > deltaX * 1.5) {
       isDragVertical.value = true
       isDragModeSet.value = true
-      console.log('🎯 MODE VERTICAL DRAG activé:', { deltaX, deltaY })
     } else if (deltaX > 20 || deltaY > 20) {
       isDragVertical.value = false
       isDragModeSet.value = true
-      console.log('🎯 MODE HORIZONTAL DRAG activé:', { deltaX, deltaY })
     }
   }
   
@@ -346,7 +381,6 @@ const onDrag = (event) => {
     const deltaY = event.clientY - dragStartY // Delta depuis le début du drag
     const deltaTempo = -(deltaY / containerHeight) * 200 // Inverser (haut = plus rapide)
     newValue = Math.max(MIN_TEMPO_BPM, Math.min(200, Math.round(originalValue + deltaTempo)))
-    console.log('🎯 VERTICAL DRAG:', { deltaY: deltaY, deltaTempo: deltaTempo.toFixed(1), originalValue, newValue })
   }
   
   
@@ -381,7 +415,6 @@ const onDrag = (event) => {
     // Mode drag simple: mettre à jour uniquement le point sélectionné
     const tempPointIndex = dragTempPoints.value.findIndex(p => p.id === selectedPoint.value.id)
     if (tempPointIndex !== -1) {
-      console.log('🎯 AVANT UPDATE tempPoint:', dragTempPoints.value[tempPointIndex])
       
       dragTempPoints.value[tempPointIndex] = {
         ...dragTempPoints.value[tempPointIndex],
@@ -390,7 +423,6 @@ const onDrag = (event) => {
         bpm: newValue
       }
       
-      console.log('🎯 APRÈS UPDATE tempPoint:', dragTempPoints.value[tempPointIndex])
     }
   }
   
@@ -428,20 +460,12 @@ const stopDrag = async () => {
       const tempPoint = dragTempPoints.value.find(p => p.id === draggedPointId)
       
       if (tempPoint) {
-        console.log('🎯 DEBUG DRAG END:', {
-          pointId: draggedPointId,
-          originalTime: selectedPoint.value.time,
-          newTime: tempPoint.time,
-          newBpm: tempPoint.value,
-          tempPoint: tempPoint
-        })
         
         const result = await midiStore.updateTempoEvent(draggedPointId, {
           time: tempPoint.time,
           bpm: tempPoint.value
         })
         
-        console.log('🎯 UPDATE RESULT:', result)
       }
     }
   }
@@ -460,7 +484,6 @@ const stopDrag = async () => {
   // Ne pas réinitialiser la valeur - garder le point sélectionné
   // emit('point-selected', null)
   
-  console.log('🔄 STOP DRAG - Nettoyage terminé')
 }
 
 
@@ -514,17 +537,11 @@ const deletePoint = (point, event) => {
   event.preventDefault()
   event.stopPropagation()
   
-  console.log(`🗑️ Double-clic pour supprimer Tempo point:`, {
-    pointId: point.id,
-    time: point.time,
-    bpm: point.bpm
-  })
   
   if (point.id) {
     // Supprimer du store
     const success = midiStore.deleteTempoEvent(point.id)
     if (success) {
-      console.log(`✅ Point Tempo supprimé:`, point.id)
       
       // Désélectionner si c'était le point sélectionné
       if (selectedPoint.value?.id === point.id) {
@@ -541,7 +558,225 @@ const deletePoint = (point, event) => {
 // FONCTIONS POUR LE MODE LASSO ET SÉLECTION MULTIPLE
 // ===========================================
 
-// Démarrer le lasso ou le drag selon ce qui est cliqué
+// Variables pour le mode brush
+let lastBrushedPointId = null
+let lastBrushedTime = null
+
+// Fonction pour trouver un point à une position donnée
+const findItemAtPosition = (clientX, clientY) => {
+  if (!tempoLaneRef.value) return null
+  
+  const rect = tempoLaneRef.value.getBoundingClientRect()
+  const relativeX = clientX - rect.left
+  const relativeY = clientY - rect.top
+  const tolerance = 20 // pixels - augmenté pour faciliter la détection
+  
+  console.log('🔍 findItemAtPosition:', { 
+    relativeX, relativeY, tolerance, 
+    pointsCount: tempoPointsDisplayed.value?.length || 0,
+    rectHeight: rect.height 
+  })
+  
+  for (const point of tempoPointsDisplayed.value) {
+    try {
+      const pointX = timeSignature.timeToPixelsWithSignatures
+        ? timeSignature.timeToPixelsWithSignatures(point.time)
+        : point.time * 240 // fallback
+      
+      const pointY = (1 - (point.bpm / 200)) * rect.height
+      
+      const distance = Math.sqrt(
+        Math.pow(relativeX - pointX, 2) + 
+        Math.pow(relativeY - pointY, 2)
+      )
+      
+      console.log('🔍 Point check:', { 
+        pointId: point.id, pointTime: point.time, pointBPM: point.bpm,
+        pointX, pointY, distance, tolerance 
+      })
+      
+      if (distance <= tolerance) {
+        console.log('✅ Point trouvé!', point)
+        return point
+      }
+    } catch (error) {
+      continue
+    }
+  }
+  return null
+}
+
+// Calculer la valeur BPM depuis la position Y
+const calculateBPMFromPosition = (clientY) => {
+  if (!tempoLaneRef.value) return 120
+  
+  const rect = tempoLaneRef.value.getBoundingClientRect()
+  const mouseY = clientY - rect.top
+  const relativeY = mouseY / rect.height
+  
+  // Convertir en BPM (plage MIN_TEMPO_BPM-200, inversé car Y=0 est en haut)
+  const bpm = Math.round((1 - relativeY) * 200)
+  return Math.max(MIN_TEMPO_BPM, Math.min(200, bpm))
+}
+
+// Gestionnaire des touches pour le curseur brush
+const handleKeyDown = (event) => {
+  if ((event.metaKey || event.ctrlKey) && !isCommandPressed.value) {
+    isCommandPressed.value = true
+    if (tempoLaneRef.value) {
+      tempoLaneRef.value.classList.add('brush-mode')
+    }
+  }
+}
+
+const handleKeyUp = (event) => {
+  if ((!event.metaKey && !event.ctrlKey) || event.key === 'Meta' || event.key === 'Control') {
+    isCommandPressed.value = false
+    if (tempoLaneRef.value) {
+      tempoLaneRef.value.classList.remove('brush-mode')
+    }
+  }
+}
+
+// Écouter les événements clavier
+onMounted(() => {
+  document.addEventListener('keydown', handleKeyDown)
+  document.addEventListener('keyup', handleKeyUp)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('keydown', handleKeyDown)
+  document.removeEventListener('keyup', handleKeyUp)
+})
+
+// Gestionnaire principal des événements de container
+const handleContainerMouseDown = (event) => {
+  console.log('🎵 TempoLane handleContainerMouseDown appelé', { metaKey: event.metaKey, ctrlKey: event.ctrlKey })
+  console.log('🎵 Points tempo disponibles:', tempoPointsDisplayed.value?.length || 0)
+  
+  // Mode brush (CMD/Ctrl + clic)
+  if (event.metaKey || event.ctrlKey) {
+    console.log('🎨 TempoLane: Mode brush activé dans handleContainer!')
+    event.preventDefault()
+    event.stopPropagation()
+    
+    isBrushing.value = true
+    isCommandPressed.value = true
+    lastBrushedPointId = null
+    
+    // Créer un nouveau point tempo à la position du clic
+    const rect = tempoLaneRef.value.getBoundingClientRect()
+    const relativeX = event.clientX - rect.left
+    const clickTime = timeSignature.pixelsToTimeWithSignatures 
+      ? timeSignature.pixelsToTimeWithSignatures(relativeX)
+      : relativeX / 240 // fallback
+    
+    const newBPM = calculateBPMFromPosition(event.clientY)
+    console.log('🎨 Brush: Création point tempo', { clickTime, newBPM })
+    
+    // Ajouter le point au store
+    const newPointId = midiStore.addTempoEvent({
+      time: clickTime,
+      bpm: newBPM
+    })
+    
+    lastBrushedPointId = newPointId
+    
+    emit('tempo-selected', {
+      id: String(newPointId),
+      value: newBPM,
+      type: 'tempo'
+    })
+    
+    // Ajouter les listeners pour le brush
+    document.addEventListener('mousemove', onBrushMove)
+    document.addEventListener('mouseup', stopBrush)
+    
+    return
+  }
+  
+  // Logique normale (lasso/drag)
+  startLassoOrDrag(event)
+}
+
+// Fonctions pour le mode brush
+const onBrushMove = (event) => {
+  if (!isBrushing.value) return
+  
+  console.log('🖌️ TempoLane onBrushMove appelé!')
+  
+  try {
+    if (event.cancelable) {
+      event.preventDefault()
+    }
+  } catch (e) {
+    // Ignore l'erreur si preventDefault n'est pas possible
+  }
+  
+  // Créer un nouveau point tempo à chaque mouvement de souris
+  const rect = tempoLaneRef.value.getBoundingClientRect()
+  const relativeX = event.clientX - rect.left
+  const currentTime = timeSignature.pixelsToTimeWithSignatures 
+    ? timeSignature.pixelsToTimeWithSignatures(relativeX)
+    : relativeX / 240 // fallback
+  
+  const newBPM = calculateBPMFromPosition(event.clientY)
+  
+  // Créer un point seulement si on a bougé suffisamment (éviter trop de points)
+  const minTimeDistance = 0.1 // secondes minimum entre les points
+  const shouldCreatePoint = !lastBrushedTime || Math.abs(currentTime - lastBrushedTime) >= minTimeDistance
+  
+  if (shouldCreatePoint) {
+    console.log('🖌️ Brush: Création point en mouvement', { currentTime, newBPM })
+    
+    const newPointId = midiStore.addTempoEvent({
+      time: currentTime,
+      bpm: newBPM
+    })
+    
+    lastBrushedPointId = newPointId
+    lastBrushedTime = currentTime
+    
+    emit('tempo-selected', {
+      id: String(newPointId),
+      value: newBPM,
+      type: 'tempo'
+    })
+  }
+}
+
+const stopBrush = (event) => {
+  if (event) {
+    try {
+      if (event.cancelable) {
+        event.preventDefault()
+      }
+    } catch (e) {
+      // Ignore l'erreur si preventDefault n'est pas possible
+    }
+  }
+  
+  document.removeEventListener('mousemove', onBrushMove)
+  document.removeEventListener('mouseup', stopBrush)
+  
+  isBrushing.value = false
+  isCommandPressed.value = false
+  lastBrushedPointId = null
+  lastBrushedTime = null
+}
+
+// Fonction pour mettre à jour un point tempo
+const updateTempoPoint = (pointId, time, bpm) => {
+  const clampedBPM = Math.max(MIN_TEMPO_BPM, Math.min(200, bpm))
+  console.log(`🎵 TempoLane updateTempoPoint: ${pointId} -> ${clampedBPM} BPM`)
+  
+  midiStore.updateTempoEvent(pointId, {
+    time: time,
+    bpm: clampedBPM
+  })
+}
+
+// Démarrer le lasso ou le drag selon ce qui est cliqué  
 const startLassoOrDrag = (event) => {
   // Si on clique sur un point, ne pas faire de lasso
   if (event.target.classList.contains('tempo-point')) {
@@ -552,7 +787,6 @@ const startLassoOrDrag = (event) => {
   if (selectedPoint.value) {
     selectedPoint.value = null
     emit('tempo-selected', null)
-    console.log('🎯 Déselection point par clic zone vide')
   }
   
   // Si on clique sur une zone vide, démarrer le lasso
@@ -735,6 +969,8 @@ onUnmounted(() => {
   // Nettoyer les event listeners et les données temporaires
   document.removeEventListener('mousemove', onDrag)
   document.removeEventListener('mouseup', stopDrag)
+  document.removeEventListener('mousemove', onBrushMove)
+  document.removeEventListener('mouseup', stopBrush)
   document.removeEventListener('keydown', handleKeydown)
   document.removeEventListener('update-point-value', handleManualPointValueUpdate)
   
@@ -763,8 +999,12 @@ onUnmounted(() => {
 .tempo-curve-container {
   position: relative;
   height: 100%;
-  cursor: crosshair;
+  cursor: default;
   z-index: 5;
+}
+
+.tempo-curve-container.brush-mode {
+  cursor: crosshair;
 }
 
 /* Empêcher le changement de curseur pendant le drag */

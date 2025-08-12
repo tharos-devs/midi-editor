@@ -25,7 +25,6 @@
             <!-- Timeline -->
             <div class="timeline-container">
             <div class="timeline-spacer" :style="{ width: uiStore.pianoKeysWidth + 'px' }">
-              <SelectRulers />    
             </div>
             <div class="timeline-scroll sync-scroll-x">
               <TimeLine />
@@ -69,6 +68,7 @@
               />
             </div>
           </div>        
+
 
           <!-- Piano + Grid Area -->
           <div class="piano-grid-container">
@@ -124,6 +124,25 @@
             </div>
           </div>
 
+          <!-- ArticulationRuler TEST -->
+          <div v-if="projectStore.showArticulationRuler" class="articulation-container">
+            <div class="articulation-spacer" :style="{ width: uiStore.pianoKeysWidth + 'px' }">
+              <ArticulationControls 
+                ref="articulationControlsRef"
+                :selected-articulation="selectedArticulation"
+                @articulation-deselected="selectedArticulation = null"
+              />
+            </div>
+            <div class="articulation-scroll sync-scroll-x">
+              <ArticulationRuler 
+                ref="articulationRulerRef"
+                :selected-articulation="selectedArticulation"
+                @articulation-selected="handleArticulationSelection"
+                @articulation-edit="handleArticulationEdit"
+              />
+            </div>
+          </div>
+          
           <!-- Scroll Controller - Auto-scroll indépendant -->
           <div class="scroll-controller-container">
             <div class="scroll-controller-spacer" :style="{ width: uiStore.pianoKeysWidth + 'px' }"></div>
@@ -168,11 +187,12 @@ import MidiLaneInfos from './components/MidiLaneInfos.vue'
 import StatusBar from './components/StatusBar.vue'
 import TimeSignatureRuler from './components/rulers/TimeSignatureRuler.vue'
 import MarkerRuler from './components/rulers/MarkerRuler.vue'
+import ArticulationRuler from './components/rulers/ArticulationRuler.vue'
 import TransportControls from './components/TransportControls.vue'
 import ScrollController from './components/ScrollController.vue'
-import SelectRulers from './components/buttons/SelectRulers.vue'
 import SignatureControls from './components/buttons/SignatureControls.vue'
 import MarkerControls from './components/buttons/MarkerControls.vue'
+import ArticulationControls from './components/buttons/ArticulationControls.vue'
 
 const uiStore = useUIStore()
 const midiStore = useMidiStore()
@@ -207,11 +227,17 @@ const timeSignatureRulerRef = ref(null)
 // Ref pour MarkerRuler
 const markerRulerRef = ref(null)
 
+// Ref pour ArticulationRuler
+const articulationRulerRef = ref(null)
+
 // État pour la gestion des signatures rythmiques
 const selectedSignature = ref(null)
 
 // État pour la gestion des marqueurs
 const selectedMarker = ref(null)
+
+// État pour la gestion des marqueurs
+const selectedArticulation = ref(null)
 
 // Redimensionnement
 let isResizingTrackList = false
@@ -290,7 +316,7 @@ const handlePointValueUpdate = (updateData) => {
 // Gestion de la mise à jour des lanes visibles depuis MidiLaneTabs  
 const handleLanesUpdated = (lanes) => {
   // Cette fonction peut être utilisée pour d'autres logiques si nécessaire
-  console.log('🎛️ App.vue: Lanes mises à jour:', lanes.length)
+  // Performance: log supprimé
 }
 
 // ===== GESTION DES SIGNATURES RYTHMIQUES =====
@@ -329,6 +355,21 @@ const handleMarkerSelection = (marker) => {
 const handleMarkerEdit = (marker) => {
   console.log('✏️ App.vue reçoit édition marqueur:', marker)
   // Cette fonctionnalité est implémentée dans MarkerRuler
+}
+
+// ===== GESTION DES ARTICULATION =====
+
+// Gestion de la sélection d'une articulation
+const handleArticulationSelection = (articulation) => {
+  console.log('🎯 App.vue reçoit sélection articulation:', articulation)
+  selectedArticulation.value = articulation
+  console.log('🎯 selectedArticulation.value mis à jour:', selectedArticulation.value)
+}
+
+// Gestion de l'édition d'un marqueur (double-clic)
+const handleArticulationEdit = (articulation) => {
+  console.log('✏️ App.vue reçoit édition marqueur:', articulation)
+  // Cette fonctionnalité est implémentée dans ArticulationRuler
 }
 
 
@@ -488,6 +529,8 @@ const signatureControlsRef = ref(null)
 // Ref vers le composant MarkerControls pour accéder à ses méthodes
 const markerControlsRef = ref(null)
 
+// Ref vers le composant MarkerControls pour accéder à ses méthodes
+const articulationControlsRef = ref(null)
 
 // Gestionnaire global pour les clics (désélection)
 const handleGlobalClick = (event) => {
@@ -504,8 +547,14 @@ const handleGlobalClick = (event) => {
       !event.target.closest('.marker-mark')) {
     selectedMarker.value = null
   }
-}
 
+  // Si le clic n'est pas sur une articulation ou les contrôles, déselectionner
+  if (!event.target.closest('.articulation-text') &&
+      !event.target.closest('.articulation-controls') &&
+      !event.target.closest('.articulation-mark')) {
+    selectedArticulation.value = null
+  }  
+}
 
 onMounted(async () => {
   // Initialisation d'un nouveau projet si aucun fichier n'est chargé
@@ -549,9 +598,17 @@ onMounted(async () => {
     return false // Laisser passer à d'autres handlers
   }
   
+  const handleArticulationDeletion = () => {
+    if (selectedArticulation.value && articulationControlsRef.value?.removeArticulation) {
+      articulationControlsRef.value.removeArticulation()
+      return true // Arrêter la propagation
+    }
+    return false // Laisser passer à d'autres handlers
+  }
+
   const handleGlobalDeletion = () => {
     // Essayer d'abord les marqueurs, puis les signatures
-    return handleMarkerDeletion() || handleSignatureDeletion()
+    return handleMarkerDeletion() || handleArticulationDeletion() || handleSignatureDeletion()
   }
   
   shortcuts.delete(handleGlobalDeletion, {
@@ -582,17 +639,25 @@ const handleDirectDelete = (event) => {
       target: event.target.tagName,
       isInInput,
       hasSelectedSignature: !!selectedSignature.value,
-      hasSelectedMarker: !!selectedMarker.value
+      hasSelectedMarker: !!selectedMarker.value,
+      hasSelectedArticulation: !!selectedArticulation.value
     })
     
     if (!isInInput) {
-      // Essayer d'abord les marqueurs, puis les signatures
+      // Essayer d'abord les marqueurs, articulations, puis les signatures
       if (selectedMarker.value && markerControlsRef.value?.removeMarker) {
         console.log('🗑️ Suppression marqueur via gestionnaire direct')
         event.preventDefault()
         event.stopPropagation()
         markerControlsRef.value.removeMarker()
-      } else if (selectedSignature.value && signatureControlsRef.value?.removeTimeSignature) {
+      } 
+      if (selectedArticulation.value && articulationControlsRef.value?.removeArticulation) {
+        console.log('🗑️ Suppression marqueur via gestionnaire direct')
+        event.preventDefault()
+        event.stopPropagation()
+        articulationControlsRef.value.removeArticulation()
+      }      
+      else if (selectedSignature.value && signatureControlsRef.value?.removeTimeSignature) {
         console.log('🗑️ Suppression signature via gestionnaire direct')
         event.preventDefault()
         event.stopPropagation()
@@ -727,6 +792,26 @@ onUnmounted(() => {
 }
 
 .marker-scroll {
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ArticulationRuler */
+.articulation-container {
+  height: 30px;
+  display: flex;
+  border-top: 1px solid var(--border-color, #ddd);
+  background: var(--timesignature-bg, #fafafa);
+  z-index: 150;
+}
+
+.articulation-spacer {
+  flex-shrink: 0;
+  border-right: 1px solid var(--border-color, #ddd);
+  background: var(--timesignature-spacer-bg, #f0f0f0);
+}
+
+.articulation-scroll {
   flex: 1;
   overflow: hidden;
 }
